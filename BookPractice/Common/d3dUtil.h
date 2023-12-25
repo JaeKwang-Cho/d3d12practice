@@ -98,17 +98,8 @@ public:
 
     static UINT CalcConstantBufferByteSize(UINT byteSize)
     {
-        // Constant buffers must be a multiple of the minimum hardware
-        // allocation size (usually 256 bytes).  So round up to nearest
-        // multiple of 256.  We do this by adding 255 and then masking off
-        // the lower 2 bytes which store all bits < 256.
-        // Example: Suppose byteSize = 300.
-        // (300 + 255) & ~255
-        // 555 & ~255
-        // 0x022B & ~0x00ff
-        // 0x022B & 0xff00
-        // 0x0200
-        // 512
+        // 구조체가 들어 왔을 때
+		// 256의 배수로 크기를 만들어 주는 것이다.
         return (byteSize + 255) & ~255;
     }
 
@@ -186,7 +177,7 @@ struct MeshGeometry
 
 	D3D12_VERTEX_BUFFER_VIEW VertexBufferView()const
 	{
-		D3D12_VERTEX_BUFFER_VIEW vbv;
+		D3D12_VERTEX_BUFFER_VIEW vbv = {};
 		vbv.BufferLocation = VertexBufferGPU->GetGPUVirtualAddress();
 		vbv.StrideInBytes = VertexByteStride;
 		vbv.SizeInBytes = VertexBufferByteSize;
@@ -196,7 +187,7 @@ struct MeshGeometry
 
 	D3D12_INDEX_BUFFER_VIEW IndexBufferView()const
 	{
-		D3D12_INDEX_BUFFER_VIEW ibv;
+		D3D12_INDEX_BUFFER_VIEW ibv = {};
 		ibv.BufferLocation = IndexBufferGPU->GetGPUVirtualAddress();
 		ibv.Format = IndexFormat;
 		ibv.SizeInBytes = IndexBufferByteSize;

@@ -149,6 +149,7 @@
     <ClInclude Include="..\Common\DDSTextureLoader.h" />
     <ClInclude Include="..\Common\GameTimer.h" />
     <ClInclude Include="..\Common\MathHelper.h" />
+    <ClInclude Include="..\Common\UploadBuffer.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\d3dApp.cpp" />
@@ -157,6 +158,14 @@
     <ClCompile Include="..\Common\GameTimer.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\Common\defaultmain.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\02_Rendering_PS.cso" />
+    <None Include="Shaders\02_Rendering_Shader.hlsl" />
+    <None Include="Shaders\02_Rendering_VS.cso" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

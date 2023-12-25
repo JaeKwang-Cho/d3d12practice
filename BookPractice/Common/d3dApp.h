@@ -18,6 +18,11 @@
 #pragma comment(lib, "D3D12.lib")
 #pragma comment(lib, "dxgi.lib")
 
+// using
+using Microsoft::WRL::ComPtr;
+using namespace DirectX;
+using namespace DirectX::PackedVector;
+
 class D3DApp
 {
 protected:
@@ -33,13 +38,12 @@ public:
     
 	HINSTANCE AppInst()const;
 	HWND      MainWnd()const;
-	float     AspectRatio()const;
+	float     GetAspectRatio()const;
 
     bool Get4xMsaaState()const;
     void Set4xMsaaState(bool value);
 
 	int Run();
- 
     virtual bool Initialize();
     virtual LRESULT MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 

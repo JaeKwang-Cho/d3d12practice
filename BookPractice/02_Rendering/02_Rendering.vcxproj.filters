@@ -38,6 +38,9 @@
     <ClInclude Include="..\Common\MathHelper.h">
       <Filter>Commons\헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\UploadBuffer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -58,5 +61,13 @@
     <ClCompile Include="..\Common\MathHelper.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\Common\defaultmain.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\02_Rendering_Shader.hlsl" />
+    <None Include="Shaders\02_Rendering_PS.cso" />
+    <None Include="Shaders\02_Rendering_VS.cso" />
   </ItemGroup>
 </Project>

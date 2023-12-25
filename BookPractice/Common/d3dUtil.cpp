@@ -41,6 +41,12 @@ ComPtr<ID3DBlob> d3dUtil::LoadBinary(const std::wstring& filename)
     return blob;
 }
 
+// 변하지 않는 값을 가진 Default Buffer를 만들기 위해서는,
+// Default Heap에 데이터를 넣어야하는데
+// CPU가 바꿀 수 없는 Default Heap에 데이터를 넣을 수 없으니
+// CPU에서도 작업할 수 있는, Upload 용 buffer와 heap을 만들어서 데이터를 넣어준다음에
+// GPU에서 넘겨주어야 한다.
+
 Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
     ID3D12Device* device,
     ID3D12GraphicsCommandList* cmdList,
@@ -94,6 +100,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
     );
 
     // (d3dx12.h)
+    // 그리고 CopySubresourceRegion을 이용해서 Default Buffer에 upload buffer의 값이 복사가 된다.
+    // 내부적으로 ID3D12Device::GetCopyableFootPrints가 호출이 된다.
+
     UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
 
     D3D12_RESOURCE_BARRIER BufferBarrierTransition = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -101,7 +110,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
         D3D12_RESOURCE_STATE_COPY_DEST, 
         D3D12_RESOURCE_STATE_GENERIC_READ
     );
-    // 그리고 CopySubresourceRegion을 이용해서 Default Buffer에 upload buffer의 값이 복사가 된다.
+    
 	cmdList->ResourceBarrier(
         1, 
         &BufferBarrierTransition);

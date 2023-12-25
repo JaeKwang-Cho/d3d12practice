@@ -51,7 +51,7 @@ HWND D3DApp::MainWnd()const
 	return m_hMainWnd;
 }
 
-float D3DApp::AspectRatio()const
+float D3DApp::GetAspectRatio()const
 {
 	// 화면 종횡비
 	return static_cast<float>(m_ClientWidth) / m_ClientHeight;
@@ -111,14 +111,14 @@ int D3DApp::Run()
 
 bool D3DApp::Initialize()
 {
-	if(!InitMainWindow())
+	if (!InitMainWindow())
 		return false;
 
-	if(!InitDirect3D())
+	if (!InitDirect3D())
 		return false;
 
-    // View 를 초기에도 설정해줄 필요가 있다.
-    OnResize();
+	// View 를 초기에도 설정해줄 필요가 있다.
+	OnResize();
 
 	return true;
 }
@@ -130,7 +130,7 @@ void D3DApp::CreateRtvAndDsvDescriptorHeaps()
 	// ============================================
 
 	// render target heap
-    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
 
     rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -143,7 +143,7 @@ void D3DApp::CreateRtvAndDsvDescriptorHeaps()
 	));
 
 	// depth - stencil heap
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 
     dsvHeapDesc.NumDescriptors = 1;
     dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -196,7 +196,7 @@ void D3DApp::OnResize()
 	}
 
     // 얘는 Depth-Stencil View를 만드는 것이다.
-    D3D12_RESOURCE_DESC depthStencilDesc;
+    D3D12_RESOURCE_DESC depthStencilDesc = {};
 	// Render Target과 똑같은 속성을 만들어주고
     depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilDesc.Alignment = 0;
@@ -224,7 +224,7 @@ void D3DApp::OnResize()
     depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
 	// 자원 지우기 설정을 나타내는 구조체 CLAER_VALUE
-    D3D12_CLEAR_VALUE optClear;
+    D3D12_CLEAR_VALUE optClear = {};
     optClear.Format = m_DepthStencilFormat;
     optClear.DepthStencil.Depth = 1.0f;
     optClear.DepthStencil.Stencil = 0;
@@ -242,7 +242,7 @@ void D3DApp::OnResize()
         IID_PPV_ARGS(m_DepthStencilBuffer.GetAddressOf())));
 
 	// Depth-Stencil View를 만들 구조체를 채워주고
-	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
 	dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Format = m_DepthStencilFormat;
@@ -423,7 +423,7 @@ LRESULT D3DApp::MsgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 bool D3DApp::InitMainWindow()
 {
-	WNDCLASS wc;
+	WNDCLASS wc = {};
 	wc.style         = CS_HREDRAW | CS_VREDRAW;
 	wc.lpfnWndProc   = MainWndProc; 
 	wc.cbClsExtra    = 0;
@@ -503,7 +503,7 @@ bool D3DApp::InitDirect3D()
     // All Direct3D 11 capable devices support 4X MSAA for all render 
     // target formats, so we only need to check quality support.
 
-	D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
+	D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels = {};
 
 	msQualityLevels.Format = m_BackBufferFormat;
 	msQualityLevels.SampleCount = 4;
@@ -557,7 +557,7 @@ void D3DApp::CreateSwapChain()
     // Release the previous swapchain we will be recreating.
     m_SwapChain.Reset();
 
-    DXGI_SWAP_CHAIN_DESC sd;
+    DXGI_SWAP_CHAIN_DESC sd = {};
     sd.BufferDesc.Width = m_ClientWidth;
     sd.BufferDesc.Height = m_ClientHeight;
     sd.BufferDesc.RefreshRate.Numerator = 60;

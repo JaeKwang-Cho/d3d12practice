@@ -127,7 +127,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 bool InitMainWindow(HINSTANCE _hInstance)
 {
-    WNDCLASS wcex;
+    WNDCLASS wcex = {};
     
     wcex.style = CS_HREDRAW | CS_VREDRAW;
     wcex.lpfnWndProc = WndProc;
@@ -257,7 +257,7 @@ bool InitDirect3D()
     // ============================================
 
     // d3d11 급에서는 4X MSAA를 지원한다.
-    D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels;
+    D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels = {};
 
     msQualityLevels.Format = g_BackBufferFormat;
     msQualityLevels.SampleCount = 4;
@@ -335,9 +335,9 @@ bool InitDirect3D()
 
     g_SwapChain.Reset(); // ComPtr 해제
 
-    DXGI_SWAP_CHAIN_DESC sd;
+    DXGI_SWAP_CHAIN_DESC sd = {};
 
-    DXGI_MODE_DESC bfd;
+    DXGI_MODE_DESC bfd = {};
     bfd.Width = g_ClientWidth;
     bfd.Height = g_ClientHeight;
     bfd.RefreshRate.Numerator = 60;
@@ -348,7 +348,7 @@ bool InitDirect3D()
 
     sd.BufferDesc = bfd;
 
-    DXGI_SAMPLE_DESC spd;
+    DXGI_SAMPLE_DESC spd = {};
     spd.Count = g_b4xMsaaState ? 4 : 1;
     spd.Quality = g_b4xMsaaState ? (g_4xMsaaQuality - 1) : 0;
 
@@ -379,7 +379,7 @@ bool InitDirect3D()
     // ============================================
 
     // 렌더타겟 힙
-    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
     rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
     rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
@@ -397,7 +397,7 @@ bool InitDirect3D()
     }
 
     // 뎁스 스텐실 힙
-    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 
     dsvHeapDesc.NumDescriptors = 1;
     dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
@@ -470,7 +470,7 @@ bool InitDirect3D()
 
     // 얘는 GPU 자원들이여서, GPU 힙에 존재한다.
     // 그래서 함수 동작도 CPU 자원들과 다르다.
-    D3D12_RESOURCE_DESC depthStencilDesc;
+    D3D12_RESOURCE_DESC depthStencilDesc = {};
     // 일단은 깊이 정보만 저장한다.
     depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
     depthStencilDesc.Alignment = 0;
@@ -492,7 +492,7 @@ bool InitDirect3D()
     depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
 
     // 자원 지우기 설정을 나타내는 구조체 CLAER_VALUE
-    D3D12_CLEAR_VALUE optClear;
+    D3D12_CLEAR_VALUE optClear = {};
     optClear.Format = g_DepthStencilFormat;
     optClear.DepthStencil.Depth = 1.f;
     optClear.DepthStencil.Stencil = 0;
@@ -511,7 +511,7 @@ bool InitDirect3D()
     );
 
     // Resource으로 View를 만든다.
-    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
+    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
     dsvDesc.Flags = D3D12_DSV_FLAG_NONE;
     dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
     dsvDesc.Format = g_DepthStencilFormat;
@@ -722,9 +722,12 @@ void Draw(const GameTimer* const _timer)
         // 그 이벤트를 등록해주고
         hr = g_Fence->SetEventOnCompletion(g_CurrentFence, eventHandle);
         // 이벤트가 발생하기 전 까지 INFINITE를 기다린다.
-        DWORD ret = WaitForSingleObject(eventHandle, INFINITE);
-        // 이벤트를 해제한다.
-        CloseHandle(eventHandle);
+        if (eventHandle != NULL)
+        {
+            DWORD ret = WaitForSingleObject(eventHandle, INFINITE);
+            // 이벤트를 해제한다.
+            CloseHandle(eventHandle);
+        }
     }
 }
 

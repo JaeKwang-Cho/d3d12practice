@@ -11,9 +11,8 @@ public:
     {
         mElementByteSize = sizeof(T);
 
-        // Constant buffer elements need to be multiples of 256 bytes.
-        // This is because the hardware can only view constant data 
-        // at m*256 byte offsets and of n*256 byte lengths. 
+        // Constant Buffer의 요소는 256 바이트 align이 되어야 한다.
+        // 그래야 하드웨어가 잘 읽을 수 있다.
         // typedef struct D3D12_CONSTANT_BUFFER_VIEW_DESC {
         // UINT64 OffsetInBytes; // multiple of 256
         // UINT   SizeInBytes;   // multiple of 256
@@ -21,18 +20,23 @@ public:
         if(isConstantBuffer)
             mElementByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(T));
 
+        // Upload 힙을 이용해서 올린다.
+        D3D12_HEAP_PROPERTIES UploadHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+        D3D12_RESOURCE_DESC ResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(mElementByteSize * elementCount);
+
         ThrowIfFailed(device->CreateCommittedResource(
-            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+            &UploadHeapProps,
             D3D12_HEAP_FLAG_NONE,
-            &CD3DX12_RESOURCE_DESC::Buffer(mElementByteSize*elementCount),
+            &ResourceDesc,
 			D3D12_RESOURCE_STATE_GENERIC_READ,
             nullptr,
             IID_PPV_ARGS(&mUploadBuffer)));
 
         ThrowIfFailed(mUploadBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mMappedData)));
 
-        // We do not need to unmap until we are done with the resource.  However, we must not write to
-        // the resource while it is in use by the GPU (so we must use synchronization techniques).
+        // 리소스 작업이 끝나기 전까지 unmap 할 필요가 없다.
+        // 하지만, GPU가 사용할 동안에는 write 해서는 안된다.
+        // (CPU, GPU의 Sync가 필요하다.)
     }
 
     UploadBuffer(const UploadBuffer& rhs) = delete;
