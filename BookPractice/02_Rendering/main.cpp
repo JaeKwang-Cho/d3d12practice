@@ -4,17 +4,51 @@
 
 using namespace DirectX;
 
+#define PRAC2 (0)
+#define PRAC4 (0)
+#define PRAC6 (0)
+#define PRAC7 (0)
+#define PRAC10 (0)
+#define PRAC14 (0)
+#define PRAC16 (1)
+
+bool g_bPrac7 = false;
+
 // 우리가 사용할 정보를 가진 Vertex 구조체
+#if !PRAC10
 struct Vertex {
 	XMFLOAT3 Pos;
 	XMFLOAT4 Color;
 };
+#else
+struct Vertex {
+	XMFLOAT3 Pos;
+	XMCOLOR Color;
+};
+#endif
+
+// 연습 문제 2
+#if PRAC2
+struct VPosData {
+	XMFLOAT3 Pos;
+};
+
+struct VColorData {
+	XMFLOAT4 Color;
+};
+#endif
 
 // Object에 매 프레임 마다 Shader에 입력될 친구
 struct ObjectConstants 
 {
 	// Rendering Coords를 결정할 WVP mat
 	XMFLOAT4X4 WVPmat = MathHelper::Identity4x4();
+#if PRAC6 || PRAC14 || PRAC16
+	float Time = 0.f;
+#endif
+#if PRAC16
+	XMFLOAT4 PulseColor;
+#endif
 };
 
 class RenderPracticeApp : public D3DApp
@@ -177,9 +211,15 @@ void RenderPracticeApp::Update(const GameTimer& gt)
 	XMMATRIX wvp = worldMat * viewMat * projMat;
 
 	ObjectConstants objConstants;
-	// hlsl 함수 mul의 특성을 위해 transpose로 넘겨준다.
 	XMStoreFloat4x4(&objConstants.WVPmat, XMMatrixTranspose(wvp));
+#if PRAC6 || PRAC14 || PRAC16
+	objConstants.Time = gt.GetTotalTime();
+#endif
+#if PRAC1
+	objConstants.PulseColor = XMFLOAT4(Colors::DarkBlue);
+#endif
 	m_ObjectCBUpload->CopyData(0, objConstants);
+
 }
 
 void RenderPracticeApp::Draw(const GameTimer& gt)
@@ -245,24 +285,45 @@ void RenderPracticeApp::Draw(const GameTimer& gt)
 	D3D12_VERTEX_BUFFER_VIEW VertexBuffView = m_BoxGeometry->VertexBufferView();
 	D3D12_INDEX_BUFFER_VIEW IndexBuffView = m_BoxGeometry->IndexBufferView();
 	m_CommandList->IASetVertexBuffers(0, 1, &VertexBuffView);
+#if PRAC2
+	m_CommandList->IASetVertexBuffers(1, 1, &VertexBuffView);
+#endif
 	m_CommandList->IASetIndexBuffer(&IndexBuffView);
 
 	// 그리고 TRIANGLELIST으로 그리기로 설정한다.
-	m_CommandList->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	m_CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
 	// Descriptor Table의 0번 View Heap을
 	// Graphics Root Signature로 세팅을 한다.
 	m_CommandList->SetGraphicsRootDescriptorTable(0, m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
 	
 	// Render Target에 그린다.
-	m_CommandList->DrawIndexedInstanced(
-		m_BoxGeometry->DrawArgs["Box"].IndexCount,
-		1,
-		0,
-		0,
-		0
-	);
-	
+	// Box
+	if (!g_bPrac7)
+	{
+
+		m_CommandList->DrawIndexedInstanced(
+			m_BoxGeometry->DrawArgs["Box"].IndexCount, // Indices 수
+			1, // 인스턴스 갯수
+			0, // 첫번째 인덱스 위치
+			0, // Vertex 시작 검색위치
+			0 // 인스턴싱 시작 위치
+		);
+	}
+#if PRAC7
+	// Pyramid
+	else
+	{
+		m_CommandList->DrawIndexedInstanced(
+			m_BoxGeometry->DrawArgs["Pyramid"].IndexCount, // Indices 수
+			1, // 인스턴스 갯수
+			m_BoxGeometry->DrawArgs["Pyramid"].StartIndexLocation,
+			m_BoxGeometry->DrawArgs["Pyramid"].BaseVertexLocation,
+			0 // 인스턴싱 시작 위치
+		);
+	}
+		
+#endif
 	// =============================
 	
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -306,6 +367,9 @@ void RenderPracticeApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
+#if PRAC7
+	g_bPrac7 = g_bPrac7 ? false : true;
+#endif
 }
 
 void RenderPracticeApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
@@ -345,7 +409,7 @@ void RenderPracticeApp::BuildDescriptorHeaps()
 	// ===Constant Buffer를 Pipeline에 전달하기 위한==
 	// =======Descriptor(View) Heap을 만드는 것=======
 
-	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc;
+	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
 	cbvHeapDesc.NumDescriptors = 1;
 	// 이게 Constant Buffer 용이다.
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV; 
@@ -376,7 +440,7 @@ void RenderPracticeApp::BuildConstantBuffers()
 	int boxCBIndex = 0;
 	cbAddress += boxCBIndex * objCBByteSize; // 오프셋을 설정하고
 
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {0};
 	cbvDesc.BufferLocation = cbAddress; // Buffer의 GPU 가상시작주소를 View Desc에 등록한다.
 	cbvDesc.SizeInBytes = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 
@@ -386,7 +450,7 @@ void RenderPracticeApp::BuildConstantBuffers()
 		m_CBViewHeap->GetCPUDescriptorHandleForHeapStart()
 	);
 
-	// 그니까... Constant Buffer가 들어가는 Heap을 만들고.. 
+	// 그니까... Constant Buffer의 View가 들어가는 Heap을 만들고.. 
 	// 그 Buffer의 사이즈는 256 배수로 만들 수 있고,
 	// https://learn.microsoft.com/ko-kr/windows/win32/direct3d12/hardware-support
 	// 이걸 보면 Buffer View가 엄청 많이 들어간다는 걸 알 수 있다.
@@ -454,7 +518,7 @@ void RenderPracticeApp::BuildShadersAndInputLayout()
 	// 쉐이더를 컴파일 해주고
 	HRESULT hr = S_OK;
 
-#if 0 // 오프라인 컴파일 여부
+#if 1 // 오프라인 컴파일 여부
 	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", nullptr, "VS", "vs_5_1");
 	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", nullptr, "PS", "ps_5_1");
 #else
@@ -462,16 +526,125 @@ void RenderPracticeApp::BuildShadersAndInputLayout()
 	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\02_Rendering_PS.cso");
 #endif`
 	// 쉐이더에 데이터를 전달해 주기 위한, 레이아웃을 정의한다.
+
+#if PRAC2
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
+
+#elif PRAC10
+	m_InputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_B8G8R8A8_UNORM , 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+#else
+	m_InputLayout =
+	{
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	};
+#endif
+
+	// 연습문제 1
+	/*
+	D3D12_INPUT_ELEMENT_DESC practice1[] = {
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 3, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 1, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 3 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3) * 3 + sizeof(XMFLOAT2) * 2, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+	};
+	*/
 }
 
 void RenderPracticeApp::BuildBoxGeometry()
 {
 	// 우리가 그릴 도형를 정의한다.
+#if PRAC4
+	std::array<Vertex, 5> vertices =
+	{
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(0.0f, +1.0f, 0.0f), XMFLOAT4(Colors::Red) }),
+	};
+
+	std::array<std::uint16_t, 18> indices =
+	{
+		// front face
+		0, 4, 1,
+
+		// back face
+		2, 3, 4,
+
+		// left face
+		0, 2, 4,
+
+		// right face
+		1, 4, 3,
+
+		// bottom face
+		0, 1, 3,
+		0, 3, 2
+	};
+
+#elif PRAC10
+	uint32_t	ui32_white = 0xffffffff;
+	uint32_t	ui32_Black = 0xff000000;
+	uint32_t	ui32_Red = 0xffff0000;
+	uint32_t	ui32_Green = 0xff00ff00;
+	uint32_t	ui32_Blue = 0xff0000ff;
+	uint32_t	ui32_Yellow = 0xffffff00;
+	uint32_t	ui32_Cyan = 0xff00ffff;
+	uint32_t	ui32_Magenta = 0xffff00ff;
+	uint32_t	ui32_Test = 0xbb884400;
+
+
+	std::array<Vertex, 8> vertices =
+	{
+		
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMCOLOR(ui32_white)}),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMCOLOR(ui32_Black)}),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMCOLOR(ui32_Red)}),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMCOLOR(ui32_Green) }),
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMCOLOR(ui32_Blue)}),
+		Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMCOLOR(ui32_Yellow) }),
+		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMCOLOR(ui32_Cyan)}),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMCOLOR(ui32_Magenta)})
+	};		
+
+	std::array<std::uint16_t, 36> indices =
+	{
+		// front face
+		0, 1, 2,
+		0, 2, 3,
+
+		// back face
+		4, 6, 5,
+		4, 7, 6,
+
+		// left face
+		4, 5, 1,
+		4, 1, 0,
+
+		// right face
+		3, 2, 6,
+		3, 6, 7,
+
+		// top face
+		1, 5, 6,
+		1, 6, 2,
+
+		// bottom face
+		4, 0, 3,
+		4, 3, 7
+	};
+#else
 	std::array<Vertex, 8> vertices =
 	{
 		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
@@ -510,31 +683,93 @@ void RenderPracticeApp::BuildBoxGeometry()
 		4, 0, 3,
 		4, 3, 7
 	};
+#endif
 
-	// ByteSize를 구하고
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+#if PRAC7
+	std::array<Vertex, 5> vertices_Pyramid =
+	{
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Green) }),
+		Vertex({ XMFLOAT3(0.0f, +1.0f, 0.0f), XMFLOAT4(Colors::Red) }),
+	};
+
+	std::array<std::uint16_t, 18> indices_Pyramid =
+	{
+		// front face
+		0, 4, 1,
+
+		// back face
+		2, 3, 4,
+
+		// left face
+		0, 2, 4,
+
+		// right face
+		1, 4, 3,
+
+		// bottom face
+		0, 1, 3,
+		0, 3, 2
+	};
+#endif
 
 	// 내부적으로 Resource 관리를 편하게 하고, Rendering Pipeline에 등록을 편하게 해주는
 	// MeshGeometry 클래스를 이용한다.
 	m_BoxGeometry = std::make_unique<MeshGeometry>();
 	m_BoxGeometry->Name = "Box_Geo";
-	
+
+	// ByteSize를 구하고
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
 	// CPU에 올릴 Buffer를 Blob으로 만들어주고
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &(m_BoxGeometry->VertexBufferCPU)));
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &(m_BoxGeometry->IndexBufferCPU)));
+	UINT vbByteSize_Total = vbByteSize;
+	UINT ibByteSize_Total = ibByteSize;
+#if PRAC7
+	const UINT vbByteSize_Pyramid = (UINT)vertices_Pyramid.size() * sizeof(Vertex);
+	const UINT ibByteSize_Pyramid = (UINT)indices_Pyramid.size() * sizeof(std::uint16_t);
+
+	vbByteSize_Total += vbByteSize_Pyramid;
+	ibByteSize_Total += ibByteSize_Pyramid;
+#endif
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize_Total, &(m_BoxGeometry->VertexBufferCPU)));
+	ThrowIfFailed(D3DCreateBlob(ibByteSize_Total, &(m_BoxGeometry->IndexBufferCPU)));
 
 	// memcpy를 이용해, Blob에 진짜로 값을 복사해준다.
-	CopyMemory(m_BoxGeometry->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-	CopyMemory(m_BoxGeometry->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+	BYTE* VertexBufferPointer = static_cast<BYTE*>(m_BoxGeometry->VertexBufferCPU->GetBufferPointer());
+	BYTE* IndexBufferPointer = static_cast<BYTE*>(m_BoxGeometry->IndexBufferCPU->GetBufferPointer());
+
+	CopyMemory(VertexBufferPointer, vertices.data(), vbByteSize);
+	CopyMemory(VertexBufferPointer, indices.data(), ibByteSize);
+
+#if PRAC7
+	CopyMemory(VertexBufferPointer + vbByteSize, vertices_Pyramid.data(), vbByteSize_Pyramid);
+	CopyMemory(VertexBufferPointer + ibByteSize, indices_Pyramid.data(), ibByteSize_Pyramid);
+
+	std::array<Vertex, (UINT)vertices.size() + (UINT)vertices_Pyramid.size()> vertices_Total;
+	std::array<std::uint16_t, (UINT)indices.size() + (UINT)indices_Pyramid.size()> Indices_Total;
+
+	auto verIter = std::copy(vertices.cbegin(), vertices.cend(), vertices_Total.begin());
+	std::copy(vertices_Pyramid.cbegin(), vertices_Pyramid.cend(), verIter);
+
+	auto IdxIter = std::copy(indices.cbegin(), indices.cend(), Indices_Total.begin());
+	std::copy(indices_Pyramid.cbegin(), indices_Pyramid.cend(), IdxIter);
+#else
+	std::array<Vertex, (UINT)vertices.size()> vertices_Total = vertices;
+	std::array<std::uint16_t, (UINT)indices.size()> Indices_Total = indices;
+#endif
+
 
 	// 이제 GPU에도 Upload heap을 타고가서 Default Buffer로
 	// Geometry 정보를 올려준다.
 	m_BoxGeometry->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		vertices.data(),
-		vbByteSize,
+		vertices_Total.data(),
+		vbByteSize_Total,
 		// 이렇게 Upload Resource를 따로 가지고 있는 이유는
 		m_BoxGeometry->VertexBufferUploader 
 		// command list 로 작업이 이뤄지고, GPU가 언제 복사를
@@ -544,8 +779,8 @@ void RenderPracticeApp::BuildBoxGeometry()
 	m_BoxGeometry->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		indices.data(),
-		ibByteSize,
+		Indices_Total.data(),
+		ibByteSize_Total,
 		// 요것도 마찬가지로, 함부로 파괴가 되지 않도록 가지고 있는 것
 		m_BoxGeometry->IndexBufferUploader
 	);
@@ -553,9 +788,10 @@ void RenderPracticeApp::BuildBoxGeometry()
 	// GPU에서 정보를 잘 읽기 위한
 	// 속성 정보를 등록해주고
 	m_BoxGeometry->VertexByteStride = sizeof(Vertex);
-	m_BoxGeometry->VertexBufferByteSize = vbByteSize;
+	m_BoxGeometry->VertexBufferByteSize = vbByteSize_Total;
 	m_BoxGeometry->IndexFormat = DXGI_FORMAT_R16_UINT;
-	m_BoxGeometry->IndexBufferByteSize = ibByteSize;
+	m_BoxGeometry->IndexBufferByteSize = ibByteSize_Total;
+
 
 	// 현재 버퍼에는 메쉬가 하나만 들어있기 때문에
 	// 따로 지정할 오프셋은 존재하지 않는다.
@@ -566,6 +802,15 @@ void RenderPracticeApp::BuildBoxGeometry()
 
 	// 서브 메쉬는 이렇게 Map에 저장을 하게 된다.
 	m_BoxGeometry->DrawArgs["Box"] = subMesh;
+
+#if PRAC7
+	SubmeshGeometry subMesh_Pyramid;
+	subMesh_Pyramid.IndexCount = (UINT)indices_Pyramid.size();
+	subMesh_Pyramid.StartIndexLocation = (UINT)indices.size();
+	subMesh_Pyramid.BaseVertexLocation = (UINT)vertices.size();
+	
+	m_BoxGeometry->DrawArgs["Pyramid"] = subMesh_Pyramid;
+#endif
 }
 
 void RenderPracticeApp::BuildPSO()
@@ -590,7 +835,10 @@ void RenderPracticeApp::BuildPSO()
 		m_psByteCode->GetBufferSize()
 	};
 	// Rasterizer State (일단은 디폴트)
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	D3D12_RASTERIZER_DESC rasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	//rasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	//rasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+	psoDesc.RasterizerState = rasterizerState;
 	// Blend State (일단은 디폴트)
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	// Depth-Stencil State (일단은 디폴트)
