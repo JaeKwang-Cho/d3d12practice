@@ -129,7 +129,7 @@ void D3DApp::CreateRtvAndDsvDescriptorHeaps()
 	// Descriptor(View) Heap 설정과 생성
 	// ============================================
 
-	// render target heap
+	// 렌더타겟 힙
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
 
     rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
@@ -142,7 +142,7 @@ void D3DApp::CreateRtvAndDsvDescriptorHeaps()
 		IID_PPV_ARGS(m_RtvHeap.GetAddressOf())
 	));
 
-	// depth - stencil heap
+	// 뎁스 스텐실 힙
     D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
 
     dsvHeapDesc.NumDescriptors = 1;
@@ -156,6 +156,10 @@ void D3DApp::CreateRtvAndDsvDescriptorHeaps()
 
 void D3DApp::OnResize()
 {
+	// ======================================
+	//7번 8번 친구들은 CommandList로 해줘야한다.
+	// ======================================
+
 	assert(m_d3dDevice);
 	assert(m_SwapChain);
     assert(m_CommandAllocator);
@@ -182,18 +186,35 @@ void D3DApp::OnResize()
 		DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH));
 
 	m_CurrBackBuffer = 0;
+
+
+	// ==================   #7   ==================
+	// RenderTarget View (Descriptor) 설정과 생성
+	// ============================================
  
 	// CD3DX12_CPU_DESCRIPTOR_HANDLE을 이용해서 좀 더 편하게(?)
-	// 
+	// 도우미 CPU Descriptor 구조체를 0번으로 초기화 한다.
+	// 후면 버퍼는 CPU 자원이고, 이것을 View로 만들어서 GPU에게 넘겨줘야 하는 것
+
 	// Render target heap의 시작 handle을가져오고
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHeapHandle(m_RtvHeap->GetCPUDescriptorHandleForHeapStart());
 	for (UINT i = 0; i < SwapChainBufferCount; i++)
 	{
 		// heap handle과 Buffer로 view(descriptor)을 만든다.
+		// 스왑체인에서 버퍼를 얻고
 		ThrowIfFailed(m_SwapChain->GetBuffer(i, IID_PPV_ARGS(&m_SwapChainBuffer[i])));
+		// 해당버퍼에 대한 render target view를 만들고
 		m_d3dDevice->CreateRenderTargetView(m_SwapChainBuffer[i].Get(), nullptr, rtvHeapHandle);
+		// 힙 핸들을 다음 번호로 넘긴다.
 		rtvHeapHandle.Offset(1, m_RtvDescriptorSize);
 	}
+
+	// ==================   #8   ==================
+	// Depth-Stencil View (Descriptor) 설정과 생성
+	// ============================================
+
+	// 얘는 GPU 자원들이여서, GPU 힙에 존재한다.
+	// 그래서 함수 동작도 CPU 자원들과 다르다.
 
     // 얘는 Depth-Stencil View를 만드는 것이다.
     D3D12_RESOURCE_DESC depthStencilDesc = {};
@@ -277,6 +298,10 @@ void D3DApp::OnResize()
 
 	// GPU의 작업이 끝날때 까지 기다린다.
 	FlushCommandQueue();
+
+	// ==================   #9   ==================
+	// Viewport 설정
+	// ============================================
 
 	// 그리고 Viewport와 scissorRect 값을 갱신해준다.
 	m_ScreenViewport.TopLeftX = 0;
@@ -464,23 +489,27 @@ bool D3DApp::InitMainWindow()
 bool D3DApp::InitDirect3D()
 {
 #if defined(DEBUG) || defined(_DEBUG) 
-	// Enable the D3D12 debug layer.
+	// d3d12 디버그 레이어 활성화 (*** 이게 세상에서 제일 중요 ㄹㅇㅋㅋ ***)
 {
 	ComPtr<ID3D12Debug> debugController;
 	ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController)));
 	debugController->EnableDebugLayer();
 }
 #endif
+	// ==================   #1   ==================
+	// 하드웨어 어뎁터를 대표하는 ID3D12Device 초기화
+	// ============================================
 
+	// DXGI 개체를 생성하는 팩토리 생성
 	ThrowIfFailed(CreateDXGIFactory1(IID_PPV_ARGS(&m_dxgiFactory)));
 
 	// Try to create hardware device.
 	HRESULT hardwareResult = D3D12CreateDevice(
 		nullptr,             // 디폴트 어뎁터
-		D3D_FEATURE_LEVEL_11_0,
-		IID_PPV_ARGS(&m_d3dDevice));
+		D3D_FEATURE_LEVEL_11_0, // 최소로 지원하는게 D3D11
+		IID_PPV_ARGS(&m_d3dDevice)); // 출력변수
 
-	// Fallback to WARP device.
+	// 만약 그래픽 카드가 없다면, Warp 어댑터를 만든다.
 	if(FAILED(hardwareResult))
 	{
 		ComPtr<IDXGIAdapter> pWarpAdapter;
@@ -492,17 +521,24 @@ bool D3DApp::InitDirect3D()
 			IID_PPV_ARGS(&m_d3dDevice)));
 	}
 
+	// ==================   #2   ==================
+	// CPU, GPU 동기화를 위한 Fence와 View(Descriptor) Size
+	// ============================================
+
+	// fence 객체를 만들고
 	ThrowIfFailed(m_d3dDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE,
 		IID_PPV_ARGS(&m_Fence)));
 
+	// GPU 마다 정해진 view 크기 값 가져오기
 	m_RtvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 	m_DsvDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	m_CbvSrvUavDescriptorSize = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    // Check 4X MSAA quality support for our back buffer format.
-    // All Direct3D 11 capable devices support 4X MSAA for all render 
-    // target formats, so we only need to check quality support.
+	// ==================   #3   ==================
+	// Multi-Sampling Anti-Aliasing 수준 설정하기
+	// ============================================
 
+	// d3d11 급에서는 4X MSAA를 지원한다.
 	D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS msQualityLevels = {};
 
 	msQualityLevels.Format = m_BackBufferFormat;
@@ -530,15 +566,21 @@ bool D3DApp::InitDirect3D()
 
 void D3DApp::CreateCommandObjects()
 {
+
+	// ==================   #4   ==================
+	// Command Queue, Command Allocator, Command List 생성하기
+	// ============================================
+
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+	// DIRECT 타입으로 큐를 먼저 만들고
 	ThrowIfFailed(m_d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_CommandQueue)));
-
+	// 그에 맞춰서 얼로케이터를 만든 다음에
 	ThrowIfFailed(m_d3dDevice->CreateCommandAllocator(
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
 		IID_PPV_ARGS(m_CommandAllocator.GetAddressOf())));
-
+	// 얼로케이터를 넘겨주면서 리스트를 만든다.
 	ThrowIfFailed(m_d3dDevice->CreateCommandList(
 		0,
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -546,15 +588,18 @@ void D3DApp::CreateCommandObjects()
 		nullptr,                   // Initial PipelineStateObject
 		IID_PPV_ARGS(m_CommandList.GetAddressOf())));
 
-	// Start off in a closed state.  This is because the first time we refer 
-	// to the command list we will Reset it, and it needs to be closed before
-	// calling Reset.
+	// 닫힌 상태로 시작
+	// 명령 목록 참조를 위한 Reset을 하려면 닫힌 상태로 해야 한다.
 	m_CommandList->Close();
 }
 
 void D3DApp::CreateSwapChain()
 {
-    // Release the previous swapchain we will be recreating.
+	// ==================   #5   ==================
+	// Swap Chain 설정과 생성
+	// ============================================
+
+	// 이전에 있던 ComPtr 해제
     m_SwapChain.Reset();
 
     DXGI_SWAP_CHAIN_DESC sd = {};
@@ -574,7 +619,7 @@ void D3DApp::CreateSwapChain()
 	sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
 
-	// Note: Swap chain uses queue to perform flush.
+	// SwapChain은 Command Queue를 이용해서 자동으로 flush를 수행한다고 한다.
     ThrowIfFailed(m_dxgiFactory->CreateSwapChain(
 		m_CommandQueue.Get(),
 		&sd, 
