@@ -18,6 +18,9 @@
     <Filter Include="Commons\헤더 파일">
       <UniqueIdentifier>{d6f6251f-056c-4608-a20a-661c63f7fcff}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{ed9eeb3e-4745-4968-96dd-60de6ee97063}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\d3dApp.h">
@@ -66,8 +69,14 @@
     <Text Include="..\Common\defaultmain.txt" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\02_Rendering_Shader.hlsl" />
-    <None Include="Shaders\02_Rendering_PS.cso" />
-    <None Include="Shaders\02_Rendering_VS.cso" />
+    <None Include="Shaders\02_Rendering_PS.cso">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\02_Rendering_Shader.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\02_Rendering_VS.cso">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

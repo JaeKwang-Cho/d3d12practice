@@ -4,21 +4,58 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{c7f3e66a-045b-4abb-8a92-9834e86e3bff}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Commons">
+      <UniqueIdentifier>{68828e5a-5c9f-43e8-85d3-6bc08a8fc904}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\소스 파일">
+      <UniqueIdentifier>{37b91d9a-51b9-4483-811f-a19b7073fb7a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\헤더 파일">
+      <UniqueIdentifier>{b12e201a-584e-42b3-87b3-894d6cb42c88}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Common\d3dApp.cpp" />
-    <ClCompile Include="..\Common\d3dUtil.cpp" />
-    <ClCompile Include="..\Common\GameTimer.cpp" />
-    <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\Common\d3dApp.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dUtil.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GameTimer.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GeometryGenerator.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameResource.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Common\UploadBuffer.h" />
-    <ClInclude Include="..\Common\d3dApp.h" />
-    <ClInclude Include="..\Common\d3dUtil.h" />
-    <ClInclude Include="..\Common\d3dx12.h" />
-    <ClInclude Include="..\Common\GameTimer.h" />
-    <ClInclude Include="..\Common\MathHelper.h" />
+    <ClInclude Include="..\Common\d3dApp.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dUtil.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dx12.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GameTimer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GeometryGenerator.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\MathHelper.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UploadBuffer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\03_RenderSmoothly_Shader.hlsl">
