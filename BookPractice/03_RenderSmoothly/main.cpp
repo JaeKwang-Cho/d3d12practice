@@ -1,20 +1,36 @@
 ﻿#include "../Common/d3dApp.h"
 #include "../Common/UploadBuffer.h"
+#include "../Common/GeometryGenerator.h"
+#include "FrameResource.h"
 #include <DirectXColors.h>
 
-using namespace DirectX;
+const int g_NumFrameResources = 3;
 
-// 우리가 사용할 정보를 가진 Vertex 구조체
-struct Vertex {
-	XMFLOAT3 Pos;
-	XMFLOAT4 Color;
-};
-
-// Object에 매 프레임 마다 Shader에 입력될 친구
-struct ObjectConstants 
+// vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
+// 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
+struct RenderItem 
 {
-	// Rendering Coords를 결정할 WVP mat
-	XMFLOAT4X4 WVPmat = MathHelper::Identity4x4();
+	RenderItem() = default;
+
+	// item 마다 World를 가지고 있게 한다.
+	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
+
+	// 물체의 상태가 변해서 CB를 업데이트 해야 할 때
+	// Dirty flag를 켜서 새로 업데이트를 한다. (디자인 패턴 관련)
+	// 어쨌든 PassCB는 Frame 마다 갱신을 하므로, Frame 마다 업데이트를 해줘야한다.
+	// 여기서는 g_NumFrameResources 값으로 세팅을 해줘서, 업데이트를 한다
+	int NumFrameDirty = g_NumFrameResources;
+	
+	// Render Item과 GPU에 넘어간 CB가 함께 가지는 Index 값
+	UINT ObjCBIndex = 1;
+
+	// 다른걸 쓸일은 잘 없을 듯
+	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+	// DrawIndexedInstanced 인자이다.
+	UINT IndexCount = 0;
+	UINT StartIndexLocation = 0;
+	int BaseVertexLocation = 0;
 };
 
 class RenderSmoothlyApp : public D3DApp
@@ -23,7 +39,6 @@ public:
 	RenderSmoothlyApp(HINSTANCE hInstance);
 	~RenderSmoothlyApp();
 
-	// 뭐... delete 시키면 편하긴 하다.
 	RenderSmoothlyApp(const RenderSmoothlyApp& _other) = delete;
 	RenderSmoothlyApp& operator=(const RenderSmoothlyApp& _other) = delete;
 
@@ -31,60 +46,73 @@ public:
 
 private:
 	virtual void OnResize() override;
-	virtual void Update(const GameTimer& gt) override;
-	virtual void Draw(const GameTimer& gt) override;
+	virtual void Update(const GameTimer& _gt) override;
+	virtual void Draw(const GameTimer& _gt) override;
 
-	// 돌려가면서 Box를 살펴보기 위해 Input을 오버라이딩 한다.
 	virtual void OnMouseDown(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseUp(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseMove(WPARAM _btnState, int _x, int _y) override;
+	// 이번엔 키보드 입력도 받는다.
+	void OnKeyboardInput(const GameTimer _gt);
+
+	void UpdateCamera(const GameTimer& _gt);
+	void UpdateObjectCBs(const GameTimer& _gt);
+	void UpdateMainPassCB(const GameTimer& _gt);
 
 	void BuildDescriptorHeaps();
-	void BuildConstantBuffers();
+	void BuildConstantBufferView();
 	void BuildRootSignature();
 	void BuildShadersAndInputLayout();
-	void BuildBoxGeometry();
-	void BuildPSO();
+	// 이번엔 박스가 아니라 좀 더 다양한 친구들을 렌더링한다.
+	void BuildShapeGeometry();
+	void BuildPSOs();
+	// 그리고 FrameResource도 만들어서 사용할 것이다.
+	void BuildFrameResources();
+	// 렌더 아이템 구조체도 사용해서, 더 편하게
+	void BuildRenderItems();
+	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems);
+
 
 private:
-	// Rendering Pipeline에 묶일 자원들을 정의하는데 사용되는 ID3D 변수
+	std::vector<std::unique_ptr<FrameResource>> m_FrameResources;
+	FrameResource* m_CurrFrameResource = nullptr;
+	int m_CurrFrameResourceIndex = 0;
+
+	// 요걸 보니까 Root Signature나
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
-
-	// Constant Buffer를 Rendering Pipeline에 Bind 할 때 사용하는 View Heap
+	// Descriptor 힙은, 하나씩만 있어도 되는 것 같다.
 	ComPtr<ID3D12DescriptorHeap> m_CBViewHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> m_SRViewHeap = nullptr;
 
-	// 'UploadBuffer'라는 클래스를 이용해서, Constant 버퍼를 좀더 쉽게 관리한다.
-	// 내부적으로 버퍼 자원의 생성, 파괴, 메모리 해제 등 처리해준다.
-	// 그리고 값을 넣어 줄 수 있는 CopyData()도 제공한다.
-	std::unique_ptr<UploadBuffer<ObjectConstants>> m_ObjectCBUpload = nullptr;
+	// map으로 도형, 쉐이더, PSO를 관리한다.
+	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
+	std::unordered_map<std::string, ComPtr<ID3DBlob>> m_Shaders;
+	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> m_PSOs;
 
-	// 'MeshGeometry'라는 클래스를 이용해서, Vertice, Indices, Stride, Size
-	// 그리고 ID3DBlob(CPU)과 ID3DResource(GPU, Upload)도 맴버로 가진다.
-	std::unique_ptr<MeshGeometry> m_BoxGeometry = nullptr;
-
-	// 컴파일 한 Vertex Shader와 Pixel Shader를 Binary Large Object로 가지고 있는다
-	ComPtr<ID3DBlob> m_vsByteCode = nullptr;
-	ComPtr<ID3DBlob> m_psByteCode = nullptr;
-
-	// Vertex 구조체를 Shader에게 넘겨주는 layout을 정의한다.
+	// input layout도 백터로 가지고 있는다
 	std::vector<D3D12_INPUT_ELEMENT_DESC> m_InputLayout;
 
-	// Rendering 하는데 필요한 온갖 데이터와, 설정들을
-	// 합쳐서 Rendering Pipeline을 최종적으로 제어하는
-	// PipeLine State Object
-	ComPtr<ID3D12PipelineState> m_PSO = nullptr;
+	// RenderItem 리스트
+	std::vector<std::unique_ptr<RenderItem>> m_AllItems;
+	// PSO에 의해 구분된다.
+	std::vector<RenderItem*> m_OpaqueItems;
 
-	// WVP mat
-	XMFLOAT4X4 m_WorldMat = MathHelper::Identity4x4();
-	XMFLOAT4X4 m_ViewMat= MathHelper::Identity4x4();
+	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
+	PassConstants m_MainPassCB;
+	// View Heap에 필요한 Offset 이다.
+	UINT m_PassCBViewOffset = 0;
+
+	bool m_bWireframe = false;
+
+	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
+	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
-	// 카메라 돌리는 용도
-	float m_Theta = 1.5f * XM_PI; // 좌우
-	float m_Phi = XM_PIDIV4; // 상하
-	float m_Radius = 5.f;
+	float m_Phi = 1.5f * XM_PI;
+	float m_Theta = 0.2f * XM_PI;
+	float m_Radius = 15.f;
 
-	POINT m_LastMousePos = {0, 0};
+	POINT m_LastMousePos = {};
 };
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
@@ -118,6 +146,10 @@ RenderSmoothlyApp::RenderSmoothlyApp(HINSTANCE hInstance)
 
 RenderSmoothlyApp::~RenderSmoothlyApp()
 {
+	if (m_d3dDevice != nullptr)
+	{
+		FlushCommandQueue();
+	}
 }
 
 bool RenderSmoothlyApp::Initialize()
@@ -129,12 +161,21 @@ bool RenderSmoothlyApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
-	BuildDescriptorHeaps();
-	BuildConstantBuffers();
+	// 여기서는 공동으로 쓰는 RootSignature를 먼저 정의한다.
 	BuildRootSignature();
+	// 그리고 FrameResources 마다 쓰는 걸 정의하고
 	BuildShadersAndInputLayout();
-	BuildBoxGeometry();
-	BuildPSO();
+	// Item 마다 쓰는걸 정의한다.
+	BuildShapeGeometry();
+	BuildRenderItems();
+	// 이제 FrameResource를 만들고
+	BuildFrameResources();
+	// ViewHeap에다가
+	BuildDescriptorHeaps();
+	// CBView를 끼워 넣는다.
+	BuildConstantBufferView();
+	// 이제 PSO를 만들어서, 돌리면서 렌더링할 준비를 한다.
+	BuildPSOs();
 
 	// 초기화 요청이 들어간 Command List를 Queue에 등록한다.
 	ThrowIfFailed(m_CommandList->Close());
@@ -156,45 +197,57 @@ void RenderSmoothlyApp::OnResize()
 	XMStoreFloat4x4(&m_ProjMat, projMat);
 }
 
-void RenderSmoothlyApp::Update(const GameTimer& gt)
+void RenderSmoothlyApp::Update(const GameTimer& _gt)
 {
-	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
-	float x = m_Radius * sinf(m_Phi) * cosf(m_Theta);
-	float z = m_Radius * sinf(m_Phi) * sinf(m_Theta);
-	float y = m_Radius * cosf(m_Phi);
+	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
+	OnKeyboardInput(_gt);
+	UpdateCamera(_gt);
 
-	// View(Camera) Mat을 초기화 한다.
-	XMVECTOR pos = XMVectorSet(x, y, z, 1.f); // 카메라 위치
-	XMVECTOR target = XMVectorZero(); // 카메라 바라보는 곳
-	XMVECTOR up = XMVectorSet(0.f, 1.f, 0.f, 0.f); // 월드(?) 업 벡터
+	// 원형 배열을 돌면서
+	m_CurrFrameResourceIndex = (m_CurrFrameResourceIndex + 1) % g_NumFrameResources;
+	m_CurrFrameResource = m_FrameResources[m_CurrFrameResourceIndex].get();
 
-	XMMATRIX viewMat = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&m_ViewMat, viewMat);
-
-	// WVP mat을 Object Constant 용 Upload Buffer에 올려준다.
-	XMMATRIX worldMat = XMLoadFloat4x4(&m_WorldMat);
-	XMMATRIX projMat = XMLoadFloat4x4(&m_ProjMat);
-	XMMATRIX wvp = worldMat * viewMat * projMat;
-
-	ObjectConstants objConstants;
-	XMStoreFloat4x4(&objConstants.WVPmat, XMMatrixTranspose(wvp));
-	m_ObjectCBUpload->CopyData(0, objConstants);
-
+	// GPU가 너무 느려서, 한바꾸 돌았을 경우를 대비한다.
+	if (m_CurrFrameResource->Fence != 0 && m_Fence->GetCompletedValue() < m_CurrFrameResource->Fence)
+	{
+		HANDLE eventHandle = CreateEventEx(nullptr, nullptr, false, EVENT_ALL_ACCESS);
+		ThrowIfFailed(m_Fence->SetEventOnCompletion(m_CurrFrameResource->Fence, eventHandle));
+		if (eventHandle != NULL)
+		{
+			DWORD result = WaitForSingleObject(eventHandle, INFINITE);
+			CloseHandle(eventHandle);
+		}
+		else
+		{
+			assert("eventHandle is NULL" && false);
+			// need to terminate App.
+		}
+	}
+	// CB를 업데이트 해준다.
+	UpdateObjectCBs(_gt);
+	UpdateMainPassCB(_gt);
 }
 
-void RenderSmoothlyApp::Draw(const GameTimer& gt)
+void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 {
-	// 생성한 Command Allocator를 재사용 하기 위해서 Reset을 거는 것이다.
-	// 하지만 Command List에 있는 모든 작업이 끝나야 Reset을 할 수 있다.
-	ThrowIfFailed(m_CommandAllocator->Reset());
+	// 현재 FrameResource가 가지고 있는 allocator를 가지고 와서 초기화 한다.
+	auto CommandAllocator = m_CurrFrameResource->CmdListAlloc;
+	ThrowIfFailed(CommandAllocator->Reset());
 
 	// Command List도 초기화를 한다
 	// 근데 Command List에 Reset()을 걸려면, 한번은 꼭 Command Queue에 
 	// ExecuteCommandList()로 등록이 된적이 있어야 가능하다.
 
-	// 이제는 PSO를 등록하면서 Command List를 초기화 한다.
-	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), m_PSO.Get()));
-
+	// PSO별로 등록하면서, Allocator와 함께, Command List를 초기화 한다.
+	if (m_bWireframe)
+	{
+		ThrowIfFailed(m_CommandList->Reset(CommandAllocator.Get(), m_PSOs["opaque_wireframe"].Get()));
+	}
+	else
+	{
+		ThrowIfFailed(m_CommandList->Reset(CommandAllocator.Get(), m_PSOs["opaque"].Get()));
+	}
+	
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
 	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
@@ -229,42 +282,22 @@ void RenderSmoothlyApp::Draw(const GameTimer& gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 
-	// ==== 준비된 Box drawing ======
+	// ==== 준비된 도형 그리기 ======
 	
-	// 초기화때 생성했던 CB 값을 넘겨주기 위한 ViewHeap으로 배열을 하나 만든다.
+	// View heap과 
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CBViewHeap.Get() };
-
-	// 그리고 그 배열을 GPU에 세팅하도록 Command List에 요청한다.
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-
-	// 초기화 때 만들었던 Root Signature도 GPU에 등록한다.
+	// Signature를 세팅한다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
-	// Descriptor Table의 0번 View Heap을
-	// Graphics Root Signature로 세팅을 한다.
-	m_CommandList->SetGraphicsRootDescriptorTable(0, m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
-
-	// Vertex 와 Index 정보를 넣어서 Default Buffer로 만들어 놨던 걸
-	// Input Assembly 단계에 넣는다.
-	D3D12_VERTEX_BUFFER_VIEW VertexBuffView = m_BoxGeometry->VertexBufferView();
-	D3D12_INDEX_BUFFER_VIEW IndexBuffView = m_BoxGeometry->IndexBufferView();
-	m_CommandList->IASetVertexBuffers(0, 1, &VertexBuffView);
-	m_CommandList->IASetIndexBuffer(&IndexBuffView);
-
-	// 그리고 TRIANGLELIST으로 그리기로 설정한다.
-	m_CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	// Frame Offset의 View Heap Offset으로 Descriptor Handle을 구한다.
+	int passCBViewIndex = m_PassCBViewOffset + m_CurrFrameResourceIndex;
+	auto passCBViewHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
+	passCBViewHandle.Offset(passCBViewIndex, m_CbvSrvUavDescriptorSize);
+	// 
+	m_CommandList->SetGraphicsRootDescriptorTable(1, passCBViewHandle);
 
 
-	
-	// Render Target에 그린다.
-	// Box
-	m_CommandList->DrawIndexedInstanced(
-		m_BoxGeometry->DrawArgs["Box"].IndexCount, // Indices 수
-		1, // 인스턴스 갯수
-		0, // 첫번째 인덱스 위치
-		0, // Vertex 시작 검색위치
-		0 // 인스턴싱 시작 위치
-	);
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -342,16 +375,105 @@ void RenderSmoothlyApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
+void RenderSmoothlyApp::OnKeyboardInput(const GameTimer _gt)
+{
+	if (GetAsyncKeyState('1') & 0x8000)
+	{
+		m_bWireframe = true;
+	}
+	else
+	{
+		m_bWireframe = false;
+	}
+}
+
+void RenderSmoothlyApp::UpdateCamera(const GameTimer& _gt)
+{
+	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
+	m_EyePos.x = m_Radius * sinf(m_Phi) * cosf(m_Theta);
+	m_EyePos.z = m_Radius * sinf(m_Phi) * sinf(m_Theta);
+	m_EyePos.y = m_Radius * cosf(m_Phi);
+
+	// View(Camera) Mat을 초기화 한다.
+	XMVECTOR pos = XMVectorSet(m_EyePos.x, m_EyePos.y, m_EyePos.z, 1.f); // 카메라 위치
+	XMVECTOR target = XMVectorZero(); // 카메라 바라보는 곳
+	XMVECTOR up = XMVectorSet(0.f, 1.f, 0.f, 0.f); // 월드(?) 업 벡터
+
+	XMMATRIX viewMat = XMMatrixLookAtLH(pos, target, up);
+	XMStoreFloat4x4(&m_ViewMat, viewMat);
+}
+
+void RenderSmoothlyApp::UpdateObjectCBs(const GameTimer& _gt)
+{
+	auto currObjectCB = m_CurrFrameResource->ObjectCB.get();
+	for (auto& e : m_AllItems)
+	{
+		// Constant Buffer가 변경됐을 때 Update를 한다.
+		if (e->NumFrameDirty > 0)
+		{
+			// CPU에 있는 값을 가져와서
+			XMMATRIX worldMat = XMLoadFloat4x4(&e->WorldMat);
+
+			ObjectConstants objConstants;
+			XMStoreFloat4x4(&objConstants.WorldMat, XMMatrixTranspose(worldMat));
+			// CB에 넣어주고
+			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
+
+			// 다음 FrameResource에서 업데이트를 하도록 설정한다.
+			e->NumFrameDirty--;
+		}
+	}
+}
+
+void RenderSmoothlyApp::UpdateMainPassCB(const GameTimer& _gt)
+{
+	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ViewMat);
+	XMMATRIX ProjMat = XMLoadFloat4x4(&m_ProjMat);
+
+	XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
+	XMMATRIX InvViewMat = XMMatrixInverse(&XMMatrixDeterminant(ViewMat), ViewMat);
+	XMMATRIX InvProjMat = XMMatrixInverse(&XMMatrixDeterminant(ProjMat), ProjMat);
+	XMMATRIX InvVPMat = XMMatrixInverse(&XMMatrixDeterminant(VPMat), VPMat);
+
+	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
+	XMStoreFloat4x4(&m_MainPassCB.ProjMat, XMMatrixTranspose(ProjMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
+	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
+
+	m_MainPassCB.EyePosW = m_EyePos;
+	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
+	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
+	m_MainPassCB.NearZ = 1.f;
+	m_MainPassCB.FarZ = 1000.f;
+	m_MainPassCB.TotalTime = _gt.GetTotalTime();
+	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
+	
+	auto currPassCB = m_CurrFrameResource->PassCB.get();
+	currPassCB->CopyData(0, m_MainPassCB);
+}
+
 void RenderSmoothlyApp::BuildDescriptorHeaps()
 {
 	// ===Constant Buffer를 Pipeline에 전달하기 위한==
 	// =======Descriptor(View) Heap을 만드는 것=======
 
+	// Object 개수마다 사용하기로 정한 Frame Resouces 개수만큼 CB Descriptor 가 필요하다.
+	// 그리고 Pass CB용 Descriptor도 필요하다. 그러니깐
+	UINT objCount = (UINT)m_OpaqueItems.size();
+	// 이렇게 1을 더한뒤, 사용하기로한 프레임 리소스를 곱하면? ㅇㅇ
+	UINT numDescriptors = (objCount + 1) * g_NumFrameResources;
+
+	// 그리고 Pass View가 힙에 저장될 위치에 쓰일 Offset도 미리 구해놓는다.
+	m_PassCBViewOffset = objCount * g_NumFrameResources;
+	
+
 	D3D12_DESCRIPTOR_HEAP_DESC cbvHeapDesc = {};
-	cbvHeapDesc.NumDescriptors = 1;
+	cbvHeapDesc.NumDescriptors = numDescriptors;
 	// 이게 Constant Buffer 용이다.
 	cbvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV; 
-	// Shader가 참조할 수 있도록 Command List에 Bind 된다.
+	// flag를 이렇게 해야, Shader가 참조할 수 있도록 Command List에 Bind 된다.
 	cbvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE; 
 	cbvHeapDesc.NodeMask = 0; // 다중 어뎁터를 할 일이 생길까?
 
@@ -359,80 +481,100 @@ void RenderSmoothlyApp::BuildDescriptorHeaps()
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&m_CBViewHeap)));
 }
 
-void RenderSmoothlyApp::BuildConstantBuffers()
+void RenderSmoothlyApp::BuildConstantBufferView()
 {
 	// Descriptor(View)을 타고, Pipe line에 넘어갈 Buffer를 만든다.
 
-	m_ObjectCBUpload = std::make_unique<UploadBuffer<ObjectConstants>>(m_d3dDevice.Get(), 1, true);
-	// CPU 에서도 접근 할 수 있는 Upload Heap에 Buffer를 만들었고,
-	// 내부적으로 가지고 있는 ID3D12Resource 와 Map()로 
-	// Resource의 Pointer를 얻어내서 (요것도 내부적으로 가진다. 변하지 않는 값이다.)
-	// Constant Buffer의 값을 바꿀 수 있다.
-	
-	// 256 바이트 align을 하고
+	// 일단 CB Size를 Byte로 구한다.
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	// 물체 개수를 구하고
+	UINT objCount = (UINT)m_OpaqueItems.size();
 
-	// (ID3D12Resource::GetGPUVirtualAddress - Buffer Resource에만 유효하다.)
-	// GPU buffer의 시작 주소를 저장하고
-	D3D12_GPU_VIRTUAL_ADDRESS cbAddress = m_ObjectCBUpload->Resource()->GetGPUVirtualAddress();
-	int boxCBIndex = 0;
-	cbAddress += boxCBIndex * objCBByteSize; // 오프셋을 설정하고
+	// object 마다 FrameResource에서 사용할 CB Descriptor을 만든다.
+	for (int frameIndex = 0; frameIndex < g_NumFrameResources; frameIndex++)
+	{
+		// 일단 만들기로한 프레임 리소스를 다 돌아다니면서,
+		ID3D12Resource* objectCB = m_FrameResources[frameIndex]->ObjectCB->Resource();
+		// 그리고 만들기로 한 오브젝트 마다
+		for (UINT i = 0; i < objCount; i++)
+		{
+			// 그 친구가 가지고 있는 CB UploadBuffer에
+			D3D12_GPU_VIRTUAL_ADDRESS cbAddress = objectCB->GetGPUVirtualAddress();
 
-	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {0};
-	cbvDesc.BufferLocation = cbAddress; // Buffer의 GPU 가상시작주소를 View Desc에 등록한다.
-	cbvDesc.SizeInBytes = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+			// CB 사이즈 Offset으로 넘기고
+			cbAddress += i * objCBByteSize;
 
-	// 그리고 Buffer View를 만든다.
-	m_d3dDevice->CreateConstantBufferView(
-		&cbvDesc,
-		m_CBViewHeap->GetCPUDescriptorHandleForHeapStart()
-	);
+			// 그 값을 View Heap에 연결 시켜준다. 
+			int heapIndex = frameIndex * objCount + i;
+			// 이 값은 CPU에서 갱신해주는 거니깐, CPU Handle에 연결 시킨다.
+			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
+			handle.Offset(heapIndex, m_CbvSrvUavDescriptorSize);
 
-	// 그니까... Constant Buffer의 View가 들어가는 Heap을 만들고.. 
-	// 그 Buffer의 사이즈는 256 배수로 만들 수 있고,
-	// https://learn.microsoft.com/ko-kr/windows/win32/direct3d12/hardware-support
-	// 이걸 보면 Buffer View가 엄청 많이 들어간다는 걸 알 수 있다.
-	// 보니깐 offset으로 접근하는 것 같다.
+			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc; 
+			// 이렇게 주소 연결과, 크기를 지정해준 다음에
+			cbvDesc.BufferLocation = cbAddress;
+			cbvDesc.SizeInBytes = objCBByteSize;
+			// CB Descriptor(View)를 만들어준다.
+			m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+		}
+	}
+
+	// 이제 프레임에 한번 넘기는 Pass CB에 대해 Descriptor를 만들 차례
+
+	// CB의 크기를 미리 구하고
+	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
+
+	for (int frameIndex = 0; frameIndex < g_NumFrameResources; frameIndex++)
+	{
+		ID3D12Resource* passCB = m_FrameResources[frameIndex]->PassCB->Resource();
+		D3D12_GPU_VIRTUAL_ADDRESS cbAddress = passCB->GetGPUVirtualAddress();
+
+		// Heap에서 위치는
+		int heapIndex = m_PassCBViewOffset + frameIndex;
+		auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
+		handle.Offset(heapIndex, m_CbvSrvUavDescriptorSize);
+
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
+		// 위치를 지정해주고, 사이즈도 넣어주고
+		cbvDesc.BufferLocation = cbAddress;
+		cbvDesc.SizeInBytes = passCBByteSize;
+		// CB Descriptor (View)를 만들어준다.
+		m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
+	}
 }
 
 void RenderSmoothlyApp::BuildRootSignature()
 {
-	// Shader가 Resource를 받으려면, Rendering Pipeline에 알맞은 형태로 
-	// Bind가 되어있어야 한다. Root Signature가 그 역할을 한다.
-	// (Shader에게 어떤 Resource가 들어갈지 레지스터 번호로써 정의해준다.)
+	// Root Signature를 2개 만들 것이다.
+	// 하나는 그냥 solid, 하나는 wireframe
+	// view는 하나씩만 들어가고
+	CD3DX12_DESCRIPTOR_RANGE cbvTable0;
+	cbvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // 각각 레지스터 0번
 
-	// ROOT_PARAMETER의 타입은 Table, Contant, Descriptor가 가능하다.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[1];
+	CD3DX12_DESCRIPTOR_RANGE cbvTable1;
+	cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // 1번에 지정한다.
+	
+	// Root Signature parameter Slot에 View Range로 View를 등록해준다.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable0);
+	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable1);
 
-	// 현재 D3D12_ROOT_PARAMETER_TYPE은 CBV가 하나들어가는 descriptor table로 정의한다.
-	// D3D12_ROOT_DESCRIPTOR_TABLE
-	CD3DX12_DESCRIPTOR_RANGE cbvTable;
-	cbvTable.Init(
-		D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 
-		1, // view 개수
-		0 // 등록할 Shader 레지스터 번호
-	);
-	// 그리고 파라미터를 CB view로 초기화 하면서 테이블에 등록한다.
-	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable);
-
-	// ROOT_SIGNATURE는 ROOT_PARAMETER으로 이루어진 배열이다.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc(
-		1,
+	// Root Signature parameter로 Root Signature를 만든다.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		2,
 		slotRootParameter,
-		0, // 샘플러는 
-		nullptr, // 지금 안쓴다.
+		0,
+		nullptr,
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
-
-	// 이제 Constant Buffer가 하나 들어갈 descriptor range를 가리키는,
-	// slot을 하나를 가지는 Root Signature에 넘겨줄 수 있는
-	// 직렬화 된, Root Signature를 만든다.
-	ComPtr<ID3DBlob> serializedRootSignature = nullptr;
+	
+	// 하나의 CB로 만들어진 View Range를 가리키는 하나의 slot으로 root signature를 만든다.
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
 	ComPtr<ID3DBlob> errorBlob = nullptr;
 	HRESULT hr = D3D12SerializeRootSignature(
-		&rootSignatureDesc,
+		&rootSigDesc,
 		D3D_ROOT_SIGNATURE_VERSION_1,
-		serializedRootSignature.GetAddressOf(),
+		serializedRootSig.GetAddressOf(),
 		errorBlob.GetAddressOf()
 	);
 
@@ -441,27 +583,23 @@ void RenderSmoothlyApp::BuildRootSignature()
 		OutputDebugStringA((char*)errorBlob->GetBufferPointer());
 	}
 	ThrowIfFailed(hr);
-
-	// 직렬화된 RootSignatrue를 넘겨준다.
+	// 직렬화 한 Binary를 가지고 Root Signature를 최종적으로 생성한다.
 	ThrowIfFailed(m_d3dDevice->CreateRootSignature(
-		0, // 어뎁터는 하나다. (다중 어뎁터 지원)
-		serializedRootSignature->GetBufferPointer(),
-		serializedRootSignature->GetBufferSize(),
-		IID_PPV_ARGS(&m_RootSignature)
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(m_RootSignature.GetAddressOf())
 	));
 }
 
 void RenderSmoothlyApp::BuildShadersAndInputLayout()
 {
-	// 쉐이더를 컴파일 해주고
-	HRESULT hr = S_OK;
-
 #if 1 // 오프라인 컴파일 여부
-	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "VS", "vs_5_1");
-	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "PS", "ps_5_1");
 #else
-	m_vsByteCode = d3dUtil::LoadBinary(L"Shaders\\02_Rendering_VS.cso");
-	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\02_Rendering_PS.cso");
+	m_vsByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_VS.cso");
+	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_PS.cso");
 #endif
 	// 쉐이더에 데이터를 전달해 주기 위한, 레이아웃을 정의한다.
 
@@ -472,117 +610,11 @@ void RenderSmoothlyApp::BuildShadersAndInputLayout()
 	};
 }
 
-void RenderSmoothlyApp::BuildBoxGeometry()
+void RenderSmoothlyApp::BuildShapeGeometry()
 {
-	// 우리가 그릴 도형를 정의한다.
-
-	std::array<Vertex, 8> vertices =
-	{
-		Vertex({ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::White) }),
-		Vertex({ XMFLOAT3(-1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Black) }),
-		Vertex({ XMFLOAT3(+1.0f, +1.0f, -1.0f), XMFLOAT4(Colors::Red) }),
-		Vertex({ XMFLOAT3(+1.0f, -1.0f, -1.0f), XMFLOAT4(Colors::Green) }),
-		Vertex({ XMFLOAT3(-1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Blue) }),
-		Vertex({ XMFLOAT3(-1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Yellow) }),
-		Vertex({ XMFLOAT3(+1.0f, +1.0f, +1.0f), XMFLOAT4(Colors::Cyan) }),
-		Vertex({ XMFLOAT3(+1.0f, -1.0f, +1.0f), XMFLOAT4(Colors::Magenta) })
-	};
-
-	std::array<std::uint16_t, 36> indices =
-	{
-		// front face
-		0, 1, 2,
-		0, 2, 3,
-
-		// back face
-		4, 6, 5,
-		4, 7, 6,
-
-		// left face
-		4, 5, 1,
-		4, 1, 0,
-
-		// right face
-		3, 2, 6,
-		3, 6, 7,
-
-		// top face
-		1, 5, 6,
-		1, 6, 2,
-
-		// bottom face
-		4, 0, 3,
-		4, 3, 7
-	};
-
-	// 내부적으로 Resource 관리를 편하게 하고, Rendering Pipeline에 등록을 편하게 해주는
-	// MeshGeometry 클래스를 이용한다.
-	m_BoxGeometry = std::make_unique<MeshGeometry>();
-	m_BoxGeometry->Name = "Box_Geo";
-
-	// ByteSize를 구하고
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	// CPU에 올릴 Buffer를 Blob으로 만들어주고
-	UINT vbByteSize_Total = vbByteSize;
-	UINT ibByteSize_Total = ibByteSize;
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize_Total, &(m_BoxGeometry->VertexBufferCPU)));
-	ThrowIfFailed(D3DCreateBlob(ibByteSize_Total, &(m_BoxGeometry->IndexBufferCPU)));
-
-	// memcpy를 이용해, Blob에 진짜로 값을 복사해준다.
-	BYTE* VertexBufferPointer = static_cast<BYTE*>(m_BoxGeometry->VertexBufferCPU->GetBufferPointer());
-	BYTE* IndexBufferPointer = static_cast<BYTE*>(m_BoxGeometry->IndexBufferCPU->GetBufferPointer());
-
-	CopyMemory(VertexBufferPointer, vertices.data(), vbByteSize);
-	CopyMemory(VertexBufferPointer, indices.data(), ibByteSize);
-
-	std::array<Vertex, (UINT)vertices.size()> vertices_Total = vertices;
-	std::array<std::uint16_t, (UINT)indices.size()> Indices_Total = indices;
-
-	// 이제 GPU에도 Upload heap을 타고가서 Default Buffer로
-	// Geometry 정보를 올려준다.
-	m_BoxGeometry->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		vertices_Total.data(),
-		vbByteSize_Total,
-		// 이렇게 Upload Resource를 따로 가지고 있는 이유는
-		m_BoxGeometry->VertexBufferUploader 
-		// command list 로 작업이 이뤄지고, GPU가 언제 복사를
-		// 마칠지 모르기 때문에 함부로 파괴가 안되도록 가지고 있는 것이다.
-	);
-
-	m_BoxGeometry->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		Indices_Total.data(),
-		ibByteSize_Total,
-		// 요것도 마찬가지로, 함부로 파괴가 되지 않도록 가지고 있는 것
-		m_BoxGeometry->IndexBufferUploader
-	);
-
-	// GPU에서 정보를 잘 읽기 위한
-	// 속성 정보를 등록해주고
-	m_BoxGeometry->VertexByteStride = sizeof(Vertex);
-	m_BoxGeometry->VertexBufferByteSize = vbByteSize_Total;
-	m_BoxGeometry->IndexFormat = DXGI_FORMAT_R16_UINT;
-	m_BoxGeometry->IndexBufferByteSize = ibByteSize_Total;
-
-
-	// 현재 버퍼에는 메쉬가 하나만 들어있기 때문에
-	// 따로 지정할 오프셋은 존재하지 않는다.
-	SubmeshGeometry subMesh;
-	subMesh.IndexCount = (UINT)indices.size();
-	subMesh.StartIndexLocation = 0;
-	subMesh.BaseVertexLocation = 0;
-
-	// 서브 메쉬는 이렇게 Map에 저장을 하게 된다.
-	m_BoxGeometry->DrawArgs["Box"] = subMesh;
 }
 
-void RenderSmoothlyApp::BuildPSO()
+void RenderSmoothlyApp::BuildPSOs()
 {
 	// 이제 각종 리소스와, 쉐이더, 상태 등등을
 	// 한번에 제어하는 Pipeline State Object를 정의한다.
@@ -631,4 +663,16 @@ void RenderSmoothlyApp::BuildPSO()
 		&psoDesc,
 		IID_PPV_ARGS(&m_PSO)
 	));
+}
+
+void RenderSmoothlyApp::BuildFrameResources()
+{
+}
+
+void RenderSmoothlyApp::BuildRenderItems()
+{
+}
+
+void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
+{
 }
