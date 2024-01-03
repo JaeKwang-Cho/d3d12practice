@@ -8,7 +8,7 @@ FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objec
 	));
 
 	PassCB = std::make_unique<UploadBuffer<PassConstants>>(_device, _passCount, true);
-	ObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(_device, _passCount, true);
+	ObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(_device, _objectCount, true);
 }
 
 FrameResource::~FrameResource()

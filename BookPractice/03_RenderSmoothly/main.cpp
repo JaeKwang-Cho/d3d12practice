@@ -24,6 +24,8 @@ struct RenderItem
 	// Render Item과 GPU에 넘어간 CB가 함께 가지는 Index 값
 	UINT ObjCBIndex = 1;
 
+	MeshGeometry* Geo = nullptr;
+
 	// 다른걸 쓸일은 잘 없을 듯
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
@@ -297,7 +299,7 @@ void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 	// 
 	m_CommandList->SetGraphicsRootDescriptorTable(1, passCBViewHandle);
 
-
+	DrawRenderItems(m_CommandList.Get(), m_OpaqueItems);
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -352,11 +354,11 @@ void RenderSmoothlyApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 		float dx = XMConvertToRadians(0.25f * static_cast<float>(_x - m_LastMousePos.x));
 		float dy = XMConvertToRadians(0.25f * static_cast<float>(_y - m_LastMousePos.y));
 
-		m_Theta += dx;
-		m_Phi += dy;
+		m_Phi += dx;
+		m_Theta += dy;
 
 		// Phi는 0 ~ Pi 구간을 유지하도록 한다.
-		m_Phi = MathHelper::Clamp(m_Phi, 0.1f, MathHelper::Pi - 0.1f);
+		m_Theta = MathHelper::Clamp(m_Theta, 0.1f, MathHelper::Pi - 0.1f);
 	}
 	// 오른쪽 마우스가 눌린 상태에서 움직이면
 	else if ((_btnState & MK_RBUTTON) != 0)
@@ -390,9 +392,9 @@ void RenderSmoothlyApp::OnKeyboardInput(const GameTimer _gt)
 void RenderSmoothlyApp::UpdateCamera(const GameTimer& _gt)
 {
 	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
-	m_EyePos.x = m_Radius * sinf(m_Phi) * cosf(m_Theta);
-	m_EyePos.z = m_Radius * sinf(m_Phi) * sinf(m_Theta);
-	m_EyePos.y = m_Radius * cosf(m_Phi);
+	m_EyePos.x = m_Radius * sinf(m_Theta) * cosf(m_Phi);
+	m_EyePos.z = m_Radius * sinf(m_Theta) * sinf(m_Phi);
+	m_EyePos.y = m_Radius * cosf(m_Theta);
 
 	// View(Camera) Mat을 초기화 한다.
 	XMVECTOR pos = XMVectorSet(m_EyePos.x, m_EyePos.y, m_EyePos.z, 1.f); // 카메라 위치
@@ -431,9 +433,15 @@ void RenderSmoothlyApp::UpdateMainPassCB(const GameTimer& _gt)
 	XMMATRIX ProjMat = XMLoadFloat4x4(&m_ProjMat);
 
 	XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
-	XMMATRIX InvViewMat = XMMatrixInverse(&XMMatrixDeterminant(ViewMat), ViewMat);
-	XMMATRIX InvProjMat = XMMatrixInverse(&XMMatrixDeterminant(ProjMat), ProjMat);
-	XMMATRIX InvVPMat = XMMatrixInverse(&XMMatrixDeterminant(VPMat), VPMat);
+
+	XMVECTOR DetViewMat = XMMatrixDeterminant(ViewMat);
+	XMMATRIX InvViewMat = XMMatrixInverse(&DetViewMat, ViewMat);
+
+	XMVECTOR DetProjMat = XMMatrixDeterminant(ProjMat);
+	XMMATRIX InvProjMat = XMMatrixInverse(&DetProjMat, ProjMat);
+
+	XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
+	XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
 
 	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
@@ -552,12 +560,12 @@ void RenderSmoothlyApp::BuildRootSignature()
 	cbvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // 각각 레지스터 0번
 
 	CD3DX12_DESCRIPTOR_RANGE cbvTable1;
-	cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // 1번에 지정한다.
+	cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1); // 1번에 지정한다.
 	
 	// Root Signature parameter Slot에 View Range로 View를 등록해준다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
 	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable0);
-	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable1);
+	slotRootParameter[1].InitAsDescriptorTable(1, &cbvTable1);
 
 	// Root Signature parameter로 Root Signature를 만든다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
@@ -612,67 +620,302 @@ void RenderSmoothlyApp::BuildShadersAndInputLayout()
 
 void RenderSmoothlyApp::BuildShapeGeometry()
 {
+	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
+	GeometryGenerator geoGenerator;
+	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
+	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
+	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
+	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+	
+	// 이거를 하나의 버퍼로 전부 연결한다.
+
+	// 그 전에, 각종 속성 들을 저장해 놓는다.
+	// vertex offset
+	UINT boxVertexOffset = 0;
+	UINT gridVertexOffset = (UINT)box.Vertices.size();
+	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
+	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
+
+	// index offset
+	UINT boxIndexOffset = 0;
+	UINT gridIndexOffset = (UINT)box.Indices32.size();
+	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
+	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
+
+	// 한방에 할꺼라서 MeshGeometry에 넣을
+	// SubGeometry로 정의한다.
+	SubmeshGeometry boxSubmesh;
+	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
+	boxSubmesh.StartIndexLocation = boxIndexOffset;
+	boxSubmesh.BaseVertexLocation = boxVertexOffset;
+
+
+	SubmeshGeometry gridSubmesh;
+	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
+	gridSubmesh.StartIndexLocation = gridIndexOffset;
+	gridSubmesh.BaseVertexLocation = gridVertexOffset;
+
+
+	SubmeshGeometry sphereSubmesh;
+	sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
+	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
+	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
+
+
+	SubmeshGeometry cylinderSubmesh;
+	cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
+	cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
+	cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
+
+	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
+	size_t totalVertexCount = 
+		box.Vertices.size() +
+		grid.Vertices.size() +
+		sphere.Vertices.size() +
+		cylinder.Vertices.size();
+
+	std::vector<Vertex> vertices;
+	vertices.resize(totalVertexCount);
+
+	UINT k = 0;
+	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = box.Vertices[i].Position;
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::ForestGreen);
+	}
+
+	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = grid.Vertices[i].Position;
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::DarkGreen); 
+	}
+
+	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = sphere.Vertices[i].Position;
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::SteelBlue);
+	}
+
+	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = cylinder.Vertices[i].Position;
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::Crimson);
+	}
+
+	// 이제 index 정보도 한곳에 다 옮긴다.
+	std::vector<std::uint16_t> indices;
+	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
+	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
+	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
+	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "shapeGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	geo->DrawArgs["box"] = boxSubmesh;
+	geo->DrawArgs["grid"] = gridSubmesh;
+	geo->DrawArgs["sphere"] = sphereSubmesh;
+	geo->DrawArgs["cylinder"] = cylinderSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
 }
 
 void RenderSmoothlyApp::BuildPSOs()
 {
-	// 이제 각종 리소스와, 쉐이더, 상태 등등을
-	// 한번에 제어하는 Pipeline State Object를 정의한다.
+	// 일단은 그냥 불투명한 렌더링을 하는 PSO를 만든다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
+	ZeroMemory(&opaquePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc;
-	memset(&psoDesc, 0, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	// input layout
-	psoDesc.InputLayout = { m_InputLayout.data(), (UINT)m_InputLayout.size() };
-	// Root Signature (CB)
-	psoDesc.pRootSignature = m_RootSignature.Get();
-	// Vertex Shader
-	psoDesc.VS = {
-		reinterpret_cast<BYTE*>(m_vsByteCode->GetBufferPointer()),
-		m_vsByteCode->GetBufferSize()
+	opaquePSODesc.InputLayout = { m_InputLayout.data(), (UINT)m_InputLayout.size() };
+	opaquePSODesc.pRootSignature = m_RootSignature.Get();
+	opaquePSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["standardVS"] -> GetBufferPointer()),
+		m_Shaders["standardVS"]->GetBufferSize()
 	};
-	// Pixel Shader
-	psoDesc.PS = {
-		reinterpret_cast<BYTE*>(m_psByteCode->GetBufferPointer()),
-		m_psByteCode->GetBufferSize()
+	opaquePSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["opaquePS"]->GetBufferPointer()),
+		m_Shaders["opaquePS"]->GetBufferSize()
 	};
-	// Rasterizer State (일단은 디폴트)
-	D3D12_RASTERIZER_DESC rasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	//rasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-	//rasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
-	psoDesc.RasterizerState = rasterizerState;
-	// Blend State (일단은 디폴트)
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	// Depth-Stencil State (일단은 디폴트)
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	// Sampling Mask 기본값 (어떤 것도 비활성화 하지 않는다.)
-	psoDesc.SampleMask = UINT_MAX;
-	// 삼각형으로 그리기
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	// 동시에 그리는 Rendertarget 개수
-	psoDesc.NumRenderTargets = 1;
-	// Render Target Format (지정한 것과 같은 포맷을 가져야 한다.)
-	psoDesc.RTVFormats[0] = m_BackBufferFormat;
-	// multi sampling 수준 (지정한 것과 같은 포맷을 가져야 한다.)
-	psoDesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
-	psoDesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-	// Depth-Stencil Format (지정한 것과 같은 포맷을 가져야 한다.)
-	psoDesc.DSVFormat = m_DepthStencilFormat;
+	opaquePSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	opaquePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+	opaquePSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	opaquePSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	opaquePSODesc.SampleMask = UINT_MAX;
+	opaquePSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	opaquePSODesc.NumRenderTargets = 1;
+	opaquePSODesc.RTVFormats[0] = m_BackBufferFormat;
+	opaquePSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
+	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
+	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
-	// 어뎁터에서 위 정보를 가지고 PSO를 생성한다.
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(
-		&psoDesc,
-		IID_PPV_ARGS(&m_PSO)
-	));
+	// 와이어 프레임으로 출력하는 PSO이다.
+	// 그냥 대충 복사생성자로 한다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaqueWireframePSODesc = opaquePSODesc;
+	opaqueWireframePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaqueWireframePSODesc, IID_PPV_ARGS(&m_PSOs["opaque_wireframe"])));
 }
 
 void RenderSmoothlyApp::BuildFrameResources()
 {
+	// FrameResource를 만들어준다.
+	for (int i = 0; i < g_NumFrameResources; i++)
+	{
+		m_FrameResources.push_back(
+			std::make_unique<FrameResource>(
+			m_d3dDevice.Get(),
+			1,
+			(UINT)m_AllItems.size()
+		));
+	}
 }
 
 void RenderSmoothlyApp::BuildRenderItems()
 {
+	// 이제 원래 있던 Geometry 정보를 가지고,
+	// Item 구조체를 이용해서 중복해서 다르게 그려볼 것이다.
+
+	// 박스 아이템
+	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
+
+	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
+	boxRitem->ObjCBIndex = 0;
+	boxRitem->Geo = m_Geometries["shapeGeo"].get();
+	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
+	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
+	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+	m_AllItems.push_back(std::move(boxRitem));
+
+	// 그리드 아이템
+	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
+
+	gridRitem->WorldMat = MathHelper::Identity4x4();
+	gridRitem->ObjCBIndex = 1;
+	gridRitem->Geo = m_Geometries["shapeGeo"].get();
+	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
+	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
+	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
+	m_AllItems.push_back(std::move(gridRitem));
+
+	// 원기둥과 구 5개씩 2줄
+	UINT objCBIndex = 2;
+	for (int i = 0; i < 5; ++i)
+	{
+		std::unique_ptr<RenderItem> leftCylRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> rightCylRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> leftSphereRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> rightSphereRitem = std::make_unique<RenderItem>();
+
+		//  z 축으로 10칸씩 옮긴다.
+		XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
+		XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
+
+		XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i * 5.0f);
+		XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
+
+		XMStoreFloat4x4(&leftCylRitem->WorldMat, rightCylWorld);
+		leftCylRitem->ObjCBIndex = objCBIndex++;
+		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
+		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
+		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+		leftCylRitem->BaseVertexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&rightCylRitem->WorldMat, leftCylWorld);
+		rightCylRitem->ObjCBIndex = objCBIndex++;
+		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
+		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
+		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+		rightCylRitem->BaseVertexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
+		leftSphereRitem->ObjCBIndex = objCBIndex++;
+		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
+		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
+		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+		leftSphereRitem->BaseVertexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
+		rightSphereRitem->ObjCBIndex = objCBIndex++;
+		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
+		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
+		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+		rightSphereRitem->BaseVertexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+		m_AllItems.push_back(std::move(leftCylRitem));
+		m_AllItems.push_back(std::move(rightCylRitem));
+		m_AllItems.push_back(std::move(leftSphereRitem));
+		m_AllItems.push_back(std::move(rightSphereRitem));
+	}
+
+	// 지금은 opaque한 친구들 말고 없다.
+	for (auto& e : m_AllItems)
+		m_OpaqueItems.push_back(e.get());
 }
 
 void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
 {
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
+
+	// 아이템을 렌더링 한다.
+	for (size_t i = 0; i < _renderItems.size(); i++)
+	{
+		RenderItem* rItem = _renderItems[i];
+
+		D3D12_VERTEX_BUFFER_VIEW geoVBuffView = rItem->Geo->VertexBufferView();
+		_cmdList->IASetVertexBuffers(0, 1, &geoVBuffView);
+		D3D12_INDEX_BUFFER_VIEW geoIBuffView = rItem->Geo->IndexBufferView();
+		_cmdList->IASetIndexBuffer(&geoIBuffView);
+		_cmdList->IASetPrimitiveTopology(rItem->PrimitiveType);
+
+		// Object 와 FrameResource에 대한 heap에서의 CB View의 오프셋을 구한다.
+		// 위에서 힙을 만들 때, (물체 개수 + 1) * 프레임 리소스 개수 만큼 버퍼가 들어간 힙을 만들었던게 기억이 나야한다.
+		UINT CBVIndex = m_CurrFrameResourceIndex * (UINT)m_OpaqueItems.size() + rItem->ObjCBIndex;
+		CD3DX12_GPU_DESCRIPTOR_HANDLE CBVHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
+		CBVHandle.Offset(CBVIndex, m_CbvSrvUavDescriptorSize);
+
+		// Root Signature를 설정해주고
+		_cmdList->SetGraphicsRootDescriptorTable(0, CBVHandle);
+		// 그린다.
+		_cmdList->DrawIndexedInstanced(rItem->IndexCount, 1, rItem->StartIndexLocation, rItem->BaseVertexLocation, 0);
+	}
 }
