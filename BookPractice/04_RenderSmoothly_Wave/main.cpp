@@ -35,14 +35,14 @@ struct RenderItem
 	int BaseVertexLocation = 0;
 };
 
-class RenderSmoothlyApp : public D3DApp
+class RenderWaveApp : public D3DApp
 {
 public:
-	RenderSmoothlyApp(HINSTANCE hInstance);
-	~RenderSmoothlyApp();
+	RenderWaveApp(HINSTANCE hInstance);
+	~RenderWaveApp();
 
-	RenderSmoothlyApp(const RenderSmoothlyApp& _other) = delete;
-	RenderSmoothlyApp& operator=(const RenderSmoothlyApp& _other) = delete;
+	RenderWaveApp(const RenderWaveApp& _other) = delete;
+	RenderWaveApp& operator=(const RenderWaveApp& _other) = delete;
 
 	virtual bool Initialize() override;
 
@@ -127,7 +127,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 	try
 	{
-		RenderSmoothlyApp theApp(hInstance);
+		RenderWaveApp theApp(hInstance);
 		if (!theApp.Initialize())
 			return 0;
 		return theApp.Run();
@@ -141,12 +141,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 }
 
-RenderSmoothlyApp::RenderSmoothlyApp(HINSTANCE hInstance)
+RenderWaveApp::RenderWaveApp(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 {
 }
 
-RenderSmoothlyApp::~RenderSmoothlyApp()
+RenderWaveApp::~RenderWaveApp()
 {
 	if (m_d3dDevice != nullptr)
 	{
@@ -154,7 +154,7 @@ RenderSmoothlyApp::~RenderSmoothlyApp()
 	}
 }
 
-bool RenderSmoothlyApp::Initialize()
+bool RenderWaveApp::Initialize()
 {
 	if (!D3DApp::Initialize())
 		return false;
@@ -190,7 +190,7 @@ bool RenderSmoothlyApp::Initialize()
 	return true;
 }
 
-void RenderSmoothlyApp::OnResize()
+void RenderWaveApp::OnResize()
 {
 	D3DApp::OnResize();
 
@@ -199,7 +199,7 @@ void RenderSmoothlyApp::OnResize()
 	XMStoreFloat4x4(&m_ProjMat, projMat);
 }
 
-void RenderSmoothlyApp::Update(const GameTimer& _gt)
+void RenderWaveApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
@@ -230,11 +230,11 @@ void RenderSmoothlyApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 }
 
-void RenderSmoothlyApp::Draw(const GameTimer& _gt)
+void RenderWaveApp::Draw(const GameTimer& _gt)
 {
 	// 현재 FrameResource가 가지고 있는 allocator를 가지고 와서 초기화 한다.
-	auto CommandAllocator = m_CurrFrameResource->CmdListAlloc;
-	ThrowIfFailed(CommandAllocator->Reset());
+	ComPtr<ID3D12CommandAllocator> CurrCommandAllocator = m_CurrFrameResource->CmdListAlloc;
+	ThrowIfFailed(CurrCommandAllocator->Reset());
 
 	// Command List도 초기화를 한다
 	// 근데 Command List에 Reset()을 걸려면, 한번은 꼭 Command Queue에 
@@ -243,11 +243,11 @@ void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 	// PSO별로 등록하면서, Allocator와 함께, Command List를 초기화 한다.
 	if (m_bWireframe)
 	{
-		ThrowIfFailed(m_CommandList->Reset(CommandAllocator.Get(), m_PSOs["opaque_wireframe"].Get()));
+		ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque_wireframe"].Get()));
 	}
 	else
 	{
-		ThrowIfFailed(m_CommandList->Reset(CommandAllocator.Get(), m_PSOs["opaque"].Get()));
+		ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque"].Get()));
 	}
 	
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
@@ -292,11 +292,13 @@ void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 	// Signature를 세팅한다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
+	// Frame 당 공통으로 념겨주는 Pass CB를 넘겨준다.
 	// Frame Offset의 View Heap Offset으로 Descriptor Handle을 구한다.
 	int passCBViewIndex = m_PassCBViewOffset + m_CurrFrameResourceIndex;
-	auto passCBViewHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
+	CD3DX12_GPU_DESCRIPTOR_HANDLE passCBViewHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
 	passCBViewHandle.Offset(passCBViewIndex, m_CbvSrvUavDescriptorSize);
-	// 
+	// 그리고 SetGraphicsRootDescriptorTable로 위치를 지정해주면
+	// 거기에 있는 CB 값이 Shader로 넘어가게 된다.
 	m_CommandList->SetGraphicsRootDescriptorTable(1, passCBViewHandle);
 
 	DrawRenderItems(m_CommandList.Get(), m_OpaqueItems);
@@ -325,12 +327,14 @@ void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 	ThrowIfFailed(m_SwapChain->Present(0, 0));
 	m_CurrBackBuffer = (m_CurrBackBuffer + 1) % SwapChainBufferCount;
 
-	// GPU의 작업이 모두 끝날 때 까지 Fence를 이용해서 기다리는
-	// Flush 함수를 통해 CPU, GPU 동기화를 한다.
-	FlushCommandQueue();
+	// 현재 fence point 까지 commands 들을 확인하도록 fence 값을 늘린다.
+	m_CurrFrameResource->Fence = ++m_CurrentFence;
+
+	// 새 GPU의 새 fence point를 세팅하는 명령을 큐에 넣는다.
+	m_CommandQueue->Signal(m_Fence.Get(), m_CurrentFence);
 }
 
-void RenderSmoothlyApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
+void RenderWaveApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스의 위치를 기억하고
 	m_LastMousePos.x = _x;
@@ -339,13 +343,13 @@ void RenderSmoothlyApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 	SetCapture(m_hMainWnd);
 }
 
-void RenderSmoothlyApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
+void RenderWaveApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
 }
 
-void RenderSmoothlyApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
+void RenderWaveApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 {
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
@@ -377,7 +381,7 @@ void RenderSmoothlyApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void RenderSmoothlyApp::OnKeyboardInput(const GameTimer _gt)
+void RenderWaveApp::OnKeyboardInput(const GameTimer _gt)
 {
 	if (GetAsyncKeyState('1') & 0x8000)
 	{
@@ -389,7 +393,7 @@ void RenderSmoothlyApp::OnKeyboardInput(const GameTimer _gt)
 	}
 }
 
-void RenderSmoothlyApp::UpdateCamera(const GameTimer& _gt)
+void RenderWaveApp::UpdateCamera(const GameTimer& _gt)
 {
 	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
 	m_EyePos.x = m_Radius * sinf(m_Theta) * cosf(m_Phi);
@@ -405,10 +409,10 @@ void RenderSmoothlyApp::UpdateCamera(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_ViewMat, viewMat);
 }
 
-void RenderSmoothlyApp::UpdateObjectCBs(const GameTimer& _gt)
+void RenderWaveApp::UpdateObjectCBs(const GameTimer& _gt)
 {
-	auto currObjectCB = m_CurrFrameResource->ObjectCB.get();
-	for (auto& e : m_AllItems)
+	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
+	for (std::unique_ptr<RenderItem>& e : m_AllItems)
 	{
 		// Constant Buffer가 변경됐을 때 Update를 한다.
 		if (e->NumFrameDirty > 0)
@@ -427,7 +431,7 @@ void RenderSmoothlyApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
-void RenderSmoothlyApp::UpdateMainPassCB(const GameTimer& _gt)
+void RenderWaveApp::UpdateMainPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ViewMat);
 	XMMATRIX ProjMat = XMLoadFloat4x4(&m_ProjMat);
@@ -458,11 +462,11 @@ void RenderSmoothlyApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
 	
-	auto currPassCB = m_CurrFrameResource->PassCB.get();
+	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void RenderSmoothlyApp::BuildDescriptorHeaps()
+void RenderWaveApp::BuildDescriptorHeaps()
 {
 	// ===Constant Buffer를 Pipeline에 전달하기 위한==
 	// =======Descriptor(View) Heap을 만드는 것=======
@@ -489,7 +493,7 @@ void RenderSmoothlyApp::BuildDescriptorHeaps()
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&m_CBViewHeap)));
 }
 
-void RenderSmoothlyApp::BuildConstantBufferView()
+void RenderWaveApp::BuildConstantBufferView()
 {
 	// Descriptor(View)을 타고, Pipe line에 넘어갈 Buffer를 만든다.
 
@@ -515,7 +519,7 @@ void RenderSmoothlyApp::BuildConstantBufferView()
 			// 그 값을 View Heap에 연결 시켜준다. 
 			int heapIndex = frameIndex * objCount + i;
 			// 이 값은 CPU에서 갱신해주는 거니깐, CPU Handle에 연결 시킨다.
-			auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
+			CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
 			handle.Offset(heapIndex, m_CbvSrvUavDescriptorSize);
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc; 
@@ -539,7 +543,7 @@ void RenderSmoothlyApp::BuildConstantBufferView()
 
 		// Heap에서 위치는
 		int heapIndex = m_PassCBViewOffset + frameIndex;
-		auto handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetCPUDescriptorHandleForHeapStart());
 		handle.Offset(heapIndex, m_CbvSrvUavDescriptorSize);
 
 		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc;
@@ -551,9 +555,10 @@ void RenderSmoothlyApp::BuildConstantBufferView()
 	}
 }
 
-void RenderSmoothlyApp::BuildRootSignature()
+void RenderWaveApp::BuildRootSignature()
 {
-	// Root Signature를 2개 만들 것이다.
+	// Root Signature를 2개의 CB View Heap을 가지도록 만들 것이다.
+	// 
 	// 하나는 그냥 solid, 하나는 wireframe
 	// view는 하나씩만 들어가고
 	CD3DX12_DESCRIPTOR_RANGE cbvTable0;
@@ -600,11 +605,11 @@ void RenderSmoothlyApp::BuildRootSignature()
 	));
 }
 
-void RenderSmoothlyApp::BuildShadersAndInputLayout()
+void RenderWaveApp::BuildShadersAndInputLayout()
 {
 #if 1 // 오프라인 컴파일 여부
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\03_RenderSmoothly_Shader.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\04_RenderSmoothly_Wave_Shader.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\04_RenderSmoothly_Wave_Shader.hlsl", nullptr, "PS", "ps_5_1");
 #else
 	m_vsByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_VS.cso");
 	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_PS.cso");
@@ -618,7 +623,7 @@ void RenderSmoothlyApp::BuildShadersAndInputLayout()
 	};
 }
 
-void RenderSmoothlyApp::BuildShapeGeometry()
+void RenderWaveApp::BuildShapeGeometry()
 {
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
 	GeometryGenerator geoGenerator;
@@ -750,14 +755,16 @@ void RenderSmoothlyApp::BuildShapeGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void RenderSmoothlyApp::BuildPSOs()
+void RenderWaveApp::BuildPSOs()
 {
 	// 일단은 그냥 불투명한 렌더링을 하는 PSO를 만든다.
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
 	ZeroMemory(&opaquePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-
+	// 레이아웃을 넣어주고
 	opaquePSODesc.InputLayout = { m_InputLayout.data(), (UINT)m_InputLayout.size() };
+	// 2개의 view heap이 들어갈 Root Signature를 넣어주고
 	opaquePSODesc.pRootSignature = m_RootSignature.Get();
+	// 쉐이더를 설정해주고
 	opaquePSODesc.VS =
 	{
 		reinterpret_cast<BYTE*>(m_Shaders["standardVS"] -> GetBufferPointer()),
@@ -768,6 +775,7 @@ void RenderSmoothlyApp::BuildPSOs()
 		reinterpret_cast<BYTE*>(m_Shaders["opaquePS"]->GetBufferPointer()),
 		m_Shaders["opaquePS"]->GetBufferSize()
 	};
+	// 아직 사용하지 않는 렌더링 스테이트를 디폴트로 설정해주고
 	opaquePSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	opaquePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
 	opaquePSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
@@ -779,6 +787,7 @@ void RenderSmoothlyApp::BuildPSOs()
 	opaquePSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
 	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
+	// 만든다
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
 	// 와이어 프레임으로 출력하는 PSO이다.
@@ -788,7 +797,7 @@ void RenderSmoothlyApp::BuildPSOs()
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaqueWireframePSODesc, IID_PPV_ARGS(&m_PSOs["opaque_wireframe"])));
 }
 
-void RenderSmoothlyApp::BuildFrameResources()
+void RenderWaveApp::BuildFrameResources()
 {
 	// FrameResource를 만들어준다.
 	for (int i = 0; i < g_NumFrameResources; i++)
@@ -802,10 +811,14 @@ void RenderSmoothlyApp::BuildFrameResources()
 	}
 }
 
-void RenderSmoothlyApp::BuildRenderItems()
+void RenderWaveApp::BuildRenderItems()
 {
 	// 이제 원래 있던 Geometry 정보를 가지고,
 	// Item 구조체를 이용해서 중복해서 다르게 그려볼 것이다.
+	// RenderItem 구조체는 
+	// 1. Geometry 포인터와
+	// 2. World Mat
+	// 3. DrawIndexedInstance 에 필요한 속성을 가지고 있다.
 
 	// 박스 아이템
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
@@ -890,7 +903,7 @@ void RenderSmoothlyApp::BuildRenderItems()
 		m_OpaqueItems.push_back(e.get());
 }
 
-void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
+void RenderWaveApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 
@@ -900,9 +913,10 @@ void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, con
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
 		RenderItem* rItem = _renderItems[i];
-
+		// 각 Geo 가 가지고 있는 VertexBuffer와
 		D3D12_VERTEX_BUFFER_VIEW geoVBuffView = rItem->Geo->VertexBufferView();
 		_cmdList->IASetVertexBuffers(0, 1, &geoVBuffView);
+		// IndexBuffer를 IA 단계에 넘겨준다.
 		D3D12_INDEX_BUFFER_VIEW geoIBuffView = rItem->Geo->IndexBufferView();
 		_cmdList->IASetIndexBuffer(&geoIBuffView);
 		_cmdList->IASetPrimitiveTopology(rItem->PrimitiveType);
@@ -913,7 +927,7 @@ void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, con
 		CD3DX12_GPU_DESCRIPTOR_HANDLE CBVHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
 		CBVHandle.Offset(CBVIndex, m_CbvSrvUavDescriptorSize);
 
-		// Root Signature를 설정해주고
+		// offset으로 구한 핸들로 Root Signature를 설정해줘서, CB 값이 넘어가도록 해주고
 		_cmdList->SetGraphicsRootDescriptorTable(0, CBVHandle);
 		// 그린다.
 		_cmdList->DrawIndexedInstanced(rItem->IndexCount, 1, rItem->StartIndexLocation, rItem->BaseVertexLocation, 0);

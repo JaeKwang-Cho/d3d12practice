@@ -58,7 +58,7 @@
     <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\03_RenderSmoothly_Shader.hlsl">
+    <None Include="Shaders\03_RenderSmoothly_Shape_Shader.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

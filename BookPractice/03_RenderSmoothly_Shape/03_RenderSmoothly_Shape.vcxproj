@@ -38,7 +38,7 @@
     <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\03_RenderSmoothly_Shader.hlsl">
+    <None Include="Shaders\03_RenderSmoothly_Shape_Shader.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>
@@ -48,6 +48,7 @@
     <ProjectGuid>{263636c3-5914-4c21-93c6-13dc26a02e8c}</ProjectGuid>
     <RootNamespace>My03RenderSmoothly</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>03_RenderSmoothly_Shape</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
