@@ -56,7 +56,6 @@ VS_Output VS(VS_Input _vin)
     vout.PosH = mul(posW, gVPMat);
 	
     vout.Color = _vin.Color;
-
     
 	return vout;
 }

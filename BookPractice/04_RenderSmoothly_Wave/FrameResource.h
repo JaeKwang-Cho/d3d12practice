@@ -45,7 +45,7 @@ struct Vertex {
 struct FrameResource
 {
 public:
-	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount);
+	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _waveVertexCount);
 	FrameResource(const FrameResource& _other) = delete;
 	FrameResource& operator=(const FrameResource& _other) = delete;
 	~FrameResource();
@@ -58,6 +58,10 @@ public:
 	// 그래서 이것도 각자 가지고 있는다.
 	std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
+
+	// 파도는 매 프레임 바뀐다. 그래서 느릴때를 대비해서
+	// Frame Resource에 넣는다.
+	std::unique_ptr<UploadBuffer<Vertex>> WaveVB = nullptr;
 
 	// 혹시나 CPU가 더 빠를 때를 대비한, Fence이다.
 	UINT64 Fence = 0;

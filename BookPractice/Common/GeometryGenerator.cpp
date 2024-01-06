@@ -593,6 +593,7 @@ GeometryGenerator::MeshData GeometryGenerator::CreateGrid(float _width, float _d
 	float halfDepth = 0.5f*_depth;
 
 	// 부분의 크기를 구한다.
+	// n이 x 축, m이 z 축이다.
 	float dx = _width / (_n-1);
 	float dz = _depth / (_m-1);
 	// TexCoords의 부분 크기를 구한다.
@@ -628,10 +629,11 @@ GeometryGenerator::MeshData GeometryGenerator::CreateGrid(float _width, float _d
 	{
 		for(uint32 j = 0; j < _n-1; ++j)
 		{
+			// z0, z0, z1
 			meshData.Indices32[k]   = i*_n+j;
 			meshData.Indices32[k+1] = i*_n+j+1;
 			meshData.Indices32[k+2] = (i+1)*_n+j;
-
+			// z1, z0, z1
 			meshData.Indices32[k+3] = (i+1)*_n+j;
 			meshData.Indices32[k+4] = i*_n+j+1;
 			meshData.Indices32[k+5] = (i+1)*_n+j+1;

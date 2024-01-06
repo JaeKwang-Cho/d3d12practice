@@ -56,7 +56,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
 {
     ComPtr<ID3D12Resource> defaultBuffer;
 
-    // Default 값의 Buffer를 byteSize 만큼 생성해준다..
+    // Default Heap에 Buffer를 byteSize 만큼 생성해준다..
     CD3DX12_HEAP_PROPERTIES cHeapDefaultProps(D3D12_HEAP_TYPE_DEFAULT);
     D3D12_RESOURCE_DESC  bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
 
@@ -69,7 +69,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
         IID_PPV_ARGS(defaultBuffer.GetAddressOf())));
 
     // CPU 메모리 데이터를 default buffer에 넣어주기 위해서, 
-    // 중간 단계의 Upload 힙을 만들 어준다.
+    // 중간 단계의 Upload 힙에 업로드 버퍼를 만들 어준다.
     CD3DX12_HEAP_PROPERTIES cHeapUploadPros(D3D12_HEAP_TYPE_UPLOAD);
 
     ThrowIfFailed(device->CreateCommittedResource(
@@ -88,7 +88,7 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
     subResourceData.SlicePitch = subResourceData.RowPitch;
 
     // (default buffer resource에 데이터를 카피하는 법)
-    // 도우미 함수 UpdateSubresources가 CPU 메모리를 upload heap 에 저장을 한다.
+    // 일단 Default Buffer가 데이터를 받을 준비를 시킨다.
     D3D12_RESOURCE_BARRIER UploadBarrierTransition = CD3DX12_RESOURCE_BARRIER::Transition(
         defaultBuffer.Get(),
         D3D12_RESOURCE_STATE_COMMON,
@@ -100,11 +100,12 @@ Microsoft::WRL::ComPtr<ID3D12Resource> d3dUtil::CreateDefaultBuffer(
     );
 
     // (d3dx12.h)
-    // 그리고 CopySubresourceRegion을 이용해서 Default Buffer에 upload buffer의 값이 복사가 된다.
+    // 도우미 함수 UpdateSubresources가 CPU 메모리를 upload heap 에 저장을 한다.
+    // 그리고 CopySubresourceRegion을 이용해서 Default Buffer에 Upload buffer의 값이 복사가 된다.
     // 내부적으로 ID3D12Device::GetCopyableFootPrints가 호출이 된다.
-
     UpdateSubresources<1>(cmdList, defaultBuffer.Get(), uploadBuffer.Get(), 0, 0, 1, &subResourceData);
 
+    // 이제 읽기 전용 버퍼로 바꾼다.
     D3D12_RESOURCE_BARRIER BufferBarrierTransition = CD3DX12_RESOURCE_BARRIER::Transition(
         defaultBuffer.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST, 

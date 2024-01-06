@@ -81,6 +81,9 @@ void GameTimer::Tick()
 	// 프레임 차이 구하기
 	m_DeltaTime = (m_CurrTime - m_PrevTime) * m_SecondsPerCount;
 
+	// 다음 프레임 준비하기
+	m_PrevTime = m_CurrTime;
+
 	// 음수가 되지 않게 한다.
 	if (m_DeltaTime < 0.0)
 	{
