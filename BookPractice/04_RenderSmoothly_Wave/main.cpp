@@ -11,6 +11,7 @@
 #include "FrameResource.h"
 #include <DirectXColors.h>
 #include "Waves.h"
+#include "FileReader.h"
 
 const int g_NumFrameResources = 3;
 
@@ -83,7 +84,9 @@ private:
 	// 지형을 렌더링 해볼 것이다.
 	void BuildLandGeometry();
 	void BuildWavesGeometryBuffers();
-
+#if PRAC3
+	void BuildSkull();
+#endif
 	// 그리고 여기서는, Root Signature를
 	// Root Constant로 사용할 것 이기 때문에
 	// View Heap이 필요가 없다.
@@ -195,9 +198,14 @@ bool RenderWaveApp::Initialize()
 	BuildRootSignature();
 	BuildShadersAndInputLayout();
 	// 지형을 만들고
+
+#if !PRAC3
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
 	BuildWavesGeometryBuffers();
+#else
+	BuildSkull();
+#endif
 	// 아이템 화를 시킨다.
 	BuildRenderItems();
 	// 이제 FrameResource를 만들고
@@ -254,9 +262,10 @@ void RenderWaveApp::Update(const GameTimer& _gt)
 	// CB를 업데이트 해준다.
 	UpdateObjectCBs(_gt);
 	UpdateMainPassCB(_gt);
-
+#if !PRAC3
 	// 파도를 업데이트 해준다.
 	UpdateWaves(_gt);
+#endif
 }
 
 void RenderWaveApp::Draw(const GameTimer& _gt)
@@ -572,20 +581,28 @@ void RenderWaveApp::BuildRootSignature()
 
 void RenderWaveApp::BuildShadersAndInputLayout()
 {
-#if 1 // 오프라인 컴파일 여부
+#if !PRAC3 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\04_RenderSmoothly_Wave_Shader.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\04_RenderSmoothly_Wave_Shader.hlsl", nullptr, "PS", "ps_5_1");
 #else
-	m_vsByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_VS.cso");
-	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\03_RenderSmoothly_PS.cso");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\Chap7_Prac3_Skull_Shader.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\Chap7_Prac3_Skull_Shader.hlsl", nullptr, "PS", "ps_5_1");
 #endif
-	// 쉐이더에 데이터를 전달해 주기 위한, 레이아웃을 정의한다.
 
+#if !PRAC3 
 	m_InputLayout =
 	{
 		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+};
+#else
+	m_InputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 	};
+#endif
+	
 }
 
 void RenderWaveApp::BuildLandGeometry()
@@ -747,6 +764,59 @@ void RenderWaveApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
+#if PRAC3
+void RenderWaveApp::BuildSkull()
+{
+	vector<VertexSkull> SkullVertices;
+	vector<uint32_t> SkullIndices;
+
+	Prac3::Prac3VerticesNIndicies(L"Skull.txt", SkullVertices, SkullIndices);
+
+	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(VertexSkull);
+	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
+
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "SkullGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), SkullVertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), SkullIndices.data(), ibByteSize);
+
+	// Vertex 와 Index 정보를 Default Buffer로 만들고
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		SkullVertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		SkullIndices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(VertexSkull);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	// 서브 메쉬 설정을 해준다.
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)SkullIndices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["skull"] = submesh;
+
+	m_Geometries["SkullGeo"] = std::move(geo);
+}
+#endif
 
 void RenderWaveApp::BuildPSOs()
 {
@@ -787,6 +857,17 @@ void RenderWaveApp::BuildPSOs()
 
 void RenderWaveApp::BuildFrameResources()
 {
+#if PRAC3
+	for (int i = 0; i < g_NumFrameResources; ++i)
+	{
+		m_FrameResources.push_back(
+			std::make_unique<FrameResource>(m_d3dDevice.Get(),
+			1,
+			(UINT)m_AllRenderItems.size(),
+			0
+		));
+	}
+#else
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
@@ -796,10 +877,12 @@ void RenderWaveApp::BuildFrameResources()
 			m_Waves->VertexCount()
 		));
 	}
+#endif
 }
 
 void RenderWaveApp::BuildRenderItems()
 {
+#if !PRAC3
 	// 파도를 아이템화 시키기
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
 	wavesRenderItem->WorldMat = MathHelper::Identity4x4();
@@ -812,7 +895,7 @@ void RenderWaveApp::BuildRenderItems()
 	// 업데이트를 위해 맴버로 관리해준다.
 	m_WavesRenderItem = wavesRenderItem.get();
 	m_RItemLayer[(int)RenderLayer::Opaque].push_back(wavesRenderItem.get());
-
+	// 그리드를 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
 	gridRenderItem->WorldMat = MathHelper::Identity4x4();
 	gridRenderItem->ObjCBIndex = 1;
@@ -826,6 +909,24 @@ void RenderWaveApp::BuildRenderItems()
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
+#else
+	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
+	XMMATRIX Scale3TimesMat = XMMatrixScaling(3.f, 3.f, 3.f);
+	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, -5.f, 0.f);
+	XMMATRIX SkullWorldMat =  Scale3TimesMat * TranslateDown5Units;
+	//skullRenderItem->WorldMat = MathHelper::Identity4x4();
+	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
+	skullRenderItem->ObjCBIndex = 0;
+	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
+	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
+	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
+	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
+
+	m_RItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
+
+	m_AllRenderItems.push_back(std::move(skullRenderItem));
+#endif
 }
 
 void RenderWaveApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)

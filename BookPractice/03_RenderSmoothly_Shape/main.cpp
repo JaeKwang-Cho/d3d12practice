@@ -4,6 +4,7 @@
 #include "FrameResource.h"
 #include <DirectXColors.h>
 
+#define PRAC2 (0)
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -285,21 +286,28 @@ void RenderSmoothlyApp::Draw(const GameTimer& _gt)
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 
 	// ==== 준비된 도형 그리기 ======
-	
+#if !PRAC2
 	// View heap과 
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CBViewHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+#endif
 	// Signature를 세팅한다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
 	// Frame 당 공통으로 념겨주는 Pass CB를 넘겨준다.
 	// Frame Offset의 View Heap Offset으로 Descriptor Handle을 구한다.
+#if PRAC2
+	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
+	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
+#else
 	int passCBViewIndex = m_PassCBViewOffset + m_CurrFrameResourceIndex;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE passCBViewHandle = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CBViewHeap->GetGPUDescriptorHandleForHeapStart());
 	passCBViewHandle.Offset(passCBViewIndex, m_CbvSrvUavDescriptorSize);
 	// 그리고 SetGraphicsRootDescriptorTable로 위치를 지정해주면
 	// 거기에 있는 CB 값이 Shader로 넘어가게 된다.
 	m_CommandList->SetGraphicsRootDescriptorTable(1, passCBViewHandle);
+#endif
+
 
 	DrawRenderItems(m_CommandList.Get(), m_OpaqueItems);
 
@@ -468,6 +476,8 @@ void RenderSmoothlyApp::UpdateMainPassCB(const GameTimer& _gt)
 
 void RenderSmoothlyApp::BuildDescriptorHeaps()
 {
+
+#if !PRAC2
 	// ===Constant Buffer를 Pipeline에 전달하기 위한==
 	// =======Descriptor(View) Heap을 만드는 것=======
 
@@ -491,10 +501,12 @@ void RenderSmoothlyApp::BuildDescriptorHeaps()
 
 	// 그리고 어뎁터로 CB를 위한 View Heap 생성을 한다.
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&cbvHeapDesc, IID_PPV_ARGS(&m_CBViewHeap)));
+#endif
 }
 
 void RenderSmoothlyApp::BuildConstantBufferView()
 {
+#if !PRAC2
 	// Descriptor(View)을 타고, Pipe line에 넘어갈 Buffer를 만든다.
 
 	// 일단 CB Size를 Byte로 구한다.
@@ -553,10 +565,30 @@ void RenderSmoothlyApp::BuildConstantBufferView()
 		// CB Descriptor (View)를 만들어준다.
 		m_d3dDevice->CreateConstantBufferView(&cbvDesc, handle);
 	}
+#endif
 }
 
 void RenderSmoothlyApp::BuildRootSignature()
 {
+#if PRAC2
+	// 여기서는 Table을 사용하는 것이 아니라
+	// Constant Buffer View를 직접 연결한다.
+	// 그에 맞는 Root Signature 설정을 해준다.
+
+	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+	// 루트 파라미터를 Root Constant 설정할 것이다.
+	slotRootParameter[0].InitAsConstantBufferView(0); // 레지스터 b0
+	slotRootParameter[1].InitAsConstantBufferView(1); // 레지스터 b1
+
+	// IA에서 값이 들어가도록 설정한다.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		2,
+		slotRootParameter,
+		0,
+		nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+	);
+#else
 	// Root Signature를 2개의 CB View Heap을 가지도록 만들 것이다.
 	// 
 	// 하나는 그냥 solid, 하나는 wireframe
@@ -566,7 +598,7 @@ void RenderSmoothlyApp::BuildRootSignature()
 
 	CD3DX12_DESCRIPTOR_RANGE cbvTable1;
 	cbvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1); // 1번에 지정한다.
-	
+
 	// Root Signature parameter Slot에 View Range로 View를 등록해준다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
 	slotRootParameter[0].InitAsDescriptorTable(1, &cbvTable0);
@@ -580,8 +612,9 @@ void RenderSmoothlyApp::BuildRootSignature()
 		nullptr,
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
-	
+
 	// 하나의 CB로 만들어진 View Range를 가리키는 하나의 slot으로 root signature를 만든다.
+#endif
 	ComPtr<ID3DBlob> serializedRootSig = nullptr;
 	ComPtr<ID3DBlob> errorBlob = nullptr;
 	HRESULT hr = D3D12SerializeRootSignature(
@@ -698,13 +731,13 @@ void RenderSmoothlyApp::BuildShapeGeometry()
 	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = sphere.Vertices[i].Position;
-		vertices[k].Color = XMFLOAT4(DirectX::Colors::SteelBlue);
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::Crimson);
 	}
 
 	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = cylinder.Vertices[i].Position;
-		vertices[k].Color = XMFLOAT4(DirectX::Colors::Crimson);
+		vertices[k].Color = XMFLOAT4(DirectX::Colors::SteelBlue);
 	}
 
 	// 이제 index 정보도 한곳에 다 옮긴다.
@@ -921,6 +954,12 @@ void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, con
 		_cmdList->IASetIndexBuffer(&geoIBuffView);
 		_cmdList->IASetPrimitiveTopology(rItem->PrimitiveType);
 
+#if PRAC2
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
+		objCBAddress += rItem->ObjCBIndex * objCBByteSize;
+
+		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+#else
 		// Object 와 FrameResource에 대한 heap에서의 CB View의 오프셋을 구한다.
 		// 위에서 힙을 만들 때, (물체 개수 + 1) * 프레임 리소스 개수 만큼 버퍼가 들어간 힙을 만들었던게 기억이 나야한다.
 		UINT CBVIndex = m_CurrFrameResourceIndex * (UINT)m_OpaqueItems.size() + rItem->ObjCBIndex;
@@ -929,6 +968,7 @@ void RenderSmoothlyApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, con
 
 		// offset으로 구한 핸들로 Root Signature를 설정해줘서, CB 값이 넘어가도록 해주고
 		_cmdList->SetGraphicsRootDescriptorTable(0, CBVHandle);
+#endif
 		// 그린다.
 		_cmdList->DrawIndexedInstanced(rItem->IndexCount, 1, rItem->StartIndexLocation, rItem->BaseVertexLocation, 0);
 	}

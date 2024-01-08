@@ -72,10 +72,17 @@
     </ClInclude>
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="Waves.h" />
+    <ClInclude Include="FileReader.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\04_RenderSmoothly_Wave_Shader.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Chap7_Prac3_Skull_Shader.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="Skull.txt" />
   </ItemGroup>
 </Project>
