@@ -78,5 +78,8 @@
     <None Include="Shaders\05_Light&amp;Material.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -33,19 +33,27 @@ struct PassConstants {
 	float FarZ = 0.f;
 	float TotalTime = 0.f;
 	float DeltaTime = 0.f;
+
+	// Ambient Light와
+	DirectX::XMFLOAT4 AmbientLight = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+	// 조명 정보를 넣어준다.
+	// 순서는 Directional -> Point -> Spot 순이고
+	// 인덱스로 구분을 하게 된다.
+	Light Lights[MaxLights];
 };
 
 // 사용할 Vertex 정보
 struct Vertex {
 	XMFLOAT3 Pos;
-	XMFLOAT4 Color;
+	XMFLOAT3 Normal;
 };
 
 // CPU가 프레임 마다 Command List를 구성하는데 필요한 정보들을 저장한다.
 struct FrameResource
 {
 public:
-	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _waveVertexCount);
+	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _materialCount, UINT _waveVertexCount);
 	FrameResource(const FrameResource& _other) = delete;
 	FrameResource& operator=(const FrameResource& _other) = delete;
 	~FrameResource();
@@ -58,6 +66,9 @@ public:
 	// 그래서 이것도 각자 가지고 있는다.
 	std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
+
+	// 여기서는 Material도 추가한다.
+	std::unique_ptr<UploadBuffer<MaterialConstants>> MaterialCB = nullptr;
 
 	// 파도는 매 프레임 바뀐다. 그래서 느릴때를 대비해서
 	// Frame Resource에 넣는다.

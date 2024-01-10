@@ -34,7 +34,10 @@ struct RenderItem
 	// Render Item과 GPU에 넘어간 CB가 함께 가지는 Index 값
 	UINT ObjCBIndex = 1;
 
+	// 이 예제에서는 Geometry 말고도
 	MeshGeometry* Geo = nullptr;
+	// Material 포인터도 가지고 있는다.
+	Material* Mat = nullptr;
 
 	// 다른걸 쓸일은 잘 없을 듯
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -70,14 +73,16 @@ private:
 	virtual void OnMouseDown(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseUp(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseMove(WPARAM _btnState, int _x, int _y) override;
-	// 이번엔 키보드 입력도 받는다.
+	// 키보드에서 조명의 위치를 바꿀 것이다.
 	void OnKeyboardInput(const GameTimer _gt);
 
 	void UpdateCamera(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
+	// Material CB 업데이트 함수를 추가한다.
+	void UpdateMaterialCBs(const GameTimer& _gt);
+
 	void UpdateMainPassCB(const GameTimer& _gt);
 
-	// 여기서 뭐할까...
 	void UpdateWaves(const GameTimer& _gt);
 
 	void BuildRootSignature();
@@ -85,14 +90,14 @@ private:
 	// 지형을 렌더링 해볼 것이다.
 	void BuildLandGeometry();
 	void BuildWavesGeometryBuffers();
-#if PRAC3
 	void BuildSkull();
-#endif
 	// 그리고 여기서는, Root Signature를
 	// Root Constant로 사용할 것 이기 때문에
 	// View Heap이 필요가 없다.
 	void BuildPSOs();
 	void BuildFrameResources();
+	// Geometry 에 맞는 Material을 생성해준다.
+	void BuildMaterials();
 	void BuildRenderItems();
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems);
 
@@ -108,8 +113,12 @@ private:
 	// Root Signature 만 사용한다. Constant Root 기 때문
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
 
-	// map으로 도형, 쉐이더, PSO를 관리한다.
+	// 도형, 쉐이더, PSO 등등 App에서 관리한다..
 	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
+	// Material 도 추가한다.
+	std::unordered_map<std::string, std::unique_ptr<Material>> m_Materials;
+	// Texture는 아직 사용하지 않는다.
+	std::unordered_map<std::string, std::unique_ptr<Texture>> m_Textures;
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> m_Shaders;
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> m_PSOs;
 
@@ -124,13 +133,11 @@ private:
 
 	// 이건 나중에 공부한다.
 	std::vector<RenderItem*> m_RItemLayer[(int)RenderLayer::Count];
-	// 파도의 높이를 업데이트 해주는 클래스다.
+	// 파도의 높이를 업데이트 해주는 클래스 인스턴스다.
 	std::unique_ptr<Waves> m_Waves;
 
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
-
-	bool m_bWireframe = false;
 
 	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
@@ -199,14 +206,11 @@ bool LightNMaterialApp::Initialize()
 	BuildRootSignature();
 	BuildShadersAndInputLayout();
 	// 지형을 만들고
-
-#if !PRAC3
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
 	BuildWavesGeometryBuffers();
-#else
-	BuildSkull();
-#endif
+	// 지형과 파도에 맞는 머테리얼을 만든다.
+	BuildMaterials();
 	// 아이템 화를 시킨다.
 	BuildRenderItems();
 	// 이제 FrameResource를 만들고
@@ -262,11 +266,11 @@ void LightNMaterialApp::Update(const GameTimer& _gt)
 	}
 	// CB를 업데이트 해준다.
 	UpdateObjectCBs(_gt);
+	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
-#if !PRAC3
+
 	// 파도를 업데이트 해준다.
 	UpdateWaves(_gt);
-#endif
 }
 
 void LightNMaterialApp::Draw(const GameTimer& _gt)
@@ -280,14 +284,7 @@ void LightNMaterialApp::Draw(const GameTimer& _gt)
 	// ExecuteCommandList()로 등록이 된적이 있어야 가능하다.
 
 	// PSO별로 등록하면서, Allocator와 함께, Command List를 초기화 한다.
-	if (m_bWireframe)
-	{
-		ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque_wireframe"].Get()));
-	}
-	else
-	{
-		ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque"].Get()));
-	}
+	ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque"].Get()));
 	
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
@@ -330,8 +327,8 @@ void LightNMaterialApp::Draw(const GameTimer& _gt)
 
 	// Frame 에 한번 넘겨주는 Constant를 bind 한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
-	// 1번 (b1)에 연결 했다.
-	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); 
+	// 2번 (b2)에 연결 했다.
+	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); 
 	
 	// RenderItem을 그린다.
 	DrawRenderItems(m_CommandList.Get(), m_RItemLayer[(int)RenderLayer::Opaque]);
@@ -416,14 +413,26 @@ void LightNMaterialApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 void LightNMaterialApp::OnKeyboardInput(const GameTimer _gt)
 {
-	if (GetAsyncKeyState('1') & 0x8000)
+	const float dt = _gt.GetDeltaTime();
+
+	if (GetAsyncKeyState(VK_LEFT) & 0x8000)
 	{
-		m_bWireframe = true;
+		m_SunPhi -= 1.f * dt;
 	}
-	else
+	if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
 	{
-		m_bWireframe = false;
+		m_SunPhi += 1.f * dt;
 	}
+	if (GetAsyncKeyState(VK_UP) & 0x8000)
+	{
+		m_SunTheta -= 1.f * dt;
+	}
+	if (GetAsyncKeyState(VK_DOWN) & 0x8000)
+	{
+		m_SunTheta += 1.f * dt;
+	}
+
+	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
 }
 
 void LightNMaterialApp::UpdateCamera(const GameTimer& _gt)
@@ -464,6 +473,31 @@ void LightNMaterialApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
+void LightNMaterialApp::UpdateMaterialCBs(const GameTimer& _gt)
+{
+	UploadBuffer<MaterialConstants>* currMaterialCB = m_CurrFrameResource->MaterialCB.get();	
+	// std::pair<std::string, std::unique_ptr<Material>>
+	// 
+	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
+	{
+		// 이것도 dirty flag가 켜져있을 때만 업데이트를 한다.
+		Material* mat = e.second.get();
+		if (mat->NumFramesDirty > 0)
+		{
+			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
+
+			MaterialConstants matConstants;
+			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
+			matConstants.FresnelR0 = mat->FresnelR0;
+			matConstants.Roughness = mat->Roughness;
+
+			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
+
+			mat->NumFramesDirty--;
+		}
+	}
+}
+
 void LightNMaterialApp::UpdateMainPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ViewMat);
@@ -494,6 +528,14 @@ void LightNMaterialApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.FarZ = 1000.f;
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
+
+	// 이제 Directional Light와 Ambient light를 넘겨준다.
+	// Ambient는 적당한 값을 넣어주고
+	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
+	// 태양의 위치를 구심좌표계로 구하고, 그걸 뒤집어서 벡터로 표현해준다.
+	XMVECTOR lightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
+	XMStoreFloat3(&m_MainPassCB.Lights[0].Direction, lightDir);
+	m_MainPassCB.Lights[0].Strength = { 1.f, 1.f, 0.9f };
 	
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
@@ -528,8 +570,8 @@ void LightNMaterialApp::UpdateWaves(const GameTimer& _gt)
 		Vertex v;
 		// 위치 (높이)를 넣고
 		v.Pos = m_Waves->GetSolutionPos(i);
-		// 일단 무조건 파란색
-		v.Color = XMFLOAT4(DirectX::Colors::Blue);
+		// 노멀도 넣어준다.
+		v.Normal = m_Waves->GetSolutionNorm(i);
 		// 버퍼에 복사해준다.
 		currWaveVB->CopyData(i, v);
 	}
@@ -543,14 +585,15 @@ void LightNMaterialApp::BuildRootSignature()
 	// Constant Buffer View를 직접 연결한다.
 	// 그에 맞는 Root Signature 설정을 해준다.
 
-	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
 	// 루트 파라미터를 Root Constant 설정할 것이다.
-	slotRootParameter[0].InitAsConstantBufferView(0); // 레지스터 b0
-	slotRootParameter[1].InitAsConstantBufferView(1); // 레지스터 b1
+	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
+	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - Material
+	slotRootParameter[2].InitAsConstantBufferView(2); // b2 - PassConstants
 
 	// IA에서 값이 들어가도록 설정한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-		2,
+		3,
 		slotRootParameter,
 		0,
 		nullptr,
@@ -582,28 +625,14 @@ void LightNMaterialApp::BuildRootSignature()
 
 void LightNMaterialApp::BuildShadersAndInputLayout()
 {
-#if !PRAC3 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", nullptr, "PS", "ps_5_1");
-#else
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\Chap7_Prac3_Skull_Shader.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\Chap7_Prac3_Skull_Shader.hlsl", nullptr, "PS", "ps_5_1");
-#endif
 
-#if !PRAC3 
-	m_InputLayout =
-	{
-		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-};
-#else
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
-#endif
-	
 }
 
 void LightNMaterialApp::BuildLandGeometry()
@@ -621,33 +650,7 @@ void LightNMaterialApp::BuildLandGeometry()
 		XMFLOAT3 p = grid.Vertices[i].Position;
 		vertices[i].Pos = p;
 		vertices[i].Pos.y = GetHillsHeight(p.x, p.z);
-		
-		// 높이에 따라 색을 지정해준다.
-		if (vertices[i].Pos.y < -10.f)
-		{
-			// 모래 색
-			vertices[i].Color = XMFLOAT4(1.f, 0.96f, 0.62f, 1.f);
-		}
-		else if (vertices[i].Pos.y < 5.f)
-		{
-			// 밝은 녹황색
-			vertices[i].Color = XMFLOAT4(0.48f, 0.77f, 0.46f, 1.0f);
-		}
-		else if (vertices[i].Pos.y < 12.0f)
-		{
-			// 어두운 녹황색
-			vertices[i].Color = XMFLOAT4(0.1f, 0.48f, 0.19f, 1.0f);
-		}
-		else if (vertices[i].Pos.y < 20.0f)
-		{
-			// 짙은 갈색
-			vertices[i].Color = XMFLOAT4(0.45f, 0.39f, 0.34f, 1.0f);
-		}
-		else
-		{
-			// 하얀 눈 색
-			vertices[i].Color = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-		}
+		vertices[i].Normal = GetHillsNormal(p.x, p.z);
 	}
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
@@ -765,7 +768,6 @@ void LightNMaterialApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
-#if PRAC3
 void LightNMaterialApp::BuildSkull()
 {
 	vector<VertexSkull> SkullVertices;
@@ -817,7 +819,6 @@ void LightNMaterialApp::BuildSkull()
 
 	m_Geometries["SkullGeo"] = std::move(geo);
 }
-#endif
 
 void LightNMaterialApp::BuildPSOs()
 {
@@ -848,46 +849,52 @@ void LightNMaterialApp::BuildPSOs()
 	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
-
-	// 와이어프레임 PSO
-
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaqueWireframePSODesc = opaquePSODesc;
-	opaqueWireframePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaqueWireframePSODesc, IID_PPV_ARGS(&m_PSOs["opaque_wireframe"])));
 }
 
 void LightNMaterialApp::BuildFrameResources()
 {
-#if PRAC3
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
 			std::make_unique<FrameResource>(m_d3dDevice.Get(),
 			1,
 			(UINT)m_AllRenderItems.size(),
-			0
-		));
-	}
-#else
-	for (int i = 0; i < g_NumFrameResources; ++i)
-	{
-		m_FrameResources.push_back(
-			std::make_unique<FrameResource>(m_d3dDevice.Get(),
-			1,
-			(UINT)m_AllRenderItems.size(),
+			(UINT)m_Materials.size(),
 			m_Waves->VertexCount()
 		));
 	}
-#endif
+}
+
+void LightNMaterialApp::BuildMaterials()
+{
+	// 일단 land에 씌울 grass Mat을 만든다.
+	std::unique_ptr<Material> grass = std::make_unique<Material>();
+	grass->Name = "grass";
+	grass->MatCBIndex = 0;
+	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
+	grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	grass->Roughness = 0.125f;
+
+	// wave에 씌울 water Mat을 만든다.
+	std::unique_ptr<Material> water = std::make_unique<Material>();
+	water->Name = "water";
+	water->MatCBIndex = 1;
+	water->DiffuseAlbedo = XMFLOAT4(0.0f, 0.2f, 0.6f, 1.f);
+	water->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	water->Roughness = 0.f;
+
+	m_Materials["grass"] = std::move(grass);
+	m_Materials["water"] = std::move(water);
 }
 
 void LightNMaterialApp::BuildRenderItems()
 {
-#if !PRAC3
 	// 파도를 아이템화 시키기
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
 	wavesRenderItem->WorldMat = MathHelper::Identity4x4();
 	wavesRenderItem->ObjCBIndex = 0;
+	// 아이템에 Mat을 추가시켜준다.
+	wavesRenderItem->Mat = m_Materials["water"].get();
 	wavesRenderItem->Geo = m_Geometries["WaterGeo"].get();
 	wavesRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	wavesRenderItem->IndexCount = wavesRenderItem->Geo->DrawArgs["grid"].IndexCount;
@@ -896,10 +903,13 @@ void LightNMaterialApp::BuildRenderItems()
 	// 업데이트를 위해 맴버로 관리해준다.
 	m_WavesRenderItem = wavesRenderItem.get();
 	m_RItemLayer[(int)RenderLayer::Opaque].push_back(wavesRenderItem.get());
-	// 그리드를 아이템화 시키기
+
+	// 지형을 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
 	gridRenderItem->WorldMat = MathHelper::Identity4x4();
 	gridRenderItem->ObjCBIndex = 1;
+	// 여기도 mat을 추가해준다.
+	gridRenderItem->Mat = m_Materials["grass"].get();
 	gridRenderItem->Geo = m_Geometries["LandGeo"].get();
 	gridRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	gridRenderItem->IndexCount = gridRenderItem->Geo->DrawArgs["grid"].IndexCount;
@@ -910,45 +920,38 @@ void LightNMaterialApp::BuildRenderItems()
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
-#else
-	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
-	XMMATRIX Scale3TimesMat = XMMatrixScaling(3.f, 3.f, 3.f);
-	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, -5.f, 0.f);
-	XMMATRIX SkullWorldMat =  Scale3TimesMat * TranslateDown5Units;
-	//skullRenderItem->WorldMat = MathHelper::Identity4x4();
-	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
-	skullRenderItem->ObjCBIndex = 0;
-	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
-	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
-	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
-	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
-
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
-
-	m_AllRenderItems.push_back(std::move(skullRenderItem));
-#endif
 }
 
 void LightNMaterialApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
 {
+	// 이제 Material도 물체마다 업데이트 해줘야 한다.
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
+	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
 		RenderItem* ri = _renderItems[i];
+		
+		// 일단 Vertex, Index를 IA에 세팅해주고
 		D3D12_VERTEX_BUFFER_VIEW VBView = ri->Geo->VertexBufferView();
 		_cmdList->IASetVertexBuffers(0, 1, &VBView);
 		D3D12_INDEX_BUFFER_VIEW IBView = ri->Geo->IndexBufferView();
 		_cmdList->IASetIndexBuffer(&IBView);
 		_cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
+		// Object Constant와
 		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
 		objCBAddress += ri->ObjCBIndex * objCBByteSize;
-		// View를 직접 연결하는 Root Signature이기 때문에 이렇게 한다.
+		// Material Constant를
+		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress();
+		matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
+
+		// PSO에 연결해준다.
 		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+		_cmdList->SetGraphicsRootConstantBufferView(1, matCBAddress);
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
