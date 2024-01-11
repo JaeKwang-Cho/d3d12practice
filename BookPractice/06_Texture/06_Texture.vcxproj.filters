@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="Waves.cpp" />
+    <ClCompile Include="..\Common\Camera.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dApp.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dUtil.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GameTimer.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GeometryGenerator.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>Commons\소스</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="Waves.h" />
+    <ClInclude Include="..\Common\Camera.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dApp.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dUtil.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dx12.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\DDSTextureLoader.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GameTimer.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GeometryGenerator.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\MathHelper.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UploadBuffer.h">
+      <Filter>Commons\헤더</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\06_Texture.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{7fbc8b6a-e5e3-4913-9592-aa55dbbe80eb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons">
+      <UniqueIdentifier>{2b33c182-6f28-49ed-a7ef-29086db38628}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\소스">
+      <UniqueIdentifier>{632dbef7-0077-497b-af5d-d4429a2c8253}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\헤더">
+      <UniqueIdentifier>{7edd50bd-b17e-41de-8709-18c7a52ecab4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+</Project>
