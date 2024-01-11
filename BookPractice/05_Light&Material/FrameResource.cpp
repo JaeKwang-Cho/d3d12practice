@@ -12,7 +12,10 @@ FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objec
 	MaterialCB = std::make_unique<UploadBuffer<MaterialConstants>>(_device, _materialCount, true);
 
 	// 얘는 Constant Buffer가 아니기 때문에 align이 필요가 없다.
-	WaveVB = std::make_unique<UploadBuffer<Vertex>>(_device, _waveVertexCount, false);
+	if (_waveVertexCount > 0)
+	{
+		WaveVB = std::make_unique<UploadBuffer<Vertex>>(_device, _waveVertexCount, false);
+	}
 }
 
 FrameResource::~FrameResource()

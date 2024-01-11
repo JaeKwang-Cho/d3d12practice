@@ -18,6 +18,8 @@
 #define NUM_SPOT_LIGHTS 0
 #endif
 
+#define PRAC6 (0)
+
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
@@ -117,6 +119,23 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
+    
+#if PRAC6 // 툰 셰이딩
+    float redVal = litColor.r;
+    redVal *= 10.f;
+    int redCeil = ceil(redVal);
+    litColor.r = (float) redCeil / 10.f;
+    
+    float greenVal = litColor.g;
+    greenVal *= 10.f;
+    int greenCeil = ceil(greenVal);
+    litColor.g = (float) greenCeil / 10.f;
+    
+    float blueVal = litColor.b;
+    blueVal *= 10.f;
+    int blueCeil = ceil(blueVal);
+    litColor.b = (float) blueCeil / 10.f;
+#endif
 
     // (일단 diffuse의 알파를 그대로 가져온다.)
     litColor.a = gDiffuseAlbedo.a;

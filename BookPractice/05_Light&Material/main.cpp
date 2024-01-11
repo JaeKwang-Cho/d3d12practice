@@ -14,6 +14,13 @@
 #include "Waves.h"
 #include "FileReader.h"
 
+#define PRAC1 (0)
+#define PRAC2 (0)
+#define SKULL (0)
+#define PRAC3 (0)
+#define PRAC4 (0)
+#define PRAC5 (0)
+
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -77,12 +84,13 @@ private:
 	void OnKeyboardInput(const GameTimer _gt);
 
 	void UpdateCamera(const GameTimer& _gt);
+	void ChangeRoughness(UINT _flag);
+
 	void UpdateObjectCBs(const GameTimer& _gt);
 	// Material CB 업데이트 함수를 추가한다.
 	void UpdateMaterialCBs(const GameTimer& _gt);
-
 	void UpdateMainPassCB(const GameTimer& _gt);
-
+	void UpdateMainPassCB_3PointLights(const GameTimer& _gt);
 	void UpdateWaves(const GameTimer& _gt);
 
 	void BuildRootSignature();
@@ -90,7 +98,13 @@ private:
 	// 지형을 렌더링 해볼 것이다.
 	void BuildLandGeometry();
 	void BuildWavesGeometryBuffers();
+
+	// Prac3 용이다.
+	void BuildShapeGeometry();
 	void BuildSkull();
+	void BuildMatForSkullNGeo();
+	void BuildRenderItemForSkullNGeo();
+
 	// 그리고 여기서는, Root Signature를
 	// Root Constant로 사용할 것 이기 때문에
 	// View Heap이 필요가 없다.
@@ -145,7 +159,16 @@ private:
 
 	float m_Phi = 1.5f * XM_PI;
 	float m_Theta = XM_PIDIV2 - 0.1f;
+#if SKULL
+	float m_Radius = 20.f;
+#else
 	float m_Radius = 50.f;
+#endif
+	bool m_bKeyLight = false;
+	bool m_bfillLight = false;
+	bool m_bBackLight = false;
+
+	XMFLOAT3 m_SpherePosArray[10];
 
 	float m_SunPhi = 1.25f * XM_PI;
 	float m_SunTheta = XM_PIDIV4;
@@ -205,6 +228,13 @@ bool LightNMaterialApp::Initialize()
 	// 여기서는 공동으로 쓰는 RootSignature를 먼저 정의한다.
 	BuildRootSignature();
 	BuildShadersAndInputLayout();
+
+#if SKULL
+	BuildShapeGeometry();
+	BuildSkull();
+	BuildMatForSkullNGeo();
+	BuildRenderItemForSkullNGeo();
+#else
 	// 지형을 만들고
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
@@ -213,6 +243,8 @@ bool LightNMaterialApp::Initialize()
 	BuildMaterials();
 	// 아이템 화를 시킨다.
 	BuildRenderItems();
+#endif
+
 	// 이제 FrameResource를 만들고
 	BuildFrameResources();
 	// 이제 PSO를 만들어서, 돌리면서 렌더링할 준비를 한다.
@@ -270,7 +302,9 @@ void LightNMaterialApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
+#if !SKULL
 	UpdateWaves(_gt);
+#endif
 }
 
 void LightNMaterialApp::Draw(const GameTimer& _gt)
@@ -431,6 +465,39 @@ void LightNMaterialApp::OnKeyboardInput(const GameTimer _gt)
 	{
 		m_SunTheta += 1.f * dt;
 	}
+#if PRAC2
+	if (GetAsyncKeyState('1') & 0x8000)
+	{
+		ChangeRoughness(1);
+	}
+	if (GetAsyncKeyState('2') & 0x8000)
+	{
+		ChangeRoughness(2);
+	}
+	if (GetAsyncKeyState('3') & 0x8000)
+	{
+		ChangeRoughness(3);
+	}
+#elif PRAC3
+	if (GetAsyncKeyState('1') & 0x8000)
+	{
+		m_bKeyLight = true;
+	}
+	if (GetAsyncKeyState('2') & 0x8000)
+	{
+		m_bfillLight = true;
+	}
+	if (GetAsyncKeyState('3') & 0x8000)
+	{
+		m_bBackLight = true;
+	}
+	if (GetAsyncKeyState('4') & 0x8000)
+	{
+		m_bKeyLight = false;
+		m_bfillLight = false;
+		m_bBackLight = false;
+	}
+#endif
 
 	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
 }
@@ -449,6 +516,42 @@ void LightNMaterialApp::UpdateCamera(const GameTimer& _gt)
 
 	XMMATRIX viewMat = XMMatrixLookAtLH(pos, target, up);
 	XMStoreFloat4x4(&m_ViewMat, viewMat);
+}
+
+void LightNMaterialApp::ChangeRoughness(UINT _flag)
+{
+	std::unique_ptr<Material>& grassMat = m_Materials["grass"];
+	std::unique_ptr<Material>& waterMat = m_Materials["water"];
+
+	switch (_flag)
+	{
+	case 1:
+	{
+		grassMat->Roughness = 1.f;
+
+		waterMat->Roughness = 0.f;
+	}
+		break;
+	case 2:
+	{
+		grassMat->Roughness = 0.5f;
+
+		waterMat->Roughness = 0.5f;
+	}
+		break;
+	case 3:
+	{
+		grassMat->Roughness = 0.f;
+
+		waterMat->Roughness = 1.f;
+	}
+		break;
+	default:
+		break;
+	}
+
+	grassMat->NumFramesDirty = g_NumFrameResources;
+	waterMat->NumFramesDirty = g_NumFrameResources;
 }
 
 void LightNMaterialApp::UpdateObjectCBs(const GameTimer& _gt)
@@ -529,16 +632,85 @@ void LightNMaterialApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
 
-	// 이제 Directional Light와 Ambient light를 넘겨준다.
-	// Ambient는 적당한 값을 넣어주고
+	// 이제 Light를 채워준다. Shader와 App에서 정의한 Lights의 개수와 종류가 같아야 한다.
+
+#if PRAC1
+	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
+	float sinWave = 0.5f * sinf(_gt.GetTotalTime()) + 0.5f;
+	m_MainPassCB.Lights[0].Strength = { 1.f * sinWave, 1.f * sinWave, 0.9f * sinWave };
+#elif PRAC3
+	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
+	UpdateMainPassCB_3PointLights(_gt);
+#elif PRAC4
+	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
+	for (int i = 0; i < 10; i++)
+	{
+		m_MainPassCB.Lights[i].Strength = { 0.75f, 0.75f, 0.75f };
+		// Point light 맴버를 채운다.
+		m_MainPassCB.Lights[i].Position = m_SpherePosArray[i];
+		m_MainPassCB.Lights[i].FalloffStart = 1.f;
+		m_MainPassCB.Lights[i].FalloffEnd = 10.f;
+	}
+#elif PRAC5
+	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
+	float switcher = -1.f;
+	for (int i = 0; i < 10; i++)
+	{
+		m_MainPassCB.Lights[i].Strength = { 0.75f, 0.75f, 0.75f };
+		// Spot light 맴버를 채운다.
+		m_MainPassCB.Lights[i].Position = m_SpherePosArray[i];
+		m_MainPassCB.Lights[i].Position.y += 1.f;
+		m_MainPassCB.Lights[i].FalloffStart = 1.f;
+		m_MainPassCB.Lights[i].FalloffEnd = 10.f;
+		switcher *= -1.f;
+		m_MainPassCB.Lights[i].Direction = { switcher, -1.f, 0.f };
+		m_MainPassCB.Lights[i].SpotPower = 8.f;
+	}
+#else
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
 	// 태양의 위치를 구심좌표계로 구하고, 그걸 뒤집어서 벡터로 표현해준다.
 	XMVECTOR lightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
 	XMStoreFloat3(&m_MainPassCB.Lights[0].Direction, lightDir);
 	m_MainPassCB.Lights[0].Strength = { 1.f, 1.f, 0.9f };
-	
+#endif
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
+}
+
+void LightNMaterialApp::UpdateMainPassCB_3PointLights(const GameTimer& _gt)
+{
+	// Key Light
+	XMVECTOR keyLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
+	XMStoreFloat3(&m_MainPassCB.Lights[0].Direction, keyLightDir);
+	if (m_bKeyLight)
+	{
+		m_MainPassCB.Lights[0].Strength = { 1.f, 1.f, 0.9f };
+	}
+	else
+	{
+		m_MainPassCB.Lights[0].Strength = { 0.f, 0.f, 0.f };
+	}
+	
+
+	// Fill Light
+	XMVECTOR fillLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi + XM_PIDIV2, m_SunTheta);
+	XMStoreFloat3(&m_MainPassCB.Lights[1].Direction, fillLightDir);
+
+	if (m_bfillLight)
+		m_MainPassCB.Lights[1].Strength = { 0.4f, 0.4f, 0.36f };
+	else
+		m_MainPassCB.Lights[1].Strength = { 0.f, 0.f, 0.f };
+
+	// Back Light
+	XMVECTOR backLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi + XM_PI, m_SunTheta + XM_PIDIV4);
+	XMStoreFloat3(&m_MainPassCB.Lights[2].Direction, backLightDir);
+
+	if (m_bBackLight)
+		m_MainPassCB.Lights[2].Strength = { 0.2f, 0.2f, 0.18f };
+	else
+	{
+		m_MainPassCB.Lights[2].Strength = { 0.f, 0.f, 0.f };
+	}
 }
 
 void LightNMaterialApp::UpdateWaves(const GameTimer& _gt)
@@ -642,7 +814,7 @@ void LightNMaterialApp::BuildLandGeometry()
 	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.f, 160.f, 50, 50);
 
 	// x, z에 따라 y가 적절히 변하는 함수를 이용해서
-	// Vertex의 y값을 바꿔주고, 그를 이용해서 색깔도 바꿔준다.
+	// Vertex의 y값을 바꿔주고, 노말도 넣어준다.
 	std::vector<Vertex> vertices(grid.Vertices.size());
 
 	for (size_t i = 0; i < grid.Vertices.size(); i++)
@@ -768,14 +940,146 @@ void LightNMaterialApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
+void LightNMaterialApp::BuildShapeGeometry()
+{
+	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
+	GeometryGenerator geoGenerator;
+	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
+	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
+	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
+	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+
+	// 이거를 하나의 버퍼로 전부 연결한다.
+
+	// 그 전에, 각종 속성 들을 저장해 놓는다.
+	// vertex offset
+	UINT boxVertexOffset = 0;
+	UINT gridVertexOffset = (UINT)box.Vertices.size();
+	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
+	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
+
+	// index offset
+	UINT boxIndexOffset = 0;
+	UINT gridIndexOffset = (UINT)box.Indices32.size();
+	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
+	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
+
+	// 한방에 할꺼라서 MeshGeometry에 넣을
+	// SubGeometry로 정의한다.
+	SubmeshGeometry boxSubmesh;
+	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
+	boxSubmesh.StartIndexLocation = boxIndexOffset;
+	boxSubmesh.BaseVertexLocation = boxVertexOffset;
+
+
+	SubmeshGeometry gridSubmesh;
+	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
+	gridSubmesh.StartIndexLocation = gridIndexOffset;
+	gridSubmesh.BaseVertexLocation = gridVertexOffset;
+
+
+	SubmeshGeometry sphereSubmesh;
+	sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
+	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
+	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
+
+
+	SubmeshGeometry cylinderSubmesh;
+	cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
+	cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
+	cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
+
+	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
+	size_t totalVertexCount =
+		box.Vertices.size() +
+		grid.Vertices.size() +
+		sphere.Vertices.size() +
+		cylinder.Vertices.size();
+
+	std::vector<Vertex> vertices;
+	vertices.resize(totalVertexCount);
+
+	UINT k = 0;
+	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = box.Vertices[i].Position;
+		vertices[k].Normal = box.Vertices[i].Normal;
+	}
+
+	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = grid.Vertices[i].Position;
+		vertices[k].Normal = grid.Vertices[i].Normal;
+	}
+
+	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = sphere.Vertices[i].Position;
+		vertices[k].Normal = sphere.Vertices[i].Normal;
+	}
+
+	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = cylinder.Vertices[i].Position;
+		vertices[k].Normal = cylinder.Vertices[i].Normal;
+	}
+
+	// 이제 index 정보도 한곳에 다 옮긴다.
+	std::vector<std::uint16_t> indices;
+	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
+	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
+	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
+	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "shapeGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	geo->DrawArgs["box"] = boxSubmesh;
+	geo->DrawArgs["grid"] = gridSubmesh;
+	geo->DrawArgs["sphere"] = sphereSubmesh;
+	geo->DrawArgs["cylinder"] = cylinderSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
+}
+
 void LightNMaterialApp::BuildSkull()
 {
-	vector<VertexSkull> SkullVertices;
+	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
 
-	Prac3::Prac3VerticesNIndicies(L"Skull.txt", SkullVertices, SkullIndices);
+	Prac3::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices);
 
-	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(VertexSkull);
+	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
 
 	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
@@ -804,7 +1108,7 @@ void LightNMaterialApp::BuildSkull()
 		geo->IndexBufferUploader
 	);
 
-	geo->VertexByteStride = sizeof(VertexSkull);
+	geo->VertexByteStride = sizeof(Vertex);
 	geo->VertexBufferByteSize = vbByteSize;
 	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
 	geo->IndexBufferByteSize = ibByteSize;
@@ -818,6 +1122,167 @@ void LightNMaterialApp::BuildSkull()
 	geo->DrawArgs["skull"] = submesh;
 
 	m_Geometries["SkullGeo"] = std::move(geo);
+}
+
+void LightNMaterialApp::BuildMatForSkullNGeo()
+{
+	std::unique_ptr<Material> skull = std::make_unique<Material>();
+	skull->Name = "skull";
+	skull->MatCBIndex = 0;
+	skull->DiffuseAlbedo = XMFLOAT4(Colors::LightGray);
+	skull->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	skull->Roughness = 0.125f;
+
+	std::unique_ptr<Material> box = std::make_unique<Material>();
+	box->Name = "box";
+	box->MatCBIndex = 1;
+	box->DiffuseAlbedo = XMFLOAT4(Colors::ForestGreen);
+	box->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	box->Roughness = 0.25f;
+
+	std::unique_ptr<Material> grid = std::make_unique<Material>();
+	grid->Name = "grid";
+	grid->MatCBIndex = 2;
+	grid->DiffuseAlbedo = XMFLOAT4(Colors::DarkGreen);
+	grid->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	grid->Roughness = 0.375f;
+
+	std::unique_ptr<Material> sphere = std::make_unique<Material>();
+	sphere->Name = "sphere";
+	sphere->MatCBIndex = 3;
+	sphere->DiffuseAlbedo = XMFLOAT4(Colors::Crimson);
+	sphere->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	sphere->Roughness = 0.0f;
+
+	std::unique_ptr<Material> cylinder = std::make_unique<Material>();
+	cylinder->Name = "cylinder";
+	cylinder->MatCBIndex = 4;
+	cylinder->DiffuseAlbedo = XMFLOAT4(Colors::SteelBlue);
+	cylinder->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	cylinder->Roughness = 0.75f;
+
+	m_Materials["skull"] = std::move(skull);
+	m_Materials["box"] = std::move(box);
+	m_Materials["grid"] = std::move(grid);
+	m_Materials["sphere"] = std::move(sphere);
+	m_Materials["cylinder"] = std::move(cylinder);
+}
+
+void LightNMaterialApp::BuildRenderItemForSkullNGeo()
+{
+	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
+
+	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
+	boxRitem->ObjCBIndex = 1;
+	boxRitem->Geo = m_Geometries["shapeGeo"].get();
+	boxRitem->Mat = m_Materials["box"].get();
+	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
+	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
+	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+
+	m_RItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
+	m_AllRenderItems.push_back(std::move(boxRitem));
+
+	// 그리드 아이템
+	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
+
+	gridRitem->WorldMat = MathHelper::Identity4x4();
+	gridRitem->ObjCBIndex = 2;
+	gridRitem->Geo = m_Geometries["shapeGeo"].get();
+	gridRitem->Mat = m_Materials["grid"].get();
+	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
+	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
+	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
+
+	m_RItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
+	m_AllRenderItems.push_back(std::move(gridRitem));
+
+	// 원기둥과 구 5개씩 2줄
+	UINT objCBIndex = 3;
+	for (int i = 0; i < 5; ++i)
+	{
+		std::unique_ptr<RenderItem> leftCylRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> rightCylRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> leftSphereRitem = std::make_unique<RenderItem>();
+		std::unique_ptr<RenderItem> rightSphereRitem = std::make_unique<RenderItem>();
+
+		//  z 축으로 10칸씩 옮긴다.
+		XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
+		XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
+
+#if PRAC4 || PRAC5
+		m_SpherePosArray[i * 2] = { -5.0f, 3.5f, -10.0f + i * 5.0f };
+		m_SpherePosArray[i * 2 + 1] = { +5.0f, 3.5f, -10.0f + i * 5.0f };
+#endif
+		XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i * 5.0f);
+		XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
+
+		XMStoreFloat4x4(&leftCylRitem->WorldMat, rightCylWorld);
+		leftCylRitem->ObjCBIndex = objCBIndex++;
+		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
+		leftCylRitem->Mat = m_Materials["cylinder"].get();
+		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
+		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+		leftCylRitem->BaseVertexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&rightCylRitem->WorldMat, leftCylWorld);
+		rightCylRitem->ObjCBIndex = objCBIndex++;
+		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
+		rightCylRitem->Mat = m_Materials["cylinder"].get();
+		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
+		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
+		rightCylRitem->BaseVertexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
+		leftSphereRitem->ObjCBIndex = objCBIndex++;
+		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
+		leftSphereRitem->Mat = m_Materials["sphere"].get();
+		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
+		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+		leftSphereRitem->BaseVertexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
+		rightSphereRitem->ObjCBIndex = objCBIndex++;
+		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
+		rightSphereRitem->Mat = m_Materials["sphere"].get();
+		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
+		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+		rightSphereRitem->BaseVertexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+		m_RItemLayer[(int)RenderLayer::Opaque].push_back(leftCylRitem.get());
+		m_RItemLayer[(int)RenderLayer::Opaque].push_back(rightCylRitem.get());
+		m_RItemLayer[(int)RenderLayer::Opaque].push_back(leftSphereRitem.get());
+		m_RItemLayer[(int)RenderLayer::Opaque].push_back(rightSphereRitem.get());
+
+		m_AllRenderItems.push_back(std::move(leftCylRitem));
+		m_AllRenderItems.push_back(std::move(rightCylRitem));
+		m_AllRenderItems.push_back(std::move(leftSphereRitem));
+		m_AllRenderItems.push_back(std::move(rightSphereRitem));
+	}
+
+	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
+	XMMATRIX ScaleHalfMat = XMMatrixScaling(0.5f, 0.5f, 0.5f);
+	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, 1.f, 0.f);
+	XMMATRIX SkullWorldMat = ScaleHalfMat * TranslateDown5Units;
+	// skullRenderItem->WorldMat = MathHelper::Identity4x4();
+	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
+	skullRenderItem->ObjCBIndex = 0;
+	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
+	skullRenderItem->Mat = m_Materials["skull"].get();
+	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
+	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
+	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
+
+	m_RItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
+
+	m_AllRenderItems.push_back(std::move(skullRenderItem));
 }
 
 void LightNMaterialApp::BuildPSOs()
@@ -853,6 +1318,11 @@ void LightNMaterialApp::BuildPSOs()
 
 void LightNMaterialApp::BuildFrameResources()
 {
+	UINT waveVerCount = 0;
+#if !PRAC3
+	waveVerCount = m_Waves->VertexCount();
+#endif
+
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
@@ -860,7 +1330,7 @@ void LightNMaterialApp::BuildFrameResources()
 			1,
 			(UINT)m_AllRenderItems.size(),
 			(UINT)m_Materials.size(),
-			m_Waves->VertexCount()
+			waveVerCount
 		));
 	}
 }

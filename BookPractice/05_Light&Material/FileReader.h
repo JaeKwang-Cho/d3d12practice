@@ -1,23 +1,18 @@
 #pragma once
 
 #include "../Common/MathHelper.h"
+#include "FrameResource.h"
 #include <fstream>
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 using namespace std;
 
-#define PRAC3 (0)
-
-// 사용할 Vertex 정보
-struct VertexSkull {
-	XMFLOAT3 Pos;
-	XMFLOAT3 Norm;
-};
+#define PRAC3 (1)
 
 namespace Prac3
 {
-	void Prac3VerticesNIndicies(const wstring& _Path, vector<VertexSkull>& _outVertices, vector<uint32_t>& _outIndices)
+	void Prac3VerticesNIndicies(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices)
 	{
 		ifstream fin;
 		fin.open(_Path);
@@ -50,7 +45,7 @@ namespace Prac3
 				fin >> px >> py >> pz >> nx >> ny >> nz;
 				XMFLOAT3 pos(px, py, pz);
 				XMFLOAT3 norm(nx, ny, nz);
-				VertexSkull skullVert = { pos, norm };
+				Vertex skullVert = { pos, norm };
 				_outVertices.push_back(skullVert);
 			}
 			fin >> TrashBin;
