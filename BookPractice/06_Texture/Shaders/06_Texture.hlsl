@@ -107,7 +107,7 @@ VertexOut VS(VertexIn vin)
     vout.PosH = mul(posW, gViewProj);
     
     // Texture에게 주어진 Transform을 적용시킨 다음
-    float4 texC = mul(float4(vin.TexC, 0.f, 0.f), gTexTransform);
+    float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
     // World를 곱해서 PS로 넘겨준다.
     vout.TexC = mul(texC, gMatTransform).xy;
 

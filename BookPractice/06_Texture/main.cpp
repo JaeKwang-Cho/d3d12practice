@@ -96,17 +96,22 @@ private:
 	// ==== Init ====
 	void BuildRootSignature();
 	// 다시 Descriptor Heap을 사용한다. 테이플을 사용하기 때문에
-	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
 	// Box 용이다.
 	void LoadBoxTextures();
+	void BuildBoxDescriptorHeaps();
 	void BuildBoxGeometry();
 	void BuildBoxMaterials();
 	void BuildBoxRenderItems();
 
 	// Wave 용이다.
+	void LoadWaveTextures();
+	void BuildWaveDescriptorHeaps();
 	void BuildLandGeometry();
+	void BuildFenceGeometry();
 	void BuildWavesGeometryBuffers();
+	void BuildWaveMaterials();
+	void BuildWaveRenderItems();
 
 	// Skull 용이다.
 	void BuildShapeGeometry();
@@ -119,9 +124,7 @@ private:
 	// View Heap이 필요가 없다.
 	void BuildPSOs();
 	void BuildFrameResources();
-	// Geometry 에 맞는 Material을 생성해준다.
-	void BuildMaterials();
-	void BuildRenderItems();
+
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems);
 
 	// 지형의 높이와 노멀을 계산하는 함수다.
@@ -176,7 +179,7 @@ private:
 	float m_Radius = 2.5f;
 #elif SKULL
 	float m_Radius = 20.f;
-#else
+#elif WAVE
 	float m_Radius = 50.f;
 #endif
 	bool m_bKeyLight = false;
@@ -240,34 +243,36 @@ bool TextureApp::Initialize()
 	// 얘는 좀 복잡해서 따로 클래스로 만들었다.
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
 
+
+	BuildShadersAndInputLayout();
+
 #if BOX
 	LoadBoxTextures();
 	BuildRootSignature();
-	BuildDescriptorHeaps();
-	BuildShadersAndInputLayout();
+	BuildBoxDescriptorHeaps();
 	BuildBoxGeometry();
 	BuildBoxMaterials();
 	BuildBoxRenderItems();
 #elif SKULL
 	BuildRootSignature();
-	BuildDescriptorHeaps();
-	BuildShadersAndInputLayout();
+	BuildBoxDescriptorHeaps();
 	BuildShapeGeometry();
 	BuildSkull();
 	BuildMatForSkullNGeo();
 	BuildRenderItemForSkullNGeo();
-#else
+#elif WAVE
+	LoadWaveTextures();
 	BuildRootSignature();
-	BuildDescriptorHeaps();
-	BuildShadersAndInputLayout();
+	BuildWaveDescriptorHeaps();
 	// 지형을 만들고
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
 	BuildWavesGeometryBuffers();
+	BuildFenceGeometry();
 	// 지형과 파도에 맞는 머테리얼을 만든다.
-	BuildMaterials();
+	BuildWaveMaterials();
 	// 아이템 화를 시킨다.
-	BuildRenderItems();
+	BuildWaveRenderItems();
 #endif
 
 	// 이제 FrameResource를 만들고
@@ -382,9 +387,8 @@ void TextureApp::Draw(const GameTimer& _gt)
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 	// ==== 그리기 ======
 
-#if BOX
 	// 현재 PSO에 View Heap을 세팅해준다.
-	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get()};
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
@@ -394,11 +398,6 @@ void TextureApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
 
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-#elif WAVE
-
-#elif SKULL
-
-#endif
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -730,6 +729,13 @@ void TextureApp::UpdateWaves(const GameTimer& _gt)
 		// 노멀도 넣어준다.
 		v.Normal = m_Waves->GetSolutionNorm(i);
 		// 버퍼에 복사해준다.
+		
+		// 얘는 좌측 위가 0,0이고 아래로 내려오니까
+		// 좌표 변환을 시켜줘야 한다.
+		v.TexC.x = 0.5f + v.Pos.x / m_Waves->Width();
+		v.TexC.y = 0.5f - v.Pos.z / m_Waves->Depth();
+
+
 		currWaveVB->CopyData(i, v);
 	}
 	// 그리고 그걸 Buffer에 업데이트 해준다.
@@ -738,6 +744,30 @@ void TextureApp::UpdateWaves(const GameTimer& _gt)
 
 void TextureApp::AnimateMaterials(const GameTimer& _gt)
 {
+#if WAVE
+	Material* waterMat = m_Materials["water"].get();
+
+	// 3행 0열에 있는걸 가져온다.
+	float tu = waterMat->MatTransform(3, 0);
+	float tv = waterMat->MatTransform(3, 1);
+	// 이 위치는 Transform Matrix에서 Translate.xy 성분에 해당한다.
+	tu += 0.1f * _gt.GetDeltaTime();
+	tv += 0.02f * _gt.GetDeltaTime();
+
+	if (tu >= 1.f)
+	{
+		tu -= 1.f;
+	}
+	if (tv >= 1.f)
+	{
+		tv -= 1.f;
+	}
+
+	waterMat->MatTransform(3, 0) = tu;
+	waterMat->MatTransform(3, 1) = tv;
+	// dirty flag를 켜준다.
+	waterMat->NumFramesDirty = g_NumFrameResources;
+#endif
 }
 
 void TextureApp::BuildRootSignature()
@@ -791,7 +821,7 @@ void TextureApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
-void TextureApp::BuildDescriptorHeaps()
+void TextureApp::BuildBoxDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -940,6 +970,85 @@ void TextureApp::BuildBoxRenderItems()
 	}
 }
 
+void TextureApp::LoadWaveTextures()
+{
+	std::unique_ptr<Texture> grassTex = std::make_unique<Texture>();
+	grassTex->Name = "grassTex";
+	grassTex->Filename = L"../Textures/grass.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		grassTex->Filename.c_str(),
+		grassTex->Resource,
+		grassTex->UploadHeap
+	));
+
+	std::unique_ptr<Texture> waterTex = std::make_unique<Texture>();
+	waterTex->Name = "waterTex";
+	waterTex->Filename = L"../Textures/water1.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		waterTex->Filename.c_str(),
+		waterTex->Resource,
+		waterTex->UploadHeap
+	));
+
+	std::unique_ptr<Texture> fenceTex = std::make_unique<Texture>();
+	fenceTex->Name = "fenceTex";
+	fenceTex->Filename = L"../Textures/WoodCrate01.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		fenceTex->Filename.c_str(),
+		fenceTex->Resource,
+		fenceTex->UploadHeap
+	));
+
+	m_Textures[grassTex->Name] = std::move(grassTex);
+	m_Textures[waterTex->Name] = std::move(waterTex);
+	m_Textures[fenceTex->Name] = std::move(fenceTex);
+}
+
+void TextureApp::BuildWaveDescriptorHeaps()
+{
+	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = 3;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
+
+	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// 텍스쳐 리소스를 얻은 다음
+	ID3D12Resource* grassTex = m_Textures["grassTex"].get()->Resource.Get();
+	ID3D12Resource* waterTex = m_Textures["waterTex"].get()->Resource.Get();
+	ID3D12Resource* fenceTex = m_Textures["fenceTex"].get()->Resource.Get();
+
+
+	// view를 만들어주고
+	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
+	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srcDesc.Format = grassTex->GetDesc().Format;
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srcDesc.Texture2D.MostDetailedMip = 0;
+	srcDesc.Texture2D.MipLevels = -1;
+	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+
+	// view를 만들면서 연결해준다.
+	m_d3dDevice->CreateShaderResourceView(grassTex, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = waterTex->GetDesc().Format;
+	m_d3dDevice->CreateShaderResourceView(waterTex, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = fenceTex->GetDesc().Format;
+	m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
+}
+
 void TextureApp::BuildLandGeometry()
 {
 	// Grid를 만들고, 높이(y)를 바꿔주어서 지형을 만든다.
@@ -956,6 +1065,7 @@ void TextureApp::BuildLandGeometry()
 		vertices[i].Pos = p;
 		vertices[i].Pos.y = GetHillsHeight(p.x, p.z);
 		vertices[i].Normal = GetHillsNormal(p.x, p.z);
+		vertices[i].TexC = grid.Vertices[i].TexC;
 	}
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
@@ -1003,6 +1113,65 @@ void TextureApp::BuildLandGeometry()
 	geo->DrawArgs["grid"] = submesh;
 
 	m_Geometries["LandGeo"] = std::move(geo);
+}
+
+void TextureApp::BuildFenceGeometry()
+{
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData box = geoGen.CreateBox(8.0f, 8.0f, 8.0f, 3);
+
+	std::vector<Vertex> vertices(box.Vertices.size());
+	for (size_t i = 0; i < box.Vertices.size(); ++i)
+	{
+		auto& p = box.Vertices[i].Position;
+		vertices[i].Pos = p;
+		vertices[i].Normal = box.Vertices[i].Normal;
+		vertices[i].TexC = box.Vertices[i].TexC;
+	}
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+
+	std::vector<std::uint16_t> indices = box.GetIndices16();
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "fenceGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(), 
+		vertices.data(), 
+		vbByteSize, 
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(), 
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["fence"] = submesh;
+
+	m_Geometries["fenceGeo"] = std::move(geo);
 }
 
 void TextureApp::BuildWavesGeometryBuffers()
@@ -1468,13 +1637,14 @@ void TextureApp::BuildFrameResources()
 	}
 }
 
-void TextureApp::BuildMaterials()
+void TextureApp::BuildWaveMaterials()
 {
 	// 일단 land에 씌울 grass Mat을 만든다.
 	std::unique_ptr<Material> grass = std::make_unique<Material>();
 	grass->Name = "grass";
 	grass->MatCBIndex = 0;
-	grass->DiffuseAlbedo = XMFLOAT4(0.2f, 0.6f, 0.2f, 1.f);
+	grass->DiffuseSrvHeapIndex = 0;
+	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	grass->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
 	grass->Roughness = 0.125f;
 
@@ -1482,19 +1652,31 @@ void TextureApp::BuildMaterials()
 	std::unique_ptr<Material> water = std::make_unique<Material>();
 	water->Name = "water";
 	water->MatCBIndex = 1;
-	water->DiffuseAlbedo = XMFLOAT4(0.0f, 0.2f, 0.6f, 1.f);
-	water->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	water->DiffuseSrvHeapIndex = 1;
+	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	water->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	water->Roughness = 0.f;
+
+	std::unique_ptr<Material> fence = std::make_unique<Material>();
+	fence->Name = "fence";
+	fence->MatCBIndex = 2;
+	fence->DiffuseSrvHeapIndex = 2;
+	fence->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+	fence->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	fence->Roughness = 0.25f;
+
 
 	m_Materials["grass"] = std::move(grass);
 	m_Materials["water"] = std::move(water);
+	m_Materials["fence"] = std::move(fence);
 }
 
-void TextureApp::BuildRenderItems()
+void TextureApp::BuildWaveRenderItems()
 {
 	// 파도를 아이템화 시키기
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
 	wavesRenderItem->WorldMat = MathHelper::Identity4x4();
+	XMStoreFloat4x4(&wavesRenderItem->TexTransform, XMMatrixScaling(5.0f, 5.0f, 1.0f));
 	wavesRenderItem->ObjCBIndex = 0;
 	// 아이템에 Mat을 추가시켜준다.
 	wavesRenderItem->Mat = m_Materials["water"].get();
@@ -1510,6 +1692,7 @@ void TextureApp::BuildRenderItems()
 	// 지형을 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
 	gridRenderItem->WorldMat = MathHelper::Identity4x4();
+	XMStoreFloat4x4(&gridRenderItem->TexTransform, XMMatrixScaling(5.f, 5.f, 1.f));
 	gridRenderItem->ObjCBIndex = 1;
 	// 여기도 mat을 추가해준다.
 	gridRenderItem->Mat = m_Materials["grass"].get();
@@ -1521,8 +1704,21 @@ void TextureApp::BuildRenderItems()
 
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 
+	std::unique_ptr<RenderItem> fenceRenderItem = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&fenceRenderItem->WorldMat, XMMatrixTranslation(3.f, 2.f, -9.f));
+	fenceRenderItem->ObjCBIndex = 2;
+	fenceRenderItem->Mat = m_Materials["fence"].get();
+	fenceRenderItem->Geo = m_Geometries["fenceGeo"].get();
+	fenceRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	fenceRenderItem->IndexCount = fenceRenderItem->Geo->DrawArgs["fence"].IndexCount;
+	fenceRenderItem->StartIndexLocation = fenceRenderItem->Geo->DrawArgs["fence"].StartIndexLocation;
+	fenceRenderItem->BaseVertexLocation = fenceRenderItem->Geo->DrawArgs["fence"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(fenceRenderItem.get());
+
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
+	m_AllRenderItems.push_back(std::move(fenceRenderItem));
 }
 
 void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
