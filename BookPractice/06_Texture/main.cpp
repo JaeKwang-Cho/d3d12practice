@@ -11,12 +11,9 @@
 #include "Waves.h"
 #include "FileReader.h"
 
-#define PRAC1 (0)
-#define PRAC2 (0)
+#define BOX (1)
+#define WAVE (0)
 #define SKULL (0)
-#define PRAC3 (0)
-#define PRAC4 (0)
-#define PRAC5 (0)
 
 const int g_NumFrameResources = 3;
 
@@ -28,6 +25,9 @@ struct RenderItem
 
 	// item 마다 World를 가지고 있게 한다.
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
+
+	// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 
 	// 물체의 상태가 변해서 CB를 업데이트 해야 할 때
 	// Dirty flag를 켜서 새로 업데이트를 한다. (디자인 패턴 관련)
@@ -81,22 +81,34 @@ private:
 	void OnKeyboardInput(const GameTimer _gt);
 
 	void UpdateCamera(const GameTimer& _gt);
-	void ChangeRoughness(UINT _flag);
 
+	// ==== Update ====
 	void UpdateObjectCBs(const GameTimer& _gt);
 	// Material CB 업데이트 함수를 추가한다.
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateMainPassCB_3PointLights(const GameTimer& _gt);
 	void UpdateWaves(const GameTimer& _gt);
+	// 아직 사용하지 않는 함수다.
+	void AnimateMaterials(const GameTimer& _gt);
 
+
+	// ==== Init ====
 	void BuildRootSignature();
+	// 다시 Descriptor Heap을 사용한다. 테이플을 사용하기 때문에
+	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
-	// 지형을 렌더링 해볼 것이다.
+	// Box 용이다.
+	void LoadBoxTextures();
+	void BuildBoxGeometry();
+	void BuildBoxMaterials();
+	void BuildBoxRenderItems();
+
+	// Wave 용이다.
 	void BuildLandGeometry();
 	void BuildWavesGeometryBuffers();
 
-	// Prac3 용이다.
+	// Skull 용이다.
 	void BuildShapeGeometry();
 	void BuildSkull();
 	void BuildMatForSkullNGeo();
@@ -116,19 +128,23 @@ private:
 	float GetHillsHeight(float _x, float _z) const;
 	XMFLOAT3 GetHillsNormal(float _x, float _z)const;
 
+	// 정적 샘플러 구조체를 미리 만드는 함수이다.
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
+
 private:
 	std::vector<std::unique_ptr<FrameResource>> m_FrameResources;
 	FrameResource* m_CurrFrameResource = nullptr;
 	int m_CurrFrameResourceIndex = 0;
 
-	// Root Signature 만 사용한다. Constant Root 기 때문
+	// 이제 Descriptor Heap 도 사용한다.
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
+	ComPtr<ID3D12DescriptorHeap> m_SrvDescriptorHeap = nullptr;
 
 	// 도형, 쉐이더, PSO 등등 App에서 관리한다..
 	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
 	// Material 도 추가한다.
 	std::unordered_map<std::string, std::unique_ptr<Material>> m_Materials;
-	// Texture는 아직 사용하지 않는다.
+	// Texture도 추가한다.
 	std::unordered_map<std::string, std::unique_ptr<Texture>> m_Textures;
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> m_Shaders;
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> m_PSOs;
@@ -143,7 +159,7 @@ private:
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
 
 	// 이건 나중에 공부한다.
-	std::vector<RenderItem*> m_RItemLayer[(int)RenderLayer::Count];
+	std::vector<RenderItem*> m_RenderItemLayer[(int)RenderLayer::Count];
 	// 파도의 높이를 업데이트 해주는 클래스 인스턴스다.
 	std::unique_ptr<Waves> m_Waves;
 
@@ -154,9 +170,11 @@ private:
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
-	float m_Phi = 1.5f * XM_PI;
-	float m_Theta = XM_PIDIV2 - 0.1f;
-#if SKULL
+	float m_Phi = 1.3f * XM_PI;
+	float m_Theta = 0.4f * XM_PI;
+#if BOX
+	float m_Radius = 2.5f;
+#elif SKULL
 	float m_Radius = 20.f;
 #else
 	float m_Radius = 50.f;
@@ -165,7 +183,7 @@ private:
 	bool m_bfillLight = false;
 	bool m_bBackLight = false;
 
-	XMFLOAT3 m_SpherePosArray[10];
+	XMFLOAT3 m_SpherePosArray[10] = {};
 
 	float m_SunPhi = 1.25f * XM_PI;
 	float m_SunTheta = XM_PIDIV4;
@@ -222,16 +240,26 @@ bool TextureApp::Initialize()
 	// 얘는 좀 복잡해서 따로 클래스로 만들었다.
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
 
-	// 여기서는 공동으로 쓰는 RootSignature를 먼저 정의한다.
+#if BOX
+	LoadBoxTextures();
 	BuildRootSignature();
+	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
-
-#if SKULL
+	BuildBoxGeometry();
+	BuildBoxMaterials();
+	BuildBoxRenderItems();
+#elif SKULL
+	BuildRootSignature();
+	BuildDescriptorHeaps();
+	BuildShadersAndInputLayout();
 	BuildShapeGeometry();
 	BuildSkull();
 	BuildMatForSkullNGeo();
 	BuildRenderItemForSkullNGeo();
 #else
+	BuildRootSignature();
+	BuildDescriptorHeaps();
+	BuildShadersAndInputLayout();
 	// 지형을 만들고
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
@@ -293,13 +321,15 @@ void TextureApp::Update(const GameTimer& _gt)
 			// need to terminate App.
 		}
 	}
+
+	AnimateMaterials(_gt);
 	// CB를 업데이트 해준다.
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
-#if !SKULL
+#if WAVE
 	UpdateWaves(_gt);
 #endif
 }
@@ -350,19 +380,25 @@ void TextureApp::Draw(const GameTimer& _gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferHandle = GetCurrentBackBufferView();
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
+	// ==== 그리기 ======
 
-	// ==== 지형과 파도 그리기 ======
-	
-	// view와 직접 연결 되기 때문에, view heap 설정은 필요 없다.
+#if BOX
+	// 현재 PSO에 View Heap을 세팅해준다.
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get()};
+	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
-	// Frame 에 한번 넘겨주는 Constant를 bind 한다.
+	// 현재 Frame Constant Buffer를 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
-	// 2번 (b2)에 연결 했다.
-	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); 
-	
-	// RenderItem을 그린다.
-	DrawRenderItems(m_CommandList.Get(), m_RItemLayer[(int)RenderLayer::Opaque]);
+	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
+
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+#elif WAVE
+
+#elif SKULL
+
+#endif
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -462,20 +498,6 @@ void TextureApp::OnKeyboardInput(const GameTimer _gt)
 	{
 		m_SunTheta += 1.f * dt;
 	}
-#if PRAC2
-	if (GetAsyncKeyState('1') & 0x8000)
-	{
-		ChangeRoughness(1);
-	}
-	if (GetAsyncKeyState('2') & 0x8000)
-	{
-		ChangeRoughness(2);
-	}
-	if (GetAsyncKeyState('3') & 0x8000)
-	{
-		ChangeRoughness(3);
-	}
-#elif PRAC3
 	if (GetAsyncKeyState('1') & 0x8000)
 	{
 		m_bKeyLight = true;
@@ -494,7 +516,6 @@ void TextureApp::OnKeyboardInput(const GameTimer _gt)
 		m_bfillLight = false;
 		m_bBackLight = false;
 	}
-#endif
 
 	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
 }
@@ -515,42 +536,6 @@ void TextureApp::UpdateCamera(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_ViewMat, viewMat);
 }
 
-void TextureApp::ChangeRoughness(UINT _flag)
-{
-	std::unique_ptr<Material>& grassMat = m_Materials["grass"];
-	std::unique_ptr<Material>& waterMat = m_Materials["water"];
-
-	switch (_flag)
-	{
-	case 1:
-	{
-		grassMat->Roughness = 1.f;
-
-		waterMat->Roughness = 0.f;
-	}
-		break;
-	case 2:
-	{
-		grassMat->Roughness = 0.5f;
-
-		waterMat->Roughness = 0.5f;
-	}
-		break;
-	case 3:
-	{
-		grassMat->Roughness = 0.f;
-
-		waterMat->Roughness = 1.f;
-	}
-		break;
-	default:
-		break;
-	}
-
-	grassMat->NumFramesDirty = g_NumFrameResources;
-	waterMat->NumFramesDirty = g_NumFrameResources;
-}
-
 void TextureApp::UpdateObjectCBs(const GameTimer& _gt)
 {
 	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
@@ -561,9 +546,13 @@ void TextureApp::UpdateObjectCBs(const GameTimer& _gt)
 		{
 			// CPU에 있는 값을 가져와서
 			XMMATRIX worldMat = XMLoadFloat4x4(&e->WorldMat);
+			XMMATRIX texTransform = XMLoadFloat4x4(&e->TexTransform);
 
 			ObjectConstants objConstants;
 			XMStoreFloat4x4(&objConstants.WorldMat, XMMatrixTranspose(worldMat));
+			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
+			// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
+			
 			// CB에 넣어주고
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
 
@@ -576,8 +565,6 @@ void TextureApp::UpdateObjectCBs(const GameTimer& _gt)
 void TextureApp::UpdateMaterialCBs(const GameTimer& _gt)
 {
 	UploadBuffer<MaterialConstants>* currMaterialCB = m_CurrFrameResource->MaterialCB.get();	
-	// std::pair<std::string, std::unique_ptr<Material>>
-	// 
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
 	{
 		// 이것도 dirty flag가 켜져있을 때만 업데이트를 한다.
@@ -590,6 +577,7 @@ void TextureApp::UpdateMaterialCBs(const GameTimer& _gt)
 			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
 			matConstants.FresnelR0 = mat->FresnelR0;
 			matConstants.Roughness = mat->Roughness;
+			XMStoreFloat4x4(&matConstants.MatTransform, XMMatrixTranspose(matTransform));
 
 			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
 
@@ -631,14 +619,14 @@ void TextureApp::UpdateMainPassCB(const GameTimer& _gt)
 
 	// 이제 Light를 채워준다. Shader와 App에서 정의한 Lights의 개수와 종류가 같아야 한다.
 
-#if PRAC1
+#if 0
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
 	float sinWave = 0.5f * sinf(_gt.GetTotalTime()) + 0.5f;
 	m_MainPassCB.Lights[0].Strength = { 1.f * sinWave, 1.f * sinWave, 0.9f * sinWave };
-#elif PRAC3
+#elif 1
 	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
 	UpdateMainPassCB_3PointLights(_gt);
-#elif PRAC4
+#elif 0
 	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
 	for (int i = 0; i < 10; i++)
 	{
@@ -648,7 +636,7 @@ void TextureApp::UpdateMainPassCB(const GameTimer& _gt)
 		m_MainPassCB.Lights[i].FalloffStart = 1.f;
 		m_MainPassCB.Lights[i].FalloffEnd = 10.f;
 	}
-#elif PRAC5
+#elif 0
 	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
 	float switcher = -1.f;
 	for (int i = 0; i < 10; i++)
@@ -748,24 +736,35 @@ void TextureApp::UpdateWaves(const GameTimer& _gt)
 	m_WavesRenderItem->Geo->VertexBufferGPU = currWaveVB->Resource();
 }
 
+void TextureApp::AnimateMaterials(const GameTimer& _gt)
+{
+}
+
 void TextureApp::BuildRootSignature()
 {
-	// 여기서는 Table을 사용하는 것이 아니라
-	// Constant Buffer View를 직접 연결한다.
-	// 그에 맞는 Root Signature 설정을 해준다.
+	// Table도 쓸거고, Constant도 쓸거다.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 
-	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
-	// 루트 파라미터를 Root Constant 설정할 것이다.
-	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
-	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - Material
-	slotRootParameter[2].InitAsConstantBufferView(2); // b2 - PassConstants
+	// Texture 정보가 넘어가는 Table
+	CD3DX12_DESCRIPTOR_RANGE texTable;
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t1 - texture 정보
+	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+	// Pass, Object, Material이 넘어가는 Constant
+	slotRootParameter[1].InitAsConstantBufferView(0); // b0 - PerObject
+	slotRootParameter[2].InitAsConstantBufferView(1); // b1 - PassConstants
+	slotRootParameter[3].InitAsConstantBufferView(2); // b2 - Material
+
+	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
+	// Static Sampler 방법이다. 최대 2000개 생성 가능
+	// (원래는 D3D12_DESCRIPTOR_HEAP_DESC 가지고 D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER막 해줘야 한다.)
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> staticSamplers = GetStaticSamplers();
 
 	// IA에서 값이 들어가도록 설정한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-		3,
+		4, // table 1개, constant view 3개
 		slotRootParameter,
-		0,
-		nullptr,
+		(UINT)staticSamplers.size(), // 드디어 여길 채워넣게 되었다.
+		staticSamplers.data(), // 보아하니 구조체만 넣어주면 되는 듯 보인다.
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
 
@@ -792,6 +791,32 @@ void TextureApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
+void TextureApp::BuildDescriptorHeaps()
+{
+	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = 1;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
+
+	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// 텍스쳐 리소스를 얻은 다음
+	ID3D12Resource* woodCrateTex = m_Textures["woodCrateTex"].get()->Resource.Get();
+	// view를 만들어주고
+	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
+	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srcDesc.Format = woodCrateTex->GetDesc().Format;
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srcDesc.Texture2D.MostDetailedMip = 0;
+	srcDesc.Texture2D.MipLevels = woodCrateTex->GetDesc().MipLevels;
+	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+	// view를 만들면서 연결해준다.
+	m_d3dDevice->CreateShaderResourceView(woodCrateTex, &srcDesc, viewHandle);
+}
+
 void TextureApp::BuildShadersAndInputLayout()
 {
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", nullptr, "VS", "vs_5_1");
@@ -800,8 +825,119 @@ void TextureApp::BuildShadersAndInputLayout()
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) *2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
+}
+
+void TextureApp::LoadBoxTextures()
+{
+	std::unique_ptr<Texture> woodCrateTex = std::make_unique<Texture>();
+	woodCrateTex->Name = "woodCrateTex";
+	woodCrateTex->Filename = L"../Textures/WoodCrate01.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		woodCrateTex->Filename.c_str(),
+		woodCrateTex->Resource,
+		woodCrateTex->UploadHeap
+	));
+
+	m_Textures[woodCrateTex->Name] = std::move(woodCrateTex);
+}
+
+void TextureApp::BuildBoxGeometry()
+{
+	// 일단 제너레이터로 박스를 만들고
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData box = geoGen.CreateBox(1.f, 1.f, 1.f, 3);
+	// 속성도 뽑아 먹고
+	SubmeshGeometry boxSubmesh;
+	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
+	boxSubmesh.StartIndexLocation = 0;
+	boxSubmesh.BaseVertexLocation = 0;
+	// 데이터도 뽑아 먹는다.
+	std::vector<Vertex> vertices(box.Vertices.size());
+
+	for (size_t i = 0; i < box.Vertices.size(); i++)
+	{
+		vertices[i].Pos = box.Vertices[i].Position;
+		vertices[i].Normal = box.Vertices[i].Normal;
+		vertices[i].TexC = box.Vertices[i].TexC;
+	}
+
+	std::vector<std::uint16_t> indices = box.GetIndices16();
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(uint16_t);
+
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "boxGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+		);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	geo->DrawArgs["box"] = boxSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
+}
+
+void TextureApp::BuildBoxMaterials()
+{
+	std::unique_ptr<Material> woodCrate = std::make_unique<Material>();
+	woodCrate->Name = "woodCrate";
+	woodCrate->MatCBIndex = 0;
+	woodCrate->DiffuseSrvHeapIndex = 0;
+	woodCrate->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+	woodCrate->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	woodCrate->Roughness = 0.2f;
+
+	m_Materials[woodCrate->Name] = std::move(woodCrate);
+}
+
+void TextureApp::BuildBoxRenderItems()
+{
+	std::unique_ptr<RenderItem> boxRenderItem = std::make_unique<RenderItem>();
+
+	boxRenderItem->ObjCBIndex = 0;
+	boxRenderItem->Mat = m_Materials["woodCrate"].get();
+	boxRenderItem->Geo = m_Geometries["boxGeo"].get();
+	boxRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	boxRenderItem->IndexCount = boxRenderItem->Geo->DrawArgs["box"].IndexCount;
+	boxRenderItem->StartIndexLocation = boxRenderItem->Geo->DrawArgs["box"].StartIndexLocation;
+	boxRenderItem->BaseVertexLocation = boxRenderItem->Geo->DrawArgs["box"].BaseVertexLocation;
+
+	m_AllRenderItems.push_back(std::move(boxRenderItem));
+
+	// 일단은 opaque 한 친구들 말고는 없다.
+	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
+	{
+		m_RenderItemLayer[(UINT)RenderLayer::Opaque].push_back(e.get());
+	}
 }
 
 void TextureApp::BuildLandGeometry()
@@ -1178,7 +1314,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
 	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
 
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
 	m_AllRenderItems.push_back(std::move(boxRitem));
 
 	// 그리드 아이템
@@ -1193,7 +1329,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
 
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
 	m_AllRenderItems.push_back(std::move(gridRitem));
 
 	// 원기둥과 구 5개씩 2줄
@@ -1209,7 +1345,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 		XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
 		XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
 
-#if PRAC4 || PRAC5
+#if 0
 		m_SpherePosArray[i * 2] = { -5.0f, 3.5f, -10.0f + i * 5.0f };
 		m_SpherePosArray[i * 2 + 1] = { +5.0f, 3.5f, -10.0f + i * 5.0f };
 #endif
@@ -1252,10 +1388,10 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
 		rightSphereRitem->BaseVertexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
 
-		m_RItemLayer[(int)RenderLayer::Opaque].push_back(leftCylRitem.get());
-		m_RItemLayer[(int)RenderLayer::Opaque].push_back(rightCylRitem.get());
-		m_RItemLayer[(int)RenderLayer::Opaque].push_back(leftSphereRitem.get());
-		m_RItemLayer[(int)RenderLayer::Opaque].push_back(rightSphereRitem.get());
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftCylRitem.get());
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightCylRitem.get());
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftSphereRitem.get());
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightSphereRitem.get());
 
 		m_AllRenderItems.push_back(std::move(leftCylRitem));
 		m_AllRenderItems.push_back(std::move(rightCylRitem));
@@ -1277,7 +1413,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
 
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
 }
@@ -1316,7 +1452,7 @@ void TextureApp::BuildPSOs()
 void TextureApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
-#if !PRAC3
+#if WAVE
 	waveVerCount = m_Waves->VertexCount();
 #endif
 
@@ -1369,7 +1505,7 @@ void TextureApp::BuildRenderItems()
 	wavesRenderItem->BaseVertexLocation = wavesRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 	// 업데이트를 위해 맴버로 관리해준다.
 	m_WavesRenderItem = wavesRenderItem.get();
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(wavesRenderItem.get());
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wavesRenderItem.get());
 
 	// 지형을 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
@@ -1383,7 +1519,7 @@ void TextureApp::BuildRenderItems()
 	gridRenderItem->StartIndexLocation = gridRenderItem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRenderItem->BaseVertexLocation = gridRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 
-	m_RItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
@@ -1409,6 +1545,9 @@ void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 		_cmdList->IASetIndexBuffer(&IBView);
 		_cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
 
+		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_SrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
+
 		// Object Constant와
 		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
 		objCBAddress += ri->ObjCBIndex * objCBByteSize;
@@ -1417,8 +1556,9 @@ void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 		matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
 
 		// PSO에 연결해준다.
-		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
-		_cmdList->SetGraphicsRootConstantBufferView(1, matCBAddress);
+		_cmdList->SetGraphicsRootDescriptorTable(0, tex);
+		_cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
+		_cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
@@ -1445,4 +1585,66 @@ XMFLOAT3 TextureApp::GetHillsNormal(float _x, float _z) const
 	XMStoreFloat3(&n, unitNormal);
 
 	return n;
+}
+
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
+{
+	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
+	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.
+	
+	// 근접점 필터링 - 반복
+	const CD3DX12_STATIC_SAMPLER_DESC pointWrap(
+		0, // s0 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // 필터 종류
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP, // u 방향 텍스쳐 지정 모드
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP, // w 방향 텍스쳐 지정 모드
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP // w 방향 텍스쳐 지정 모드
+	);
+
+	// 근접점 필터링 - 자르고 늘이기
+	const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+		1, // s1 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	// 주변선형 보간 필터링 - 반복
+	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
+		2, // s2 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	// 주변선형 보간 필터링 - 자르고 늘이기
+	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+		3, // s3 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
+		4, // s4 - 레지스터 번호
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressW
+		0.0f,                              // LOD를 계산하는 offset(bias) 값이라고 한다.
+		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
+
+	const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
+		5, // s5 - 레지스터 번호
+		D3D12_FILTER_ANISOTROPIC, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressW
+		0.0f,                              // LOD를 계산하는 offset(bias) 값이라고 한다.
+		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
+
+	return {
+		pointWrap, pointClamp,
+		linearWrap, linearClamp,
+		anisotropicWrap, anisotropicClamp };
 }

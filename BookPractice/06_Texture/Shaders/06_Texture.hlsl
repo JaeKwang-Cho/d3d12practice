@@ -7,7 +7,7 @@
 // LightingUtil.hlsl을 include 해주기 전에 이렇개 해야, 
 // 계산이 알맞게 된다.
 #ifndef NUM_DIR_LIGHTS
-#define NUM_DIR_LIGHTS 1
+#define NUM_DIR_LIGHTS 3
 #endif
 
 #ifndef NUM_POINT_LIGHTS
@@ -23,23 +23,24 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
+Texture2D gDiffuseMap : register(t0);
+SamplerState gSamPointWrap : register(s0);
+SamplerState gSamPointClamp : register(s1);
+SamplerState gSamLinearWrap : register(s2);
+SamplerState gSamLinearClamp: register(s3);
+SamplerState gSamAnisotropicWrap : register(s4);
+SamplerState gSamAnisotropicClamp : register(s5);
+
 
 // Material 마다 달라지는 Constant Buffer
 cbuffer cbPerObject : register(b0)
 {
     float4x4 gWorld;
-};
-
-cbuffer cbMaterial : register(b1)
-{
-    float4 gDiffuseAlbedo;
-    float3 gFresnelR0;
-    float gRoughness;
-    float4x4 gMatTransform;
+    float4x4 gTexTransform;
 };
 
 // 프레임 마다 달라지는 Constant Buffer
-cbuffer cbPass : register(b2)
+cbuffer cbPass : register(b1)
 {
     float4x4 gView;
     float4x4 gInvView;
@@ -63,12 +64,22 @@ cbuffer cbPass : register(b2)
     // are spot lights for a maximum of MaxLights per object.
     Light gLights[MaxLights];
 };
+
+cbuffer cbMaterial : register(b2)
+{
+    float4 gDiffuseAlbedo;
+    float3 gFresnelR0;
+    float gRoughness;
+    float4x4 gMatTransform;
+};
+
  
 // 입력으로 Pos, Norm 을 받는다.
 struct VertexIn
 {
     float3 PosL : POSITION;
     float3 NormalL : NORMAL;
+    float2 TexC : TEXCOORD;
 };
 
 // 출력으로는 World Pos와 Render(Homogeneous clip space) Pos로 나눈다.
@@ -77,6 +88,7 @@ struct VertexOut
     float4 PosH : SV_POSITION;
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
+    float2 TexC : TEXCOORD;
 };
 
 VertexOut VS(VertexIn vin)
@@ -93,12 +105,20 @@ VertexOut VS(VertexIn vin)
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
     vout.PosH = mul(posW, gViewProj);
+    
+    // Texture에게 주어진 Transform을 적용시킨 다음
+    float4 texC = mul(float4(vin.TexC, 0.f, 0.f), gTexTransform);
+    // World를 곱해서 PS로 넘겨준다.
+    vout.TexC = mul(texC, gMatTransform).xy;
 
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
+    // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
+    
     // 일단 정규화를 한다.
     pin.NormalW = normalize(pin.NormalW);
 
@@ -106,12 +126,12 @@ float4 PS(VertexOut pin) : SV_Target
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
 	// 일단 냅다 간접광을 설정한다.
-    float4 ambient = gAmbientLight * gDiffuseAlbedo;
+    float4 ambient = gAmbientLight * diffuseAlbedo;
 
     // 광택을 설정하고
     const float shininess = 1.0f - gRoughness;
     // 구조체를 채운 다음
-    Material mat = { gDiffuseAlbedo, gFresnelR0, shininess };
+    Material mat = { diffuseAlbedo, gFresnelR0, shininess };
     // (그림자는 나중에 할 것이다.)
     float3 shadowFactor = 1.0f;
     // 이전에 정의 했던 식을 이용해서 넘긴다.
@@ -138,7 +158,7 @@ float4 PS(VertexOut pin) : SV_Target
 #endif
 
     // (일단 diffuse의 알파를 그대로 가져온다.)
-    litColor.a = gDiffuseAlbedo.a;
+    litColor.a = diffuseAlbedo.a;
     // 출력한다.
     return litColor;
 }

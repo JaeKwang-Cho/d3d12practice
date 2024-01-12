@@ -10,6 +10,7 @@ using Microsoft::WRL::ComPtr;
 struct ObjectConstants 
 {
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
@@ -47,6 +48,7 @@ struct PassConstants {
 struct Vertex {
 	XMFLOAT3 Pos;
 	XMFLOAT3 Normal;
+	XMFLOAT2 TexC;
 };
 
 // CPU가 프레임 마다 Command List를 구성하는데 필요한 정보들을 저장한다.
