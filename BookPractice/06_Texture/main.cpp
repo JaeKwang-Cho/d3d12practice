@@ -14,6 +14,8 @@
 #define BOX (1)
 #define WAVE (0)
 #define SKULL (0)
+#define MIPMAPTEST (0)
+#define MULTITEX (0)
 
 const int g_NumFrameResources = 3;
 
@@ -92,6 +94,9 @@ private:
 	// 아직 사용하지 않는 함수다.
 	void AnimateMaterials(const GameTimer& _gt);
 
+	// 연습 문제
+	void BuildSamplerHeap();
+	void LoadFireTextures();
 
 	// ==== Init ====
 	void BuildRootSignature();
@@ -114,6 +119,8 @@ private:
 	void BuildWaveRenderItems();
 
 	// Skull 용이다.
+	void LoadSkullTextures();
+	void BuildSkullDescriptorHeaps();
 	void BuildShapeGeometry();
 	void BuildSkull();
 	void BuildMatForSkullNGeo();
@@ -132,7 +139,7 @@ private:
 	XMFLOAT3 GetHillsNormal(float _x, float _z)const;
 
 	// 정적 샘플러 구조체를 미리 만드는 함수이다.
-	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> GetStaticSamplers();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> GetStaticSamplers();
 
 private:
 	std::vector<std::unique_ptr<FrameResource>> m_FrameResources;
@@ -142,6 +149,9 @@ private:
 	// 이제 Descriptor Heap 도 사용한다.
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
 	ComPtr<ID3D12DescriptorHeap> m_SrvDescriptorHeap = nullptr;
+
+	// 테스트용 Sampler Heap이다.
+	ComPtr<ID3D12DescriptorHeap> m_SamplerHeap = nullptr;
 
 	// 도형, 쉐이더, PSO 등등 App에서 관리한다..
 	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
@@ -246,16 +256,26 @@ bool TextureApp::Initialize()
 
 	BuildShadersAndInputLayout();
 
-#if BOX
+#if MIPMAPTEST
+	BuildSamplerHeap();
+#endif
+
+#if MULTITEX && BOX
+	LoadFireTextures();
+#elif BOX
 	LoadBoxTextures();
+#endif
+
+#if BOX
 	BuildRootSignature();
 	BuildBoxDescriptorHeaps();
 	BuildBoxGeometry();
 	BuildBoxMaterials();
 	BuildBoxRenderItems();
 #elif SKULL
+	LoadSkullTextures();
+	BuildSkullDescriptorHeaps();
 	BuildRootSignature();
-	BuildBoxDescriptorHeaps();
 	BuildShapeGeometry();
 	BuildSkull();
 	BuildMatForSkullNGeo();
@@ -296,7 +316,7 @@ void TextureApp::OnResize()
 	D3DApp::OnResize();
 
 	// Projection Mat은 윈도우 종횡비에 영향을 받는다.
-	XMMATRIX projMat = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
+	XMMATRIX projMat = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, GetAspectRatio(), 0.01f, 1000.f);
 	XMStoreFloat4x4(&m_ProjMat, projMat);
 }
 
@@ -388,7 +408,11 @@ void TextureApp::Draw(const GameTimer& _gt)
 	// ==== 그리기 ======
 
 	// 현재 PSO에 View Heap을 세팅해준다.
+#if MIPMAPTEST
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get(), m_SamplerHeap.Get()};
+#else
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get() };
+#endif
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
@@ -470,7 +494,7 @@ void TextureApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 		m_Radius += dx - dy;
 
 		// 반지름은 3 ~ 15 구간을 유지한다.
-		m_Radius = MathHelper::Clamp(m_Radius, 3.f, 15.f);
+		m_Radius = MathHelper::Clamp(m_Radius, 1.f, 15.f);
 	}
 
 	m_LastMousePos.x = _x;
@@ -514,6 +538,11 @@ void TextureApp::OnKeyboardInput(const GameTimer _gt)
 		m_bKeyLight = false;
 		m_bfillLight = false;
 		m_bBackLight = false;
+	}
+	if (GetAsyncKeyState('5') & 0x8000)
+	{
+		m_Phi = -XM_PIDIV2;
+		m_Theta = XM_PIDIV2;
 	}
 
 	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
@@ -611,7 +640,7 @@ void TextureApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.EyePosW = m_EyePos;
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
 	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
-	m_MainPassCB.NearZ = 1.f;
+	m_MainPassCB.NearZ = 0.01f;
 	m_MainPassCB.FarZ = 1000.f;
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
@@ -767,17 +796,112 @@ void TextureApp::AnimateMaterials(const GameTimer& _gt)
 	waterMat->MatTransform(3, 1) = tv;
 	// dirty flag를 켜준다.
 	waterMat->NumFramesDirty = g_NumFrameResources;
+#elif MULTITEX
+	Material* flareMat = m_Materials["woodCrate"].get(); 
+	XMMATRIX flareTexTransform = XMMatrixTranslation(-0.5f, -0.5f, 0.f);
+	flareTexTransform *= XMMatrixRotationZ(_gt.GetTotalTime());
+	flareTexTransform *= XMMatrixTranslation(0.5f, 0.5f, 0.f);
+
+	XMStoreFloat4x4(&flareMat->MatTransform, flareTexTransform);
+
+	flareMat->NumFramesDirty = g_NumFrameResources;
 #endif
+}
+
+void TextureApp::BuildSamplerHeap()
+{
+	// 샘플러 뷰 힙을 만든다.
+	D3D12_DESCRIPTOR_HEAP_DESC descHeapSampler = {};
+	descHeapSampler.NumDescriptors = 3;
+	descHeapSampler.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+	descHeapSampler.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&descHeapSampler, IID_PPV_ARGS(&m_SamplerHeap)));
+
+	// 샘플러를 만든다.
+	UINT samplerIncrement = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE samHeapHandle(m_SamplerHeap->GetCPUDescriptorHandleForHeapStart());
+	
+	// s10
+	D3D12_SAMPLER_DESC pointWrapLOD3 = {};
+	pointWrapLOD3.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+	pointWrapLOD3.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	pointWrapLOD3.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	pointWrapLOD3.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	pointWrapLOD3.MinLOD = 3;
+	pointWrapLOD3.MaxLOD = D3D12_FLOAT32_MAX;
+	pointWrapLOD3.MipLODBias = 0.f;
+	pointWrapLOD3.MaxAnisotropy = 8;
+	pointWrapLOD3.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	m_d3dDevice->CreateSampler(&pointWrapLOD3, samHeapHandle);
+
+	// s11
+	D3D12_SAMPLER_DESC linearWrapLOD3 = pointWrapLOD3;
+	linearWrapLOD3.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
+
+	samHeapHandle.Offset(1, samplerIncrement);
+	m_d3dDevice->CreateSampler(&linearWrapLOD3, samHeapHandle);
+
+	// s12
+	D3D12_SAMPLER_DESC anisotropicWrapLOD3 = linearWrapLOD3;
+	anisotropicWrapLOD3.Filter = D3D12_FILTER_ANISOTROPIC;
+
+	samHeapHandle.Offset(1, samplerIncrement);
+	m_d3dDevice->CreateSampler(&anisotropicWrapLOD3, samHeapHandle);
+
+}
+
+void TextureApp::LoadFireTextures()
+{
+	std::unique_ptr<Texture> flareTex = std::make_unique<Texture>();
+	flareTex->Name = "flareTex";
+	flareTex->Filename = L"../Textures/flare.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		flareTex->Filename.c_str(),
+		flareTex->Resource,
+		flareTex->UploadHeap
+	));
+
+	m_Textures[flareTex->Name] = std::move(flareTex);
+
+	std::unique_ptr<Texture> flareAlphaTex = std::make_unique<Texture>();
+	flareAlphaTex->Name = "flareAlphaTex";
+	flareAlphaTex->Filename = L"../Textures/flarealpha.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		flareAlphaTex->Filename.c_str(),
+		flareAlphaTex->Resource,
+		flareAlphaTex->UploadHeap
+	));
+
+	m_Textures[flareAlphaTex->Name] = std::move(flareAlphaTex);
 }
 
 void TextureApp::BuildRootSignature()
 {
 	// Table도 쓸거고, Constant도 쓸거다.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
-
+	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+	
+#if MIPMAPTEST
+	// Sampler 정보가 넘어가는 테이블
+	UINT numOfParameter = 5;
+	CD3DX12_DESCRIPTOR_RANGE samTable;
+	samTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 3, 10); // s10 ~ s12 - Lod3 Sampler 정보
+	slotRootParameter[4].InitAsDescriptorTable(1, &samTable, D3D12_SHADER_VISIBILITY_PIXEL);
+#else
+	UINT numOfParameter = 4; 
+#endif
 	// Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t1 - texture 정보
+#if MULTITEX
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // t0 ~ t1 - texture 정보
+#else
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // t0 - texture 정보
+#endif
 	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
 	// Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[1].InitAsConstantBufferView(0); // b0 - PerObject
@@ -787,11 +911,11 @@ void TextureApp::BuildRootSignature()
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
 	// Static Sampler 방법이다. 최대 2000개 생성 가능
 	// (원래는 D3D12_DESCRIPTOR_HEAP_DESC 가지고 D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER막 해줘야 한다.)
-	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> staticSamplers = GetStaticSamplers();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> staticSamplers = GetStaticSamplers();
 
 	// IA에서 값이 들어가도록 설정한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-		4, // table 1개, constant view 3개
+		numOfParameter, // table 1개, constant view 3개 (+ Sampler 1개)
 		slotRootParameter,
 		(UINT)staticSamplers.size(), // 드디어 여길 채워넣게 되었다.
 		staticSamplers.data(), // 보아하니 구조체만 넣어주면 되는 듯 보인다.
@@ -825,14 +949,34 @@ void TextureApp::BuildBoxDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 1;
+	srvHeapDesc.NumDescriptors = 2;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
 
 	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+#if MULTITEX
+	// 텍스쳐 리소스를 얻은 다음
+	ID3D12Resource* flareTex = m_Textures["flareTex"].get()->Resource.Get();
+	// view를 만들어주고
+	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
+	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srcDesc.Format = flareTex->GetDesc().Format;
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srcDesc.Texture2D.MostDetailedMip = 0;
+	srcDesc.Texture2D.MipLevels = flareTex->GetDesc().MipLevels;
+	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
+	// view를 만들면서 연결해준다.
+	m_d3dDevice->CreateShaderResourceView(flareTex, &srcDesc, viewHandle);
+
+	ID3D12Resource* flareAlphaTex = m_Textures["flareAlphaTex"].get()->Resource.Get();
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = flareAlphaTex->GetDesc().Format;
+	m_d3dDevice->CreateShaderResourceView(flareAlphaTex, &srcDesc, viewHandle);
+
+#else
 	// 텍스쳐 리소스를 얻은 다음
 	ID3D12Resource* woodCrateTex = m_Textures["woodCrateTex"].get()->Resource.Get();
 	// view를 만들어주고
@@ -843,8 +987,10 @@ void TextureApp::BuildBoxDescriptorHeaps()
 	srcDesc.Texture2D.MostDetailedMip = 0;
 	srcDesc.Texture2D.MipLevels = woodCrateTex->GetDesc().MipLevels;
 	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+
 	// view를 만들면서 연결해준다.
 	m_d3dDevice->CreateShaderResourceView(woodCrateTex, &srcDesc, viewHandle);
+#endif
 }
 
 void TextureApp::BuildShadersAndInputLayout()
@@ -954,6 +1100,9 @@ void TextureApp::BuildBoxRenderItems()
 	std::unique_ptr<RenderItem> boxRenderItem = std::make_unique<RenderItem>();
 
 	boxRenderItem->ObjCBIndex = 0;
+	XMMATRIX texTransform = XMMatrixIdentity();
+	//texTransform = XMMatrixScaling(3.f, 3.f, 1.f) * XMMatrixTranslation(-0.7f, -0.7f, 0.f);
+	XMStoreFloat4x4(&boxRenderItem->TexTransform, texTransform);
 	boxRenderItem->Mat = m_Materials["woodCrate"].get();
 	boxRenderItem->Geo = m_Geometries["boxGeo"].get();
 	boxRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -1242,6 +1391,108 @@ void TextureApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
+void TextureApp::LoadSkullTextures()
+{
+	std::unique_ptr<Texture> skullTex = std::make_unique<Texture>();
+	skullTex->Name = "skullTex";
+	skullTex->Filename = L"../Textures/ice.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		skullTex->Filename.c_str(),
+		skullTex->Resource,
+		skullTex->UploadHeap
+	));
+
+	m_Textures[skullTex->Name] = std::move(skullTex);
+
+	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
+	bricksTex->Name = "bricksTex";
+	bricksTex->Filename = L"../Textures/bricks.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		bricksTex->Filename.c_str(),
+		bricksTex->Resource,
+		bricksTex->UploadHeap
+	));
+
+	m_Textures[bricksTex->Name] = std::move(bricksTex);
+
+	std::unique_ptr<Texture> stoneTex = std::make_unique<Texture>();
+	stoneTex->Name = "stoneTex";
+	stoneTex->Filename = L"../Textures/stone.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		stoneTex->Filename.c_str(),
+		stoneTex->Resource,
+		stoneTex->UploadHeap
+	));
+
+	m_Textures[stoneTex->Name] = std::move(stoneTex);
+
+	std::unique_ptr<Texture> tileTex = std::make_unique<Texture>();
+	tileTex->Name = "tileTex";
+	tileTex->Filename = L"../Textures/tile.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		tileTex->Filename.c_str(),
+		tileTex->Resource,
+		tileTex->UploadHeap
+	));
+
+	m_Textures[tileTex->Name] = std::move(tileTex);
+}
+
+void TextureApp::BuildSkullDescriptorHeaps()
+{
+	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = 4;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
+
+	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// 텍스쳐 리소스를 얻은 다음
+	ID3D12Resource* skullTex = m_Textures["skullTex"].get()->Resource.Get();
+	ID3D12Resource* bricksTex = m_Textures["bricksTex"].get()->Resource.Get();
+	ID3D12Resource* stoneTex = m_Textures["stoneTex"].get()->Resource.Get();
+	ID3D12Resource* tileTex = m_Textures["tileTex"].get()->Resource.Get();
+
+
+	// view를 만들어주고
+	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
+	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srcDesc.Format = skullTex->GetDesc().Format;
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srcDesc.Texture2D.MostDetailedMip = 0;
+	srcDesc.Texture2D.MipLevels = skullTex->GetDesc().MipLevels;
+	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+
+	m_d3dDevice->CreateShaderResourceView(skullTex, &srcDesc, viewHandle);
+
+	// view를 만들면서 연결해준다.
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = bricksTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = stoneTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(stoneTex, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = tileTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
+}
+
 void TextureApp::BuildShapeGeometry()
 {
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
@@ -1306,24 +1557,28 @@ void TextureApp::BuildShapeGeometry()
 	{
 		vertices[k].Pos = box.Vertices[i].Position;
 		vertices[k].Normal = box.Vertices[i].Normal;
+		vertices[k].TexC = box.Vertices[i].TexC;
 	}
 
 	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = grid.Vertices[i].Position;
 		vertices[k].Normal = grid.Vertices[i].Normal;
+		vertices[k].TexC = grid.Vertices[i].TexC;
 	}
 
 	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = sphere.Vertices[i].Position;
 		vertices[k].Normal = sphere.Vertices[i].Normal;
+		vertices[k].TexC = sphere.Vertices[i].TexC;
 	}
 
 	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = cylinder.Vertices[i].Position;
 		vertices[k].Normal = cylinder.Vertices[i].Normal;
+		vertices[k].TexC = cylinder.Vertices[i].TexC;
 	}
 
 	// 이제 index 정보도 한곳에 다 옮긴다.
@@ -1428,46 +1683,42 @@ void TextureApp::BuildSkull()
 
 void TextureApp::BuildMatForSkullNGeo()
 {
-	std::unique_ptr<Material> skull = std::make_unique<Material>();
-	skull->Name = "skull";
-	skull->MatCBIndex = 0;
-	skull->DiffuseAlbedo = XMFLOAT4(Colors::LightGray);
-	skull->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	skull->Roughness = 0.125f;
+	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
+	skullMat->Name = "skullMat";
+	skullMat->MatCBIndex = 0;
+	skullMat->DiffuseSrvHeapIndex = 0;
+	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	skullMat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	skullMat->Roughness = 0.125f;
 
-	std::unique_ptr<Material> box = std::make_unique<Material>();
-	box->Name = "box";
-	box->MatCBIndex = 1;
-	box->DiffuseAlbedo = XMFLOAT4(Colors::ForestGreen);
-	box->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	box->Roughness = 0.25f;
+	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
+	brickMat->Name = "brickMat";
+	brickMat->MatCBIndex = 1;
+	brickMat->DiffuseSrvHeapIndex = 1;
+	brickMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	brickMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	brickMat->Roughness = 0.3f;
 
-	std::unique_ptr<Material> grid = std::make_unique<Material>();
-	grid->Name = "grid";
-	grid->MatCBIndex = 2;
-	grid->DiffuseAlbedo = XMFLOAT4(Colors::DarkGreen);
-	grid->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	grid->Roughness = 0.375f;
+	std::unique_ptr<Material> stoneMat = std::make_unique<Material>();
+	stoneMat->Name = "stoneMat";
+	stoneMat->MatCBIndex = 2;
+	stoneMat->DiffuseSrvHeapIndex = 2;
+	stoneMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	stoneMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	stoneMat->Roughness = 0.3f;
 
-	std::unique_ptr<Material> sphere = std::make_unique<Material>();
-	sphere->Name = "sphere";
-	sphere->MatCBIndex = 3;
-	sphere->DiffuseAlbedo = XMFLOAT4(Colors::Crimson);
-	sphere->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
-	sphere->Roughness = 0.0f;
+	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
+	tileMat->Name = "tileMat";
+	tileMat->MatCBIndex = 3;
+	tileMat->DiffuseSrvHeapIndex = 3;
+	tileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	tileMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	tileMat->Roughness = 0.3f;
 
-	std::unique_ptr<Material> cylinder = std::make_unique<Material>();
-	cylinder->Name = "cylinder";
-	cylinder->MatCBIndex = 4;
-	cylinder->DiffuseAlbedo = XMFLOAT4(Colors::SteelBlue);
-	cylinder->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	cylinder->Roughness = 0.75f;
-
-	m_Materials["skull"] = std::move(skull);
-	m_Materials["box"] = std::move(box);
-	m_Materials["grid"] = std::move(grid);
-	m_Materials["sphere"] = std::move(sphere);
-	m_Materials["cylinder"] = std::move(cylinder);
+	m_Materials["skullMat"] = std::move(skullMat);
+	m_Materials["brickMat"] = std::move(brickMat);
+	m_Materials["stoneMat"] = std::move(stoneMat);
+	m_Materials["tileMat"] = std::move(tileMat);
 }
 
 void TextureApp::BuildRenderItemForSkullNGeo()
@@ -1475,9 +1726,10 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 
 	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
+	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
 	boxRitem->ObjCBIndex = 1;
 	boxRitem->Geo = m_Geometries["shapeGeo"].get();
-	boxRitem->Mat = m_Materials["box"].get();
+	boxRitem->Mat = m_Materials["stoneMat"].get();
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -1488,11 +1740,11 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 
 	// 그리드 아이템
 	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
-
+	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(8.0f, 8.0f, 1.0f));
 	gridRitem->WorldMat = MathHelper::Identity4x4();
 	gridRitem->ObjCBIndex = 2;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();
-	gridRitem->Mat = m_Materials["grid"].get();
+	gridRitem->Mat = m_Materials["tileMat"].get();
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
@@ -1522,18 +1774,20 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 		XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
 
 		XMStoreFloat4x4(&leftCylRitem->WorldMat, rightCylWorld);
+		XMStoreFloat4x4(&leftCylRitem->TexTransform, XMMatrixIdentity());
 		leftCylRitem->ObjCBIndex = objCBIndex++;
 		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftCylRitem->Mat = m_Materials["cylinder"].get();
+		leftCylRitem->Mat = m_Materials["brickMat"].get();
 		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
 		leftCylRitem->BaseVertexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
 
 		XMStoreFloat4x4(&rightCylRitem->WorldMat, leftCylWorld);
+		XMStoreFloat4x4(&rightCylRitem->TexTransform, XMMatrixIdentity());
 		rightCylRitem->ObjCBIndex = objCBIndex++;
 		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightCylRitem->Mat = m_Materials["cylinder"].get();
+		rightCylRitem->Mat = m_Materials["brickMat"].get();
 		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1542,7 +1796,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
 		leftSphereRitem->ObjCBIndex = objCBIndex++;
 		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftSphereRitem->Mat = m_Materials["sphere"].get();
+		leftSphereRitem->Mat = m_Materials["stoneMat"].get();
 		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1551,7 +1805,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
 		rightSphereRitem->ObjCBIndex = objCBIndex++;
 		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightSphereRitem->Mat = m_Materials["sphere"].get();
+		rightSphereRitem->Mat = m_Materials["stoneMat"].get();
 		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1576,7 +1830,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
 	skullRenderItem->ObjCBIndex = 0;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
-	skullRenderItem->Mat = m_Materials["skull"].get();
+	skullRenderItem->Mat = m_Materials["skullMat"].get();
 	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
@@ -1730,6 +1984,11 @@ void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
 	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
 
+#if MIPMAPTEST
+	CD3DX12_GPU_DESCRIPTOR_HANDLE sam(m_SamplerHeap->GetGPUDescriptorHandleForHeapStart());
+	_cmdList->SetGraphicsRootDescriptorTable(4, sam);
+#endif
+
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
 		RenderItem* ri = _renderItems[i];
@@ -1783,7 +2042,7 @@ XMFLOAT3 TextureApp::GetHillsNormal(float _x, float _z) const
 	return n;
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> TextureApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
 	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.
@@ -1805,9 +2064,25 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
 
+	// 근접점 필터링 - 미러
+	const CD3DX12_STATIC_SAMPLER_DESC pointMirror(
+		2, // s3 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR); // addressW
+	// 근접점 필터링 - 색 채우기
+	CD3DX12_STATIC_SAMPLER_DESC pointBorder(
+		3, // s3 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER);	// addressW
+	pointBorder.BorderColor = D3D12_STATIC_BORDER_COLOR::D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
+
 	// 주변선형 보간 필터링 - 반복
 	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
-		2, // s2 - 레지스터 번호
+		4, // s2 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
@@ -1815,14 +2090,29 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
 
 	// 주변선형 보간 필터링 - 자르고 늘이기
 	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
-		3, // s3 - 레지스터 번호
+		5, // s3 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+	// 주변선형 보간 필터링 - 미러
+	const CD3DX12_STATIC_SAMPLER_DESC linearMirror(
+		6, // s3 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_MIRROR); // addressW
+	// 주변선형 보간 필터링 - 색채우기
+	CD3DX12_STATIC_SAMPLER_DESC linearBorder(
+		7, // s3 - 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER); // addressW
+	linearBorder.BorderColor = D3D12_STATIC_BORDER_COLOR::D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
 
 	const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
-		4, // s4 - 레지스터 번호
+		8, // s4 - 레지스터 번호
 		D3D12_FILTER_ANISOTROPIC, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
@@ -1831,7 +2121,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
 		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
 
 	const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
-		5, // s5 - 레지스터 번호
+		9, // s5 - 레지스터 번호
 		D3D12_FILTER_ANISOTROPIC, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
@@ -1840,7 +2130,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 6> TextureApp::GetStaticSamplers()
 		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
 
 	return {
-		pointWrap, pointClamp,
-		linearWrap, linearClamp,
+		pointWrap, pointClamp, pointMirror, pointBorder,
+		linearWrap, linearClamp, linearMirror, linearBorder,
 		anisotropicWrap, anisotropicClamp };
 }

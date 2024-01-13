@@ -19,17 +19,27 @@
 #endif
 
 #define PRAC6 (0)
+#define MULTITEX (0)
 
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
 Texture2D gDiffuseMap : register(t0);
+Texture2D gAlphaMap : register(t1);
+
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
-SamplerState gSamLinearWrap : register(s2);
-SamplerState gSamLinearClamp: register(s3);
-SamplerState gSamAnisotropicWrap : register(s4);
-SamplerState gSamAnisotropicClamp : register(s5);
+SamplerState gSamPointMirror : register(s2);
+SamplerState gSamPointBorder : register(s3);
+SamplerState gSamLinearWrap : register(s4);
+SamplerState gSamLinearClamp: register(s5);
+SamplerState gSamLinearMirror : register(s6);
+SamplerState gSamLinearBorder : register(s7);
+SamplerState gSamAnisotropicWrap : register(s8);
+SamplerState gSamAnisotropicClamp : register(s9);
+SamplerState gSamPointLOD3 : register(s10);
+SamplerState gSamLinearLOD3 : register(s11);
+SamplerState gSamAnisotropicLOD3 : register(s12);
 
 
 // Material 마다 달라지는 Constant Buffer
@@ -118,6 +128,10 @@ float4 PS(VertexOut pin) : SV_Target
 {
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
     float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
+#if MULTITEX
+    float4 alPhaAlbedo = gAlphaMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
+    diffuseAlbedo = diffuseAlbedo * alPhaAlbedo;
+#endif
     
     // 일단 정규화를 한다.
     pin.NormalW = normalize(pin.NormalW);
@@ -139,8 +153,9 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
+    // 툰 셰이딩
     
-#if PRAC6 // 툰 셰이딩
+#if PRAC6 
     float redVal = litColor.r;
     redVal *= 10.f;
     int redCeil = ceil(redVal);
@@ -158,7 +173,13 @@ float4 PS(VertexOut pin) : SV_Target
 #endif
 
     // (일단 diffuse의 알파를 그대로 가져온다.)
-    litColor.a = diffuseAlbedo.a;
+    
+#if MULTITEX
+    litColor.a = (gAlphaMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo).a;
+#else
+    litColor.a = gDiffuseAlbedo.a;
+#endif
+    
     // 출력한다.
     return litColor;
 }
