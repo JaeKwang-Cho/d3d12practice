@@ -60,14 +60,14 @@ enum class RenderLayer : int
 	Count
 };
 
-class TextureApp : public D3DApp
+class BlendApp : public D3DApp
 {
 public:
-	TextureApp(HINSTANCE hInstance);
-	~TextureApp();
+	BlendApp(HINSTANCE hInstance);
+	~BlendApp();
 
-	TextureApp(const TextureApp& _other) = delete;
-	TextureApp& operator=(const TextureApp& _other) = delete;
+	BlendApp(const BlendApp& _other) = delete;
+	BlendApp& operator=(const BlendApp& _other) = delete;
 
 	virtual bool Initialize() override;
 
@@ -209,7 +209,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 	try
 	{
-		TextureApp theApp(hInstance);
+		BlendApp theApp(hInstance);
 		if (!theApp.Initialize())
 			return 0;
 		return theApp.Run();
@@ -223,12 +223,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 }
 
-TextureApp::TextureApp(HINSTANCE hInstance)
+BlendApp::BlendApp(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 {
 }
 
-TextureApp::~TextureApp()
+BlendApp::~BlendApp()
 {
 	if (m_d3dDevice != nullptr)
 	{
@@ -236,7 +236,7 @@ TextureApp::~TextureApp()
 	}
 }
 
-bool TextureApp::Initialize()
+bool BlendApp::Initialize()
 {
 	if (!D3DApp::Initialize())
 		return false;
@@ -306,7 +306,7 @@ bool TextureApp::Initialize()
 	return true;
 }
 
-void TextureApp::OnResize()
+void BlendApp::OnResize()
 {
 	D3DApp::OnResize();
 
@@ -315,7 +315,7 @@ void TextureApp::OnResize()
 	XMStoreFloat4x4(&m_ProjMat, projMat);
 }
 
-void TextureApp::Update(const GameTimer& _gt)
+void BlendApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
@@ -354,7 +354,7 @@ void TextureApp::Update(const GameTimer& _gt)
 #endif
 }
 
-void TextureApp::Draw(const GameTimer& _gt)
+void BlendApp::Draw(const GameTimer& _gt)
 {
 	// 현재 FrameResource가 가지고 있는 allocator를 가지고 와서 초기화 한다.
 	ComPtr<ID3D12CommandAllocator> CurrCommandAllocator = m_CurrFrameResource->CmdListAlloc;
@@ -449,7 +449,7 @@ void TextureApp::Draw(const GameTimer& _gt)
 	m_CommandQueue->Signal(m_Fence.Get(), m_CurrentFence);
 }
 
-void TextureApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
+void BlendApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스의 위치를 기억하고
 	m_LastMousePos.x = _x;
@@ -458,13 +458,13 @@ void TextureApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 	SetCapture(m_hMainWnd);
 }
 
-void TextureApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
+void BlendApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
 }
 
-void TextureApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
+void BlendApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 {
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
@@ -496,7 +496,7 @@ void TextureApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void TextureApp::OnKeyboardInput(const GameTimer _gt)
+void BlendApp::OnKeyboardInput(const GameTimer _gt)
 {
 	const float dt = _gt.GetDeltaTime();
 
@@ -543,7 +543,7 @@ void TextureApp::OnKeyboardInput(const GameTimer _gt)
 	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
 }
 
-void TextureApp::UpdateCamera(const GameTimer& _gt)
+void BlendApp::UpdateCamera(const GameTimer& _gt)
 {
 	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
 	m_EyePos.x = m_Radius * sinf(m_Theta) * cosf(m_Phi);
@@ -559,7 +559,7 @@ void TextureApp::UpdateCamera(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_ViewMat, viewMat);
 }
 
-void TextureApp::UpdateObjectCBs(const GameTimer& _gt)
+void BlendApp::UpdateObjectCBs(const GameTimer& _gt)
 {
 	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
 	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
@@ -585,7 +585,7 @@ void TextureApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
-void TextureApp::UpdateMaterialCBs(const GameTimer& _gt)
+void BlendApp::UpdateMaterialCBs(const GameTimer& _gt)
 {
 	UploadBuffer<MaterialConstants>* currMaterialCB = m_CurrFrameResource->MaterialCB.get();	
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
@@ -609,7 +609,7 @@ void TextureApp::UpdateMaterialCBs(const GameTimer& _gt)
 	}
 }
 
-void TextureApp::UpdateMainPassCB(const GameTimer& _gt)
+void BlendApp::UpdateMainPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ViewMat);
 	XMMATRIX ProjMat = XMLoadFloat4x4(&m_ProjMat);
@@ -685,7 +685,7 @@ void TextureApp::UpdateMainPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void TextureApp::UpdateMainPassCB_3PointLights(const GameTimer& _gt)
+void BlendApp::UpdateMainPassCB_3PointLights(const GameTimer& _gt)
 {
 	// Key Light
 	XMVECTOR keyLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
@@ -721,7 +721,7 @@ void TextureApp::UpdateMainPassCB_3PointLights(const GameTimer& _gt)
 	}
 }
 
-void TextureApp::UpdateWaves(const GameTimer& _gt)
+void BlendApp::UpdateWaves(const GameTimer& _gt)
 {
 	// 파도는 매 프레임 바꿔줘서 올려야하니까
 	// dynamic vertex buffer 에 올려줘야 한다.
@@ -766,7 +766,7 @@ void TextureApp::UpdateWaves(const GameTimer& _gt)
 	m_WavesRenderItem->Geo->VertexBufferGPU = currWaveVB->Resource();
 }
 
-void TextureApp::AnimateMaterials(const GameTimer& _gt)
+void BlendApp::AnimateMaterials(const GameTimer& _gt)
 {
 #if WAVE
 	Material* waterMat = m_Materials["water"].get();
@@ -803,7 +803,7 @@ void TextureApp::AnimateMaterials(const GameTimer& _gt)
 #endif
 }
 
-void TextureApp::BuildSamplerHeap()
+void BlendApp::BuildSamplerHeap()
 {
 	// 샘플러 뷰 힙을 만든다.
 	D3D12_DESCRIPTOR_HEAP_DESC descHeapSampler = {};
@@ -847,7 +847,7 @@ void TextureApp::BuildSamplerHeap()
 
 }
 
-void TextureApp::LoadFireTextures()
+void BlendApp::LoadFireTextures()
 {
 	std::unique_ptr<Texture> flareTex = std::make_unique<Texture>();
 	flareTex->Name = "flareTex";
@@ -876,7 +876,7 @@ void TextureApp::LoadFireTextures()
 	m_Textures[flareAlphaTex->Name] = std::move(flareAlphaTex);
 }
 
-void TextureApp::BuildRootSignature()
+void BlendApp::BuildRootSignature()
 {
 	// Table도 쓸거고, Constant도 쓸거다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
@@ -940,7 +940,7 @@ void TextureApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
-void TextureApp::BuildBoxDescriptorHeaps()
+void BlendApp::BuildBoxDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -988,10 +988,10 @@ void TextureApp::BuildBoxDescriptorHeaps()
 #endif
 }
 
-void TextureApp::BuildShadersAndInputLayout()
+void BlendApp::BuildShadersAndInputLayout()
 {
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_InputLayout =
 	{
@@ -1001,7 +1001,7 @@ void TextureApp::BuildShadersAndInputLayout()
 	};
 }
 
-void TextureApp::LoadBoxTextures()
+void BlendApp::LoadBoxTextures()
 {
 	std::unique_ptr<Texture> woodCrateTex = std::make_unique<Texture>();
 	woodCrateTex->Name = "woodCrateTex";
@@ -1017,7 +1017,7 @@ void TextureApp::LoadBoxTextures()
 	m_Textures[woodCrateTex->Name] = std::move(woodCrateTex);
 }
 
-void TextureApp::BuildBoxGeometry()
+void BlendApp::BuildBoxGeometry()
 {
 	// 일단 제너레이터로 박스를 만들고
 	GeometryGenerator geoGen;
@@ -1077,7 +1077,7 @@ void TextureApp::BuildBoxGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void TextureApp::BuildBoxMaterials()
+void BlendApp::BuildBoxMaterials()
 {
 	std::unique_ptr<Material> woodCrate = std::make_unique<Material>();
 	woodCrate->Name = "woodCrate";
@@ -1090,7 +1090,7 @@ void TextureApp::BuildBoxMaterials()
 	m_Materials[woodCrate->Name] = std::move(woodCrate);
 }
 
-void TextureApp::BuildBoxRenderItems()
+void BlendApp::BuildBoxRenderItems()
 {
 	std::unique_ptr<RenderItem> boxRenderItem = std::make_unique<RenderItem>();
 
@@ -1114,7 +1114,7 @@ void TextureApp::BuildBoxRenderItems()
 	}
 }
 
-void TextureApp::LoadWaveTextures()
+void BlendApp::LoadWaveTextures()
 {
 	std::unique_ptr<Texture> grassTex = std::make_unique<Texture>();
 	grassTex->Name = "grassTex";
@@ -1154,7 +1154,7 @@ void TextureApp::LoadWaveTextures()
 	m_Textures[fenceTex->Name] = std::move(fenceTex);
 }
 
-void TextureApp::BuildWaveDescriptorHeaps()
+void BlendApp::BuildWaveDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -1193,7 +1193,7 @@ void TextureApp::BuildWaveDescriptorHeaps()
 	m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
 }
 
-void TextureApp::BuildLandGeometry()
+void BlendApp::BuildLandGeometry()
 {
 	// Grid를 만들고, 높이(y)를 바꿔주어서 지형을 만든다.
 	GeometryGenerator geoGen;
@@ -1259,7 +1259,7 @@ void TextureApp::BuildLandGeometry()
 	m_Geometries["LandGeo"] = std::move(geo);
 }
 
-void TextureApp::BuildFenceGeometry()
+void BlendApp::BuildFenceGeometry()
 {
 	GeometryGenerator geoGen;
 	GeometryGenerator::MeshData box = geoGen.CreateBox(8.0f, 8.0f, 8.0f, 3);
@@ -1318,7 +1318,7 @@ void TextureApp::BuildFenceGeometry()
 	m_Geometries["fenceGeo"] = std::move(geo);
 }
 
-void TextureApp::BuildWavesGeometryBuffers()
+void BlendApp::BuildWavesGeometryBuffers()
 {
 	// Wave 의 Vertex 정보는 Waves 클래스에서 만들었지만
 	// index는 아직 안 만들었다.
@@ -1386,7 +1386,7 @@ void TextureApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
-void TextureApp::LoadSkullTextures()
+void BlendApp::LoadSkullTextures()
 {
 	std::unique_ptr<Texture> skullTex = std::make_unique<Texture>();
 	skullTex->Name = "skullTex";
@@ -1441,7 +1441,7 @@ void TextureApp::LoadSkullTextures()
 	m_Textures[tileTex->Name] = std::move(tileTex);
 }
 
-void TextureApp::BuildSkullDescriptorHeaps()
+void BlendApp::BuildSkullDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -1488,7 +1488,7 @@ void TextureApp::BuildSkullDescriptorHeaps()
 	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
 }
 
-void TextureApp::BuildShapeGeometry()
+void BlendApp::BuildShapeGeometry()
 {
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
 	GeometryGenerator geoGenerator;
@@ -1624,7 +1624,7 @@ void TextureApp::BuildShapeGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void TextureApp::BuildSkull()
+void BlendApp::BuildSkull()
 {
 	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
@@ -1676,7 +1676,7 @@ void TextureApp::BuildSkull()
 	m_Geometries["SkullGeo"] = std::move(geo);
 }
 
-void TextureApp::BuildMatForSkullNGeo()
+void BlendApp::BuildMatForSkullNGeo()
 {
 	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
 	skullMat->Name = "skullMat";
@@ -1716,7 +1716,7 @@ void TextureApp::BuildMatForSkullNGeo()
 	m_Materials["tileMat"] = std::move(tileMat);
 }
 
-void TextureApp::BuildRenderItemForSkullNGeo()
+void BlendApp::BuildRenderItemForSkullNGeo()
 {
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 
@@ -1836,7 +1836,7 @@ void TextureApp::BuildRenderItemForSkullNGeo()
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
 }
 
-void TextureApp::BuildPSOs()
+void BlendApp::BuildPSOs()
 {
 	// 불투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
@@ -1867,7 +1867,7 @@ void TextureApp::BuildPSOs()
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 }
 
-void TextureApp::BuildFrameResources()
+void BlendApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
 #if WAVE
@@ -1886,7 +1886,7 @@ void TextureApp::BuildFrameResources()
 	}
 }
 
-void TextureApp::BuildWaveMaterials()
+void BlendApp::BuildWaveMaterials()
 {
 	// 일단 land에 씌울 grass Mat을 만든다.
 	std::unique_ptr<Material> grass = std::make_unique<Material>();
@@ -1920,7 +1920,7 @@ void TextureApp::BuildWaveMaterials()
 	m_Materials["fence"] = std::move(fence);
 }
 
-void TextureApp::BuildWaveRenderItems()
+void BlendApp::BuildWaveRenderItems()
 {
 	// 파도를 아이템화 시키기
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
@@ -1970,7 +1970,7 @@ void TextureApp::BuildWaveRenderItems()
 	m_AllRenderItems.push_back(std::move(fenceRenderItem));
 }
 
-void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
+void BlendApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)
 {
 	// 이제 Material도 물체마다 업데이트 해줘야 한다.
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
@@ -2014,12 +2014,12 @@ void TextureApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 	}
 }
 
-float TextureApp::GetHillsHeight(float _x, float _z) const
+float BlendApp::GetHillsHeight(float _x, float _z) const
 {
 	return 0.3f * (_z * sinf(0.1f * _x) + _x * cosf(0.1f * _z));
 }
 
-XMFLOAT3 TextureApp::GetHillsNormal(float _x, float _z) const
+XMFLOAT3 BlendApp::GetHillsNormal(float _x, float _z) const
 {
 	// n = (-df/dx, 1, -df/dz)
 	// 이게 왜그러냐면
@@ -2037,7 +2037,7 @@ XMFLOAT3 TextureApp::GetHillsNormal(float _x, float _z) const
 	return n;
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> TextureApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> BlendApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
 	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.
