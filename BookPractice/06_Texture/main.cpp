@@ -15,7 +15,7 @@
 #define WAVE (0)
 #define SKULL (0)
 #define MIPMAPTEST (0)
-#define MULTITEX (0)
+#define MULTITEX (1)
 
 const int g_NumFrameResources = 3;
 
@@ -990,8 +990,20 @@ void TextureApp::BuildBoxDescriptorHeaps()
 
 void TextureApp::BuildShadersAndInputLayout()
 {
+#if MULTITEX 
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"MULTITEX" , "1",
+		NULL, NULL
+	};
+
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", defines, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", defines, "PS", "ps_5_1");
+#else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\06_Texture.hlsl", nullptr, "PS", "ps_5_1");
+
+#endif
 
 	m_InputLayout =
 	{
@@ -1902,7 +1914,7 @@ void TextureApp::BuildWaveMaterials()
 	water->Name = "water";
 	water->MatCBIndex = 1;
 	water->DiffuseSrvHeapIndex = 1;
-	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	water->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	water->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	water->Roughness = 0.f;
 

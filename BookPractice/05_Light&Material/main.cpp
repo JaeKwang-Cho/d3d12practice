@@ -20,6 +20,7 @@
 #define PRAC3 (0)
 #define PRAC4 (0)
 #define PRAC5 (0)
+#define PRAC6 (0)
 
 const int g_NumFrameResources = 3;
 
@@ -797,8 +798,20 @@ void LightNMaterialApp::BuildRootSignature()
 
 void LightNMaterialApp::BuildShadersAndInputLayout()
 {
+#if PRAC6
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC6" , "1",
+		NULL, NULL
+	};
+
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", defines, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", defines, "PS", "ps_5_1");
+#else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\05_Light&Material.hlsl", nullptr, "PS", "ps_5_1");
+#endif
+	
 
 	m_InputLayout =
 	{

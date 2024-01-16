@@ -10,6 +10,7 @@ using namespace DirectX;
 #define PRAC7 (0)
 #define PRAC10 (0)
 #define PRAC14 (0)
+#define PRAC15 (0)
 #define PRAC16 (0)
 
 bool g_bPrac7 = false;
@@ -520,10 +521,58 @@ void RenderPracticeApp::BuildShadersAndInputLayout()
 	// 쉐이더를 컴파일 해주고
 	HRESULT hr = S_OK;
 
-#if 1 // 오프라인 컴파일 여부
+#if PRAC6 
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC6" , "1",
+		NULL, NULL
+	};
+
+	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "VS", "vs_5_1");
+	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "PS", "ps_5_1");
+#elif PRAC10
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC10" , "1",
+		NULL, NULL
+	};
+
+	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "VS", "vs_5_1");
+	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "PS", "ps_5_1");
+#elif PRAC14
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC14" , "1",
+		NULL, NULL
+	};
+
+	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "VS", "vs_5_1");
+	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "PS", "ps_5_1");
+#elif PRAC15
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC15" , "1",
+		NULL, NULL
+	};
+
+	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "VS", "vs_5_1");
+	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "PS", "ps_5_1");
+#elif PRAC16
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"PRAC16" , "1",
+		NULL, NULL
+	};
+
+	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "VS", "vs_5_1");
+	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", defines, "PS", "ps_5_1");
+
+#else
 	m_vsByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", nullptr, "VS", "vs_5_1");
 	m_psByteCode = d3dUtil::CompileShader(L"Shaders\\02_Rendering_Shader.hlsl", nullptr, "PS", "ps_5_1");
-#else
+#endif
+
+#if 0
 	m_vsByteCode = d3dUtil::LoadBinary(L"Shaders\\02_Rendering_VS.cso");
 	m_psByteCode = d3dUtil::LoadBinary(L"Shaders\\02_Rendering_PS.cso");
 #endif`

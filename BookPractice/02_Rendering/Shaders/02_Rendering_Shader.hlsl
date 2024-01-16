@@ -4,11 +4,11 @@
 // Transforms and colors geometry.
 //***************************************************************************************
 
-#define PRAC6 (0)
-#define PRAC10 (0)
-#define PRAC14 (0)
-#define PRAC15 (0)
-#define PRAC16 (0)
+//#define PRAC6 (0)
+//#define PRAC10 (0)
+//#define PRAC14 (0)
+//#define PRAC15 (0)
+//#define PRAC16 (0)
 
 cbuffer cbPerObject : register(b0)
 {

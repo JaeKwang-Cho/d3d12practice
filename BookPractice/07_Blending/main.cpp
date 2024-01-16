@@ -1,5 +1,5 @@
 ﻿//***************************************************************************************
-// CrateApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
+// BlendApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
 
 
@@ -11,11 +11,10 @@
 #include "Waves.h"
 #include "FileReader.h"
 
-#define BOX (1)
-#define WAVE (0)
+#define BOX (0)
+#define WAVE (1)
 #define SKULL (0)
 #define MIPMAPTEST (0)
-#define MULTITEX (0)
 
 const int g_NumFrameResources = 3;
 
@@ -54,9 +53,13 @@ struct RenderItem
 	int BaseVertexLocation = 0;
 };
 
+// 드디어 불투명, 반투명, 알파자르기
+// 이렇게 3개의 Layer로 나뉘었다.
 enum class RenderLayer : int
 {
 	Opaque = 0,
+	Transparent,
+	AlphaTested,
 	Count
 };
 
@@ -79,12 +82,12 @@ private:
 	virtual void OnMouseDown(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseUp(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseMove(WPARAM _btnState, int _x, int _y) override;
+
 	// 키보드에서 조명의 위치를 바꿀 것이다.
 	void OnKeyboardInput(const GameTimer _gt);
 
-	void UpdateCamera(const GameTimer& _gt);
-
 	// ==== Update ====
+	void UpdateCamera(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
@@ -100,6 +103,7 @@ private:
 	void BuildRootSignature();
 	// 다시 Descriptor Heap을 사용한다. 테이플을 사용하기 때문에
 	void BuildShadersAndInputLayout();
+
 	// Box 용이다.
 	void LoadBoxTextures();
 	void BuildBoxDescriptorHeaps();
@@ -121,8 +125,8 @@ private:
 	void BuildSkullDescriptorHeaps();
 	void BuildShapeGeometry();
 	void BuildSkull();
-	void BuildMatForSkullNGeo();
-	void BuildRenderItemForSkullNGeo();
+	void BuildSkullNGeoMaterials();
+	void BuildSkullNGeoRenderItem();
 
 	void BuildPSOs();
 	void BuildFrameResources();
@@ -178,8 +182,8 @@ private:
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
-	float m_Phi = 1.3f * XM_PI;
-	float m_Theta = 0.4f * XM_PI;
+	float m_Phi = 1.5f * XM_PI;
+	float m_Theta = XM_PIDIV2 - 0.1f;
 #if BOX
 	float m_Radius = 2.5f;
 #elif SKULL
@@ -255,12 +259,6 @@ bool BlendApp::Initialize()
 	BuildSamplerHeap();
 #endif
 
-#if MULTITEX && BOX
-	LoadFireTextures();
-#elif BOX
-	LoadBoxTextures();
-#endif
-
 #if BOX
 	BuildRootSignature();
 	BuildBoxDescriptorHeaps();
@@ -273,8 +271,8 @@ bool BlendApp::Initialize()
 	BuildRootSignature();
 	BuildShapeGeometry();
 	BuildSkull();
-	BuildMatForSkullNGeo();
-	BuildRenderItemForSkullNGeo();
+	BuildSkullNGeoMaterials();
+	BuildSkullNGeoRenderItem();
 #elif WAVE
 	LoadWaveTextures();
 	BuildRootSignature();
@@ -385,7 +383,7 @@ void BlendApp::Draw(const GameTimer& _gt)
 	// 백 버퍼와 깊이 버퍼를 초기화 한다.
 	m_CommandList->ClearRenderTargetView(
 		GetCurrentBackBufferView(), 
-		Colors::LightSteelBlue, 
+		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
 		0, 
 		nullptr);
 	m_CommandList->ClearDepthStencilView(
@@ -416,7 +414,17 @@ void BlendApp::Draw(const GameTimer& _gt)
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
 
+	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
+	// 그래야 alpha 계산이 가능하다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+
+	// 알파 자르기하는 친구들을 출력해주고
+	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
+
+	// 이제 반투명한 애들을 출력해준다.
+	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -483,13 +491,13 @@ void BlendApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	else if ((_btnState & MK_RBUTTON) != 0)
 	{
 		// 마우스가 움직인 만큼 구심좌표계의 반지름을 변화시킨다.
-		float dx = 0.005f * static_cast<float>(_x - m_LastMousePos.x);
-		float dy = 0.005f * static_cast<float>(_y - m_LastMousePos.y);
+		float dx = 0.1f * static_cast<float>(_x - m_LastMousePos.x);
+		float dy = 0.1f * static_cast<float>(_y - m_LastMousePos.y);
 
 		m_Radius += dx - dy;
 
 		// 반지름은 3 ~ 15 구간을 유지한다.
-		m_Radius = MathHelper::Clamp(m_Radius, 1.f, 15.f);
+		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 150.f);
 	}
 
 	m_LastMousePos.x = _x;
@@ -640,13 +648,18 @@ void BlendApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
 
+	// 사실 이미 값이 있긴 한데... 그냥 한번 더 써준거다.
+	m_MainPassCB.FogColor = { 0.7f, 0.7f, 0.7f, 1.f };
+	m_MainPassCB.FogStart = 5.f;
+	m_MainPassCB.FogRange = 150.f;
+
 	// 이제 Light를 채워준다. Shader와 App에서 정의한 Lights의 개수와 종류가 같아야 한다.
 
 #if 0
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
 	float sinWave = 0.5f * sinf(_gt.GetTotalTime()) + 0.5f;
 	m_MainPassCB.Lights[0].Strength = { 1.f * sinWave, 1.f * sinWave, 0.9f * sinWave };
-#elif 1
+#elif 0
 	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
 	UpdateMainPassCB_3PointLights(_gt);
 #elif 0
@@ -675,11 +688,14 @@ void BlendApp::UpdateMainPassCB(const GameTimer& _gt)
 		m_MainPassCB.Lights[i].SpotPower = 8.f;
 	}
 #else
-	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
-	// 태양의 위치를 구심좌표계로 구하고, 그걸 뒤집어서 벡터로 표현해준다.
-	XMVECTOR lightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
-	XMStoreFloat3(&m_MainPassCB.Lights[0].Direction, lightDir);
-	m_MainPassCB.Lights[0].Strength = { 1.f, 1.f, 0.9f };
+	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
+	m_MainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
+	m_MainPassCB.Lights[0].Strength = { 0.9f, 0.9f, 0.8f };
+	m_MainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
+	m_MainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
+	m_MainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
+	m_MainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
+
 #endif
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
@@ -791,15 +807,6 @@ void BlendApp::AnimateMaterials(const GameTimer& _gt)
 	waterMat->MatTransform(3, 1) = tv;
 	// dirty flag를 켜준다.
 	waterMat->NumFramesDirty = g_NumFrameResources;
-#elif MULTITEX
-	Material* flareMat = m_Materials["woodCrate"].get(); 
-	XMMATRIX flareTexTransform = XMMatrixTranslation(-0.5f, -0.5f, 0.f);
-	flareTexTransform *= XMMatrixRotationZ(_gt.GetTotalTime());
-	flareTexTransform *= XMMatrixTranslation(0.5f, 0.5f, 0.f);
-
-	XMStoreFloat4x4(&flareMat->MatTransform, flareTexTransform);
-
-	flareMat->NumFramesDirty = g_NumFrameResources;
 #endif
 }
 
@@ -877,26 +884,24 @@ void BlendApp::LoadFireTextures()
 }
 
 void BlendApp::BuildRootSignature()
-{
+{	
+#if MIPMAPTEST
 	// Table도 쓸거고, Constant도 쓸거다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
-	
-#if MIPMAPTEST
 	// Sampler 정보가 넘어가는 테이블
 	UINT numOfParameter = 5;
 	CD3DX12_DESCRIPTOR_RANGE samTable;
 	samTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 3, 10); // s10 ~ s12 - Lod3 Sampler 정보
 	slotRootParameter[4].InitAsDescriptorTable(1, &samTable, D3D12_SHADER_VISIBILITY_PIXEL);
 #else
+	// Table도 쓸거고, Constant도 쓸거다.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 	UINT numOfParameter = 4; 
 #endif
 	// Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
-#if MULTITEX
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // t0 ~ t1 - texture 정보
-#else
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0); // t0 - texture 정보
-#endif
+
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 - texture 정보
 	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
 	// Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[1].InitAsConstantBufferView(0); // b0 - PerObject
@@ -951,27 +956,7 @@ void BlendApp::BuildBoxDescriptorHeaps()
 
 	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-#if MULTITEX
-	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* flareTex = m_Textures["flareTex"].get()->Resource.Get();
-	// view를 만들어주고
-	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
-	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = flareTex->GetDesc().Format;
-	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srcDesc.Texture2D.MostDetailedMip = 0;
-	srcDesc.Texture2D.MipLevels = flareTex->GetDesc().MipLevels;
-	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
-	// view를 만들면서 연결해준다.
-	m_d3dDevice->CreateShaderResourceView(flareTex, &srcDesc, viewHandle);
-
-	ID3D12Resource* flareAlphaTex = m_Textures["flareAlphaTex"].get()->Resource.Get();
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = flareAlphaTex->GetDesc().Format;
-	m_d3dDevice->CreateShaderResourceView(flareAlphaTex, &srcDesc, viewHandle);
-
-#else
 	// 텍스쳐 리소스를 얻은 다음
 	ID3D12Resource* woodCrateTex = m_Textures["woodCrateTex"].get()->Resource.Get();
 	// view를 만들어주고
@@ -985,13 +970,26 @@ void BlendApp::BuildBoxDescriptorHeaps()
 
 	// view를 만들면서 연결해준다.
 	m_d3dDevice->CreateShaderResourceView(woodCrateTex, &srcDesc, viewHandle);
-#endif
 }
 
 void BlendApp::BuildShadersAndInputLayout()
 {
+	const D3D_SHADER_MACRO defines[] =
+	{
+		"FOG", "1",
+		NULL, NULL
+	};
+
+	const D3D_SHADER_MACRO alphaTestDefines[] =
+	{
+		"FOG", "1",
+		"ALPHA_TEST", "1",
+		NULL, NULL
+	};
+
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", defines, "PS", "ps_5_1");
+	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\07_Blend.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_InputLayout =
 	{
@@ -1140,7 +1138,7 @@ void BlendApp::LoadWaveTextures()
 
 	std::unique_ptr<Texture> fenceTex = std::make_unique<Texture>();
 	fenceTex->Name = "fenceTex";
-	fenceTex->Filename = L"../Textures/WoodCrate01.dds";
+	fenceTex->Filename = L"../Textures/WireFence.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
@@ -1676,7 +1674,7 @@ void BlendApp::BuildSkull()
 	m_Geometries["SkullGeo"] = std::move(geo);
 }
 
-void BlendApp::BuildMatForSkullNGeo()
+void BlendApp::BuildSkullNGeoMaterials()
 {
 	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
 	skullMat->Name = "skullMat";
@@ -1716,7 +1714,7 @@ void BlendApp::BuildMatForSkullNGeo()
 	m_Materials["tileMat"] = std::move(tileMat);
 }
 
-void BlendApp::BuildRenderItemForSkullNGeo()
+void BlendApp::BuildSkullNGeoRenderItem()
 {
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 
@@ -1865,6 +1863,35 @@ void BlendApp::BuildPSOs()
 	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
+
+	// 반투명 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
+
+	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
+	transparencyBlendDesc.BlendEnable = true;
+	transparencyBlendDesc.LogicOpEnable = false;
+	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
+	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+	transparencyBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	transparencyBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+	transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
+
+	// 알파 자르기 PSO
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
+	alphaTestPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["alphaTestedPS"]->GetBufferPointer()),
+		m_Shaders["alphaTestedPS"]->GetBufferSize()
+	};
+	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
 }
 
 void BlendApp::BuildFrameResources()
@@ -1902,7 +1929,7 @@ void BlendApp::BuildWaveMaterials()
 	water->Name = "water";
 	water->MatCBIndex = 1;
 	water->DiffuseSrvHeapIndex = 1;
-	grass->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	water->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.5f);
 	water->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	water->Roughness = 0.f;
 
@@ -1936,7 +1963,8 @@ void BlendApp::BuildWaveRenderItems()
 	wavesRenderItem->BaseVertexLocation = wavesRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 	// 업데이트를 위해 맴버로 관리해준다.
 	m_WavesRenderItem = wavesRenderItem.get();
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wavesRenderItem.get());
+	// 파도는 반투명한 친구이다.
+	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
 
 	// 지형을 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
@@ -1951,6 +1979,7 @@ void BlendApp::BuildWaveRenderItems()
 	gridRenderItem->StartIndexLocation = gridRenderItem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRenderItem->BaseVertexLocation = gridRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 
+	// 얘는 불투명한 친구
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 
 	std::unique_ptr<RenderItem> fenceRenderItem = std::make_unique<RenderItem>();
@@ -1963,7 +1992,8 @@ void BlendApp::BuildWaveRenderItems()
 	fenceRenderItem->StartIndexLocation = fenceRenderItem->Geo->DrawArgs["fence"].StartIndexLocation;
 	fenceRenderItem->BaseVertexLocation = fenceRenderItem->Geo->DrawArgs["fence"].BaseVertexLocation;
 
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(fenceRenderItem.get());
+	// Fence는 알파 자르기를 하는 Render Item이다.
+	m_RenderItemLayer[(int)RenderLayer::AlphaTested].push_back(fenceRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));

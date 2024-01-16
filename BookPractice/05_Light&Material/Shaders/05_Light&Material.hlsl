@@ -18,7 +18,7 @@
 #define NUM_SPOT_LIGHTS 0
 #endif
 
-#define PRAC6 (0)
+//#define PRAC6 (0)
 
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"

@@ -18,14 +18,10 @@
 #define NUM_SPOT_LIGHTS 0
 #endif
 
-#define PRAC6 (0)
-#define MULTITEX (0)
-
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
 Texture2D gDiffuseMap : register(t0);
-Texture2D gAlphaMap : register(t1);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -37,9 +33,6 @@ SamplerState gSamLinearMirror : register(s6);
 SamplerState gSamLinearBorder : register(s7);
 SamplerState gSamAnisotropicWrap : register(s8);
 SamplerState gSamAnisotropicClamp : register(s9);
-SamplerState gSamPointLOD3 : register(s10);
-SamplerState gSamLinearLOD3 : register(s11);
-SamplerState gSamAnisotropicLOD3 : register(s12);
 
 
 // Material 마다 달라지는 Constant Buffer
@@ -58,15 +51,26 @@ cbuffer cbPass : register(b1)
     float4x4 gInvProj;
     float4x4 gViewProj;
     float4x4 gInvViewProj;
+    
     float3 gEyePosW;
     float cbPerObjectPad1;
+    
     float2 gRenderTargetSize;
     float2 gInvRenderTargetSize;
+    
     float gNearZ;
     float gFarZ;
     float gTotalTime;
     float gDeltaTime;
+    
     float4 gAmbientLight;
+    
+    // fog 정보는 pass로 넘어온다
+    float4 gFogColor;
+    
+    float gFogStart;
+    float gFogRange;
+    float2 cbPerObjectPad2;
 
     // Indices [0, NUM_DIR_LIGHTS) are directional lights;
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
@@ -128,16 +132,19 @@ float4 PS(VertexOut pin) : SV_Target
 {
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
     float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
-#if MULTITEX
-    float4 alPhaAlbedo = gAlphaMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
-    diffuseAlbedo = diffuseAlbedo * alPhaAlbedo;
+    
+#ifdef ALPHA_TEST
+    // 알파 값이 일정값 이하면 그냥 잘라버린다.
+    clip(diffuseAlbedo.a - 0.1f);
 #endif
     
     // 일단 정규화를 한다.
     pin.NormalW = normalize(pin.NormalW);
 
     // 표면에서 카메라 까지 벡터를 구한다.
-    float3 toEyeW = normalize(gEyePosW - pin.PosW);
+    float3 toEyeW = gEyePosW - pin.PosW;
+    float distToEye = length(toEyeW); // 표면과 카메라의 거리를 구하고
+    toEyeW /= distToEye; // 정규화 한다.
 
 	// 일단 냅다 간접광을 설정한다.
     float4 ambient = gAmbientLight * diffuseAlbedo;
@@ -153,32 +160,17 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
-    // 툰 셰이딩
     
-#if PRAC6 
-    float redVal = litColor.r;
-    redVal *= 10.f;
-    int redCeil = ceil(redVal);
-    litColor.r = (float) redCeil / 10.f;
-    
-    float greenVal = litColor.g;
-    greenVal *= 10.f;
-    int greenCeil = ceil(greenVal);
-    litColor.g = (float) greenCeil / 10.f;
-    
-    float blueVal = litColor.b;
-    blueVal *= 10.f;
-    int blueCeil = ceil(blueVal);
-    litColor.b = (float) blueCeil / 10.f;
+#ifdef FOG
+    // 카메라에서 거리가 멀 수록
+    float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+    // fog의 색으로 채워진다.
+    litColor = lerp(litColor, gFogColor, fogAmount);
 #endif
 
-    // (일단 diffuse의 알파를 그대로 가져온다.)
-    
-#if MULTITEX
-    litColor.a = (gAlphaMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo).a;
-#else
-    litColor.a = gDiffuseAlbedo.a;
-#endif
+    // diffuse albedo에서 alpha값을 가져온다.
+    litColor.a = diffuseAlbedo.a;
+
     
     // 출력한다.
     return litColor;
