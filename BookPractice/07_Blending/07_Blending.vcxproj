@@ -48,6 +48,8 @@
     <None Include="Shaders\07_Blend.hlsl">
       <FileType>Document</FileType>
     </None>
+    <None Include="Shaders\07_Blending_PS.asm" />
+    <None Include="Shaders\07_Blending_PS_Alpha.asm" />
     <None Include="Shaders\LightingUtil.hlsl">
       <FileType>Document</FileType>
     </None>

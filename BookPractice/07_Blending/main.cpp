@@ -424,7 +424,12 @@ void BlendApp::Draw(const GameTimer& _gt)
 
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
+	/*
+	const float blendFactor[] = { 1.f, 0.f, 1.f, 1.f };
+	m_CommandList->OMSetBlendFactor(blendFactor);
+	*/
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -1866,12 +1871,14 @@ void BlendApp::BuildPSOs()
 
 	// 반투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
-
+	
 	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
 	transparencyBlendDesc.BlendEnable = true;
-	transparencyBlendDesc.LogicOpEnable = false;
+	transparencyBlendDesc.LogicOpEnable = false;	
 	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
+	// transparencyBlendDesc.SrcBlend = D3D12_BLEND_BLEND_FACTOR;
+	// transparencyBlendDesc.DestBlend = D3D12_BLEND_BLEND_FACTOR;
 	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
 	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
 	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;

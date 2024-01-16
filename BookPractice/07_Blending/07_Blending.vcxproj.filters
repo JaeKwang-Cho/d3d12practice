@@ -75,12 +75,14 @@
     <ClInclude Include="FileReader.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shader</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\07_Blend.hlsl">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl" />
+    <None Include="Shaders\07_Blending_PS.asm">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="Shaders\07_Blending_PS_Alpha.asm">
       <Filter>Shader</Filter>
     </None>
   </ItemGroup>
