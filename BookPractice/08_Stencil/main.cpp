@@ -11,10 +11,8 @@
 #include "Waves.h"
 #include "FileReader.h"
 
-#define BOX (0)
-#define WAVE (1)
-#define SKULL (0)
-#define MIPMAPTEST (0)
+#define WAVE (0)
+#define SKULL (1)
 
 const int g_NumFrameResources = 3;
 
@@ -54,12 +52,16 @@ struct RenderItem
 };
 
 // 드디어 불투명, 반투명, 알파자르기
-// 이렇게 3개의 Layer로 나뉘었다.
+// 이외에도 stencil을 사용하는
+// Mirror, Reflected, Shadow가 추가 되었다.
 enum class RenderLayer : int
 {
 	Opaque = 0,
+	Mirrors,
+	Reflected,
 	Transparent,
 	AlphaTested,
+	Shadow,
 	Count
 };
 
@@ -91,25 +93,18 @@ private:
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
-	void UpdateMainPassCB_3PointLights(const GameTimer& _gt);
+	void UpdateReflectedPassCB(const GameTimer& _gt);
+
 	void UpdateWaves(const GameTimer& _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 
 	// 연습 문제
 	void BuildSamplerHeap();
-	void LoadFireTextures();
 
 	// ==== Init ====
 	void BuildRootSignature();
 	// 다시 Descriptor Heap을 사용한다. 테이플을 사용하기 때문에
 	void BuildShadersAndInputLayout();
-
-	// Box 용이다.
-	void LoadBoxTextures();
-	void BuildBoxDescriptorHeaps();
-	void BuildBoxGeometry();
-	void BuildBoxMaterials();
-	void BuildBoxRenderItems();
 
 	// Wave 용이다.
 	void LoadWaveTextures();
@@ -121,12 +116,12 @@ private:
 	void BuildWaveRenderItems();
 
 	// Skull 용이다.
-	void LoadSkullTextures();
+	void LoadSkullRoomTextures();
 	void BuildSkullDescriptorHeaps();
-	void BuildShapeGeometry();
-	void BuildSkull();
-	void BuildSkullNGeoMaterials();
-	void BuildSkullNGeoRenderItem();
+	void BuildRoomGeometry();
+	void BuildSkullGeometry();
+	void BuildSkullRoomMaterials();
+	void BuildSkullRoomRenderItem();
 
 	void BuildPSOs();
 	void BuildFrameResources();
@@ -166,6 +161,9 @@ private:
 
 	//  App 단에서 RenderItem 포인터를 가지고 있는다
 	RenderItem* m_WavesRenderItem = nullptr;
+	RenderItem* m_SkullRenderItem = nullptr;
+	RenderItem* m_ReflectedSkullRenderItem = nullptr;
+	RenderItem* m_ShadowedSkullRenderItem = nullptr;
 
 	// RenderItem 리스트
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
@@ -177,26 +175,21 @@ private:
 
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
+	PassConstants m_ReflectedPassCB;
+
+	XMFLOAT3 m_SkullTranslation = { 0.f, 1.f, -5.f };
 
 	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
-	float m_Phi = 1.5f * XM_PI;
-	float m_Theta = XM_PIDIV2 - 0.1f;
-#if BOX
-	float m_Radius = 2.5f;
-#elif SKULL
-	float m_Radius = 20.f;
+	float m_Phi = 1.24f * XM_PI;
+	float m_Theta = 0.42f * XM_PI;
+#if  SKULL
+	float m_Radius = 12.f;
 #elif WAVE
 	float m_Radius = 50.f;
 #endif
-	bool m_bKeyLight = false;
-	bool m_bfillLight = false;
-	bool m_bBackLight = false;
-
-	XMFLOAT3 m_SpherePosArray[10] = {};
-
 	float m_SunPhi = 1.25f * XM_PI;
 	float m_SunTheta = XM_PIDIV4;
 
@@ -255,24 +248,14 @@ bool StencilApp::Initialize()
 
 	BuildShadersAndInputLayout();
 
-#if MIPMAPTEST
-	BuildSamplerHeap();
-#endif
-
-#if BOX
-	BuildRootSignature();
-	BuildBoxDescriptorHeaps();
-	BuildBoxGeometry();
-	BuildBoxMaterials();
-	BuildBoxRenderItems();
-#elif SKULL
-	LoadSkullTextures();
+#if SKULL
+	LoadSkullRoomTextures();
 	BuildSkullDescriptorHeaps();
 	BuildRootSignature();
-	BuildShapeGeometry();
-	BuildSkull();
-	BuildSkullNGeoMaterials();
-	BuildSkullNGeoRenderItem();
+	BuildRoomGeometry();
+	BuildSkullGeometry();
+	BuildSkullRoomMaterials();
+	BuildSkullRoomRenderItem();
 #elif WAVE
 	LoadWaveTextures();
 	BuildRootSignature();
@@ -345,6 +328,7 @@ void StencilApp::Update(const GameTimer& _gt)
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
+	UpdateReflectedPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
 #if WAVE
@@ -386,6 +370,7 @@ void StencilApp::Draw(const GameTimer& _gt)
 		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
 		0, 
 		nullptr);
+	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
 	m_CommandList->ClearDepthStencilView(
 		GetDepthStencilView(), 
 		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 
@@ -401,34 +386,40 @@ void StencilApp::Draw(const GameTimer& _gt)
 	// ==== 그리기 ======
 
 	// 현재 PSO에 View Heap을 세팅해준다.
-#if MIPMAPTEST
-	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get(), m_SamplerHeap.Get()};
-#else
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get() };
-#endif
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
-	// 현재 Frame Constant Buffer를 업데이트한다.
+	// 현재 Frame Constant Buffer를 세팅해준다..
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
 
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
-	// 그래야 alpha 계산이 가능하다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-	// 알파 자르기하는 친구들을 출력해주고
-	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
+	// 지금 부터 거울구역을 마킹하는데, 이 친구는 stencil에 Ref값을 1을 써주면서 그려진다.
+	m_CommandList->OMSetStencilRef(1);
+	m_CommandList->SetPipelineState(m_PSOs["markStencilMirrors"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Mirrors]);
 
-	// 이제 반투명한 애들을 출력해준다.
+	// 거울에 반사된 모습의 skull을 그리는데, stencil Ref 값이 1인 픽셀에만 그린다.
+	// 그리고 이 친구한테는 light도 반대에서 오는 걸로 적용해서 그려줘야한다.
+	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress() + 1 * d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants)));
+	m_CommandList->SetPipelineState(m_PSOs["drawStencilReflections"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Reflected]);
+
+	// 다시 거울 바깥쪽을 Stencil Ref 0으로 그릴 준비를 하고, PassCB도 원래대로 세팅한다.
+	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
+	m_CommandList->OMSetStencilRef(0);
+
+	// 반투명한 거울을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
-	/*
-	const float blendFactor[] = { 1.f, 0.f, 1.f, 1.f };
-	m_CommandList->OMSetBlendFactor(blendFactor);
-	*/
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+
+	// 그림자를 출력해준다
+	m_CommandList->SetPipelineState(m_PSOs["shadow"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Shadow]);
 
 
 	// =============================
@@ -513,47 +504,44 @@ void StencilApp::OnKeyboardInput(const GameTimer _gt)
 {
 	const float dt = _gt.GetDeltaTime();
 
-	if (GetAsyncKeyState(VK_LEFT) & 0x8000)
-	{
-		m_SunPhi -= 1.f * dt;
-	}
-	if (GetAsyncKeyState(VK_RIGHT) & 0x8000)
-	{
-		m_SunPhi += 1.f * dt;
-	}
-	if (GetAsyncKeyState(VK_UP) & 0x8000)
-	{
-		m_SunTheta -= 1.f * dt;
-	}
-	if (GetAsyncKeyState(VK_DOWN) & 0x8000)
-	{
-		m_SunTheta += 1.f * dt;
-	}
-	if (GetAsyncKeyState('1') & 0x8000)
-	{
-		m_bKeyLight = true;
-	}
-	if (GetAsyncKeyState('2') & 0x8000)
-	{
-		m_bfillLight = true;
-	}
-	if (GetAsyncKeyState('3') & 0x8000)
-	{
-		m_bBackLight = true;
-	}
-	if (GetAsyncKeyState('4') & 0x8000)
-	{
-		m_bKeyLight = false;
-		m_bfillLight = false;
-		m_bBackLight = false;
-	}
-	if (GetAsyncKeyState('5') & 0x8000)
-	{
-		m_Phi = -XM_PIDIV2;
-		m_Theta = XM_PIDIV2;
-	}
+	// wasd로 skull을 움직이도록 한다.
+	if (GetAsyncKeyState('A') & 0x8000)
+		m_SkullTranslation.x -= 1.0f * dt;
 
-	m_SunTheta = MathHelper::Clamp(m_SunTheta, 0.1f, XM_PIDIV2);
+	if (GetAsyncKeyState('D') & 0x8000)
+		m_SkullTranslation.x += 1.0f * dt;
+
+	if (GetAsyncKeyState('W') & 0x8000)
+		m_SkullTranslation.y += 1.0f * dt;
+
+	if (GetAsyncKeyState('S') & 0x8000)
+		m_SkullTranslation.y -= 1.0f * dt;
+
+	// 땅 밑으로 들어가지는 않게 한다.
+	m_SkullTranslation.y = MathHelper::Max(m_SkullTranslation.y, 0.0f);
+
+	// skull을 움직였으니, Object Constant를 업데이트 시키도록한다.
+	XMMATRIX skullRotate = XMMatrixRotationY(0.5 * XM_PI);
+	XMMATRIX skullScale = XMMatrixScaling(0.45f, 0.45f, 0.45f);
+	XMMATRIX skullOffset = XMMatrixTranslation(m_SkullTranslation.x, m_SkullTranslation.y, m_SkullTranslation.z);
+	XMMATRIX skullWorld = skullRotate * skullScale * skullOffset;
+	XMStoreFloat4x4(&m_SkullRenderItem->WorldMat, skullWorld);
+
+	// 반사된 skull도 업데이트 시켜준다.
+	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f); // xy 평면
+	XMMATRIX R = XMMatrixReflect(mirrorPlane); // directxmath에서 제공하는 평면 반사 행렬 함수이다.
+	XMStoreFloat4x4(&m_ReflectedSkullRenderItem->WorldMat, skullWorld * R);
+
+	// 그림자도 Update 시켜준다.
+	XMVECTOR shadowPlane = XMVectorSet(0.f, 1.f, 0.f, 0.f); // xz 평면
+	XMVECTOR toMainLight = -XMLoadFloat3(&m_MainPassCB.Lights[0].Direction);
+	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight); // directxmath에서 제공하는 평면에 대한 조명 사영 행렬 함수이다.
+	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.001f, 0.f); // z fighting 이 일어나지 않기 위해 살짝 띄워준다.
+	XMStoreFloat4x4(&m_ShadowedSkullRenderItem->WorldMat, skullWorld * S * shadowOffsetY);
+
+	m_SkullRenderItem->NumFrameDirty = g_NumFrameResources;
+	m_ReflectedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
+	m_ShadowedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
 }
 
 void StencilApp::UpdateCamera(const GameTimer& _gt)
@@ -659,40 +647,6 @@ void StencilApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.FogRange = 150.f;
 
 	// 이제 Light를 채워준다. Shader와 App에서 정의한 Lights의 개수와 종류가 같아야 한다.
-
-#if 0
-	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.f };
-	float sinWave = 0.5f * sinf(_gt.GetTotalTime()) + 0.5f;
-	m_MainPassCB.Lights[0].Strength = { 1.f * sinWave, 1.f * sinWave, 0.9f * sinWave };
-#elif 0
-	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
-	UpdateMainPassCB_3PointLights(_gt);
-#elif 0
-	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
-	for (int i = 0; i < 10; i++)
-	{
-		m_MainPassCB.Lights[i].Strength = { 0.75f, 0.75f, 0.75f };
-		// Point light 맴버를 채운다.
-		m_MainPassCB.Lights[i].Position = m_SpherePosArray[i];
-		m_MainPassCB.Lights[i].FalloffStart = 1.f;
-		m_MainPassCB.Lights[i].FalloffEnd = 10.f;
-	}
-#elif 0
-	m_MainPassCB.AmbientLight = { 0.125f, 0.125f, 0.175f, 1.f };
-	float switcher = -1.f;
-	for (int i = 0; i < 10; i++)
-	{
-		m_MainPassCB.Lights[i].Strength = { 0.75f, 0.75f, 0.75f };
-		// Spot light 맴버를 채운다.
-		m_MainPassCB.Lights[i].Position = m_SpherePosArray[i];
-		m_MainPassCB.Lights[i].Position.y += 1.f;
-		m_MainPassCB.Lights[i].FalloffStart = 1.f;
-		m_MainPassCB.Lights[i].FalloffEnd = 10.f;
-		switcher *= -1.f;
-		m_MainPassCB.Lights[i].Direction = { switcher, -1.f, 0.f };
-		m_MainPassCB.Lights[i].SpotPower = 8.f;
-	}
-#else
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
 	m_MainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
 	m_MainPassCB.Lights[0].Strength = { 0.9f, 0.9f, 0.8f };
@@ -700,46 +654,29 @@ void StencilApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
 	m_MainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
 	m_MainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
-
-#endif
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void StencilApp::UpdateMainPassCB_3PointLights(const GameTimer& _gt)
+void StencilApp::UpdateReflectedPassCB(const GameTimer& _gt)
 {
-	// Key Light
-	XMVECTOR keyLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi, m_SunTheta);
-	XMStoreFloat3(&m_MainPassCB.Lights[0].Direction, keyLightDir);
-	if (m_bKeyLight)
+	// 거울에 그려줄 친구가 쓰는 PassCB이다.
+	m_ReflectedPassCB = m_MainPassCB;
+
+	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMMATRIX R = XMMatrixReflect(mirrorPlane);
+
+	// 반사된 조명을 구한다.
+	for (int i = 0; i < 3; i++)
 	{
-		m_MainPassCB.Lights[0].Strength = { 1.f, 1.f, 0.9f };
+		// Directional Light이기 때문에 direction만 바꿔준다.
+		XMVECTOR lightDir = XMLoadFloat3(&m_MainPassCB.Lights[i].Direction);
+		XMVECTOR reflectedLightDir = XMVector3TransformNormal(lightDir, R);
+		XMStoreFloat3(&m_ReflectedPassCB.Lights[i].Direction, reflectedLightDir);
 	}
-	else
-	{
-		m_MainPassCB.Lights[0].Strength = { 0.f, 0.f, 0.f };
-	}
-	
-
-	// Fill Light
-	XMVECTOR fillLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi + XM_PIDIV2, m_SunTheta);
-	XMStoreFloat3(&m_MainPassCB.Lights[1].Direction, fillLightDir);
-
-	if (m_bfillLight)
-		m_MainPassCB.Lights[1].Strength = { 0.4f, 0.4f, 0.36f };
-	else
-		m_MainPassCB.Lights[1].Strength = { 0.f, 0.f, 0.f };
-
-	// Back Light
-	XMVECTOR backLightDir = -MathHelper::SphericalToCartesian(1.f, m_SunPhi + XM_PI, m_SunTheta + XM_PIDIV4);
-	XMStoreFloat3(&m_MainPassCB.Lights[2].Direction, backLightDir);
-
-	if (m_bBackLight)
-		m_MainPassCB.Lights[2].Strength = { 0.2f, 0.2f, 0.18f };
-	else
-	{
-		m_MainPassCB.Lights[2].Strength = { 0.f, 0.f, 0.f };
-	}
+	// 얘는 Buffer index 1번에 저장한다.
+	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
+	currPassCB->CopyData(1, m_ReflectedPassCB);
 }
 
 void StencilApp::UpdateWaves(const GameTimer& _gt)
@@ -859,50 +796,12 @@ void StencilApp::BuildSamplerHeap()
 
 }
 
-void StencilApp::LoadFireTextures()
-{
-	std::unique_ptr<Texture> flareTex = std::make_unique<Texture>();
-	flareTex->Name = "flareTex";
-	flareTex->Filename = L"../Textures/flare.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		flareTex->Filename.c_str(),
-		flareTex->Resource,
-		flareTex->UploadHeap
-	));
-
-	m_Textures[flareTex->Name] = std::move(flareTex);
-
-	std::unique_ptr<Texture> flareAlphaTex = std::make_unique<Texture>();
-	flareAlphaTex->Name = "flareAlphaTex";
-	flareAlphaTex->Filename = L"../Textures/flarealpha.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		flareAlphaTex->Filename.c_str(),
-		flareAlphaTex->Resource,
-		flareAlphaTex->UploadHeap
-	));
-
-	m_Textures[flareAlphaTex->Name] = std::move(flareAlphaTex);
-}
-
 void StencilApp::BuildRootSignature()
 {	
-#if MIPMAPTEST
-	// Table도 쓸거고, Constant도 쓸거다.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
-	// Sampler 정보가 넘어가는 테이블
-	UINT numOfParameter = 5;
-	CD3DX12_DESCRIPTOR_RANGE samTable;
-	samTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, 3, 10); // s10 ~ s12 - Lod3 Sampler 정보
-	slotRootParameter[4].InitAsDescriptorTable(1, &samTable, D3D12_SHADER_VISIBILITY_PIXEL);
-#else
 	// Table도 쓸거고, Constant도 쓸거다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
 	UINT numOfParameter = 4; 
-#endif
+
 	// Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
 
@@ -950,33 +849,6 @@ void StencilApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
-void StencilApp::BuildBoxDescriptorHeaps()
-{
-	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 2;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
-
-	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* woodCrateTex = m_Textures["woodCrateTex"].get()->Resource.Get();
-	// view를 만들어주고
-	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
-	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = woodCrateTex->GetDesc().Format;
-	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srcDesc.Texture2D.MostDetailedMip = 0;
-	srcDesc.Texture2D.MipLevels = woodCrateTex->GetDesc().MipLevels;
-	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
-
-	// view를 만들면서 연결해준다.
-	m_d3dDevice->CreateShaderResourceView(woodCrateTex, &srcDesc, viewHandle);
-}
-
 void StencilApp::BuildShadersAndInputLayout()
 {
 	const D3D_SHADER_MACRO defines[] =
@@ -1002,119 +874,6 @@ void StencilApp::BuildShadersAndInputLayout()
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) *2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
-}
-
-void StencilApp::LoadBoxTextures()
-{
-	std::unique_ptr<Texture> woodCrateTex = std::make_unique<Texture>();
-	woodCrateTex->Name = "woodCrateTex";
-	woodCrateTex->Filename = L"../Textures/WoodCrate01.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		woodCrateTex->Filename.c_str(),
-		woodCrateTex->Resource,
-		woodCrateTex->UploadHeap
-	));
-
-	m_Textures[woodCrateTex->Name] = std::move(woodCrateTex);
-}
-
-void StencilApp::BuildBoxGeometry()
-{
-	// 일단 제너레이터로 박스를 만들고
-	GeometryGenerator geoGen;
-	GeometryGenerator::MeshData box = geoGen.CreateBox(1.f, 1.f, 1.f, 3);
-	// 속성도 뽑아 먹고
-	SubmeshGeometry boxSubmesh;
-	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
-	boxSubmesh.StartIndexLocation = 0;
-	boxSubmesh.BaseVertexLocation = 0;
-	// 데이터도 뽑아 먹는다.
-	std::vector<Vertex> vertices(box.Vertices.size());
-
-	for (size_t i = 0; i < box.Vertices.size(); i++)
-	{
-		vertices[i].Pos = box.Vertices[i].Position;
-		vertices[i].Normal = box.Vertices[i].Normal;
-		vertices[i].TexC = box.Vertices[i].TexC;
-	}
-
-	std::vector<std::uint16_t> indices = box.GetIndices16();
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(uint16_t);
-
-	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "boxGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		vertices.data(),
-		vbByteSize,
-		geo->VertexBufferUploader
-		);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		indices.data(),
-		ibByteSize,
-		geo->IndexBufferUploader
-	);
-
-	geo->VertexByteStride = sizeof(Vertex);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	geo->DrawArgs["box"] = boxSubmesh;
-
-	m_Geometries[geo->Name] = std::move(geo);
-}
-
-void StencilApp::BuildBoxMaterials()
-{
-	std::unique_ptr<Material> woodCrate = std::make_unique<Material>();
-	woodCrate->Name = "woodCrate";
-	woodCrate->MatCBIndex = 0;
-	woodCrate->DiffuseSrvHeapIndex = 0;
-	woodCrate->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
-	woodCrate->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	woodCrate->Roughness = 0.2f;
-
-	m_Materials[woodCrate->Name] = std::move(woodCrate);
-}
-
-void StencilApp::BuildBoxRenderItems()
-{
-	std::unique_ptr<RenderItem> boxRenderItem = std::make_unique<RenderItem>();
-
-	boxRenderItem->ObjCBIndex = 0;
-	XMMATRIX texTransform = XMMatrixIdentity();
-	//texTransform = XMMatrixScaling(3.f, 3.f, 1.f) * XMMatrixTranslation(-0.7f, -0.7f, 0.f);
-	XMStoreFloat4x4(&boxRenderItem->TexTransform, texTransform);
-	boxRenderItem->Mat = m_Materials["woodCrate"].get();
-	boxRenderItem->Geo = m_Geometries["boxGeo"].get();
-	boxRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	boxRenderItem->IndexCount = boxRenderItem->Geo->DrawArgs["box"].IndexCount;
-	boxRenderItem->StartIndexLocation = boxRenderItem->Geo->DrawArgs["box"].StartIndexLocation;
-	boxRenderItem->BaseVertexLocation = boxRenderItem->Geo->DrawArgs["box"].BaseVertexLocation;
-
-	m_AllRenderItems.push_back(std::move(boxRenderItem));
-
-	// 일단은 opaque 한 친구들 말고는 없다.
-	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
-	{
-		m_RenderItemLayer[(UINT)RenderLayer::Opaque].push_back(e.get());
-	}
 }
 
 void StencilApp::LoadWaveTextures()
@@ -1389,24 +1148,24 @@ void StencilApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
-void StencilApp::LoadSkullTextures()
+void StencilApp::LoadSkullRoomTextures()
 {
-	std::unique_ptr<Texture> skullTex = std::make_unique<Texture>();
-	skullTex->Name = "skullTex";
-	skullTex->Filename = L"../Textures/ice.dds";
+	std::unique_ptr<Texture> iceTex = std::make_unique<Texture>();
+	iceTex->Name = "iceTex";
+	iceTex->Filename = L"../Textures/ice.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		skullTex->Filename.c_str(),
-		skullTex->Resource,
-		skullTex->UploadHeap
+		iceTex->Filename.c_str(),
+		iceTex->Resource,
+		iceTex->UploadHeap
 	));
 
-	m_Textures[skullTex->Name] = std::move(skullTex);
+	m_Textures[iceTex->Name] = std::move(iceTex);
 
 	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
 	bricksTex->Name = "bricksTex";
-	bricksTex->Filename = L"../Textures/bricks.dds";
+	bricksTex->Filename = L"../Textures/brick3.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
@@ -1417,31 +1176,32 @@ void StencilApp::LoadSkullTextures()
 
 	m_Textures[bricksTex->Name] = std::move(bricksTex);
 
-	std::unique_ptr<Texture> stoneTex = std::make_unique<Texture>();
-	stoneTex->Name = "stoneTex";
-	stoneTex->Filename = L"../Textures/stone.dds";
+	std::unique_ptr<Texture> checkboardTex = std::make_unique<Texture>();
+	checkboardTex->Name = "checkboardTex";
+	checkboardTex->Filename = L"../Textures/checkboard.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		stoneTex->Filename.c_str(),
-		stoneTex->Resource,
-		stoneTex->UploadHeap
+		checkboardTex->Filename.c_str(),
+		checkboardTex->Resource,
+		checkboardTex->UploadHeap
 	));
 
-	m_Textures[stoneTex->Name] = std::move(stoneTex);
+	m_Textures[checkboardTex->Name] = std::move(checkboardTex);
 
-	std::unique_ptr<Texture> tileTex = std::make_unique<Texture>();
-	tileTex->Name = "tileTex";
-	tileTex->Filename = L"../Textures/tile.dds";
+	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
+	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
+	white1x1Tex->Name = "white1x1Tex";
+	white1x1Tex->Filename = L"../Textures/white1x1.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		tileTex->Filename.c_str(),
-		tileTex->Resource,
-		tileTex->UploadHeap
+		white1x1Tex->Filename.c_str(),
+		white1x1Tex->Resource,
+		white1x1Tex->UploadHeap
 	));
 
-	m_Textures[tileTex->Name] = std::move(tileTex);
+	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
 }
 
 void StencilApp::BuildSkullDescriptorHeaps()
@@ -1457,140 +1217,126 @@ void StencilApp::BuildSkullDescriptorHeaps()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* skullTex = m_Textures["skullTex"].get()->Resource.Get();
+	ID3D12Resource* iceTex = m_Textures["iceTex"].get()->Resource.Get();
 	ID3D12Resource* bricksTex = m_Textures["bricksTex"].get()->Resource.Get();
-	ID3D12Resource* stoneTex = m_Textures["stoneTex"].get()->Resource.Get();
-	ID3D12Resource* tileTex = m_Textures["tileTex"].get()->Resource.Get();
+	ID3D12Resource* checkboardTex = m_Textures["checkboardTex"].get()->Resource.Get();
+	ID3D12Resource* white1x1Tex = m_Textures["white1x1Tex"].get()->Resource.Get();
 
 
 	// view를 만들어주고
 	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
 	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = skullTex->GetDesc().Format;
+	srcDesc.Format = bricksTex->GetDesc().Format;
 	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srcDesc.Texture2D.MostDetailedMip = 0;
-	srcDesc.Texture2D.MipLevels = skullTex->GetDesc().MipLevels;
+	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
 	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
-	m_d3dDevice->CreateShaderResourceView(skullTex, &srcDesc, viewHandle);
+	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
 
 	// view를 만들면서 연결해준다.
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = bricksTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
+	srcDesc.Format = checkboardTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = checkboardTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(checkboardTex, &srcDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = stoneTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(stoneTex, &srcDesc, viewHandle);
+	srcDesc.Format = iceTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = iceTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(iceTex, &srcDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = tileTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
+	srcDesc.Format = white1x1Tex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = white1x1Tex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(white1x1Tex, &srcDesc, viewHandle);
 }
 
-void StencilApp::BuildShapeGeometry()
+void StencilApp::BuildRoomGeometry()
 {
-	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
-	GeometryGenerator geoGenerator;
-	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
-	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
-	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
-	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+	// 예제 너무 좋다.
+	//
+	//   |--------------|
+	//   |              |
+	//   |----|----|----|
+	//   |Wall|Mirr|Wall|
+	//   |    | or |    |
+	//   /--------------/
+	//  /   Floor      /
+	// /--------------/
 
-	// 이거를 하나의 버퍼로 전부 연결한다.
-
-	// 그 전에, 각종 속성 들을 저장해 놓는다.
-	// vertex offset
-	UINT boxVertexOffset = 0;
-	UINT gridVertexOffset = (UINT)box.Vertices.size();
-	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
-	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
-
-	// index offset
-	UINT boxIndexOffset = 0;
-	UINT gridIndexOffset = (UINT)box.Indices32.size();
-	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
-	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
-
-	// 한방에 할꺼라서 MeshGeometry에 넣을
-	// SubGeometry로 정의한다.
-	SubmeshGeometry boxSubmesh;
-	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
-	boxSubmesh.StartIndexLocation = boxIndexOffset;
-	boxSubmesh.BaseVertexLocation = boxVertexOffset;
-
-
-	SubmeshGeometry gridSubmesh;
-	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
-	gridSubmesh.StartIndexLocation = gridIndexOffset;
-	gridSubmesh.BaseVertexLocation = gridVertexOffset;
-
-
-	SubmeshGeometry sphereSubmesh;
-	sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
-	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
-	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
-
-
-	SubmeshGeometry cylinderSubmesh;
-	cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
-	cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
-	cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
-
-	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
-	size_t totalVertexCount =
-		box.Vertices.size() +
-		grid.Vertices.size() +
-		sphere.Vertices.size() +
-		cylinder.Vertices.size();
-
-	std::vector<Vertex> vertices;
-	vertices.resize(totalVertexCount);
-
-	UINT k = 0;
-	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
+	std::array<Vertex, 20> vertices =
 	{
-		vertices[k].Pos = box.Vertices[i].Position;
-		vertices[k].Normal = box.Vertices[i].Normal;
-		vertices[k].TexC = box.Vertices[i].TexC;
-	}
+		// 정의역을 (0, 4)로 늘려서 4배 타일링이 되도록 하였다.
+		Vertex(-3.5f, 0.0f, -10.0f, 0.0f, 1.0f, 0.0f, 0.0f, 4.0f), // 0 
+		Vertex(-3.5f, 0.0f,   0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f),
+		Vertex(7.5f, 0.0f,   0.0f, 0.0f, 1.0f, 0.0f, 4.0f, 0.0f),
+		Vertex(7.5f, 0.0f, -10.0f, 0.0f, 1.0f, 0.0f, 4.0f, 4.0f),
 
-	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+		// 거울 양옆의 벽과 위를 덮는 벽이다.
+		// vertex와 uv를 보면 대충 u와 v의 비율이 같아보인다.
+		Vertex(-3.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 2.0f), // 4
+		Vertex(-3.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
+		Vertex(-2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.5f, 0.0f),
+		Vertex(-2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.5f, 2.0f),
+
+		Vertex(2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 2.0f), // 8 
+		Vertex(2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
+		Vertex(7.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 2.0f, 0.0f),
+		Vertex(7.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 2.0f, 2.0f),
+
+		Vertex(-3.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f), // 12
+		Vertex(-3.5f, 6.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
+		Vertex(7.5f, 6.0f, 0.0f, 0.0f, 0.0f, -1.0f, 6.0f, 0.0f),
+		Vertex(7.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 6.0f, 1.0f),
+
+		// 거울
+		Vertex(-2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f), // 16
+		Vertex(-2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
+		Vertex(2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f),
+		Vertex(2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f)
+	};
+
+	std::array<std::int16_t, 30> indices =
 	{
-		vertices[k].Pos = grid.Vertices[i].Position;
-		vertices[k].Normal = grid.Vertices[i].Normal;
-		vertices[k].TexC = grid.Vertices[i].TexC;
-	}
+		// 바닥
+		0, 1, 2,
+		0, 2, 3,
 
-	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = sphere.Vertices[i].Position;
-		vertices[k].Normal = sphere.Vertices[i].Normal;
-		vertices[k].TexC = sphere.Vertices[i].TexC;
-	}
+		// 벽
+		4, 5, 6,
+		4, 6, 7,
 
-	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = cylinder.Vertices[i].Position;
-		vertices[k].Normal = cylinder.Vertices[i].Normal;
-		vertices[k].TexC = cylinder.Vertices[i].TexC;
-	}
+		8, 9, 10,
+		8, 10, 11,
 
-	// 이제 index 정보도 한곳에 다 옮긴다.
-	std::vector<std::uint16_t> indices;
-	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
-	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
-	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
-	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
+		12, 13, 14,
+		12, 14, 15,
+
+		// 거울
+		16, 17, 18,
+		16, 18, 19
+	};
+
+	SubmeshGeometry floorSubmesh;
+	floorSubmesh.IndexCount = 6;
+	floorSubmesh.StartIndexLocation = 0;
+	floorSubmesh.BaseVertexLocation = 0;
+
+	SubmeshGeometry wallSubmesh;
+	wallSubmesh.IndexCount = 18;
+	wallSubmesh.StartIndexLocation = 6;
+	wallSubmesh.BaseVertexLocation = 0;
+
+	SubmeshGeometry mirrorSubmesh;
+	mirrorSubmesh.IndexCount = 6;
+	mirrorSubmesh.StartIndexLocation = 24;
+	mirrorSubmesh.BaseVertexLocation = 0;
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
 
-	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "shapeGeo";
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "roomGeo";
 
 	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
 	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
@@ -1600,17 +1346,17 @@ void StencilApp::BuildShapeGeometry()
 
 	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
 		m_d3dDevice.Get(),
-		m_CommandList.Get(),
+		m_CommandList.Get(), 
 		vertices.data(),
-		vbByteSize,
+		vbByteSize, 
 		geo->VertexBufferUploader
 	);
 
 	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
+		m_d3dDevice.Get(),													   
 		m_CommandList.Get(),
-		indices.data(),
-		ibByteSize,
+		indices.data(), 
+		ibByteSize, 
 		geo->IndexBufferUploader
 	);
 
@@ -1619,15 +1365,14 @@ void StencilApp::BuildShapeGeometry()
 	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
 	geo->IndexBufferByteSize = ibByteSize;
 
-	geo->DrawArgs["box"] = boxSubmesh;
-	geo->DrawArgs["grid"] = gridSubmesh;
-	geo->DrawArgs["sphere"] = sphereSubmesh;
-	geo->DrawArgs["cylinder"] = cylinderSubmesh;
+	geo->DrawArgs["floor"] = floorSubmesh;
+	geo->DrawArgs["wall"] = wallSubmesh;
+	geo->DrawArgs["mirror"] = mirrorSubmesh;
 
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void StencilApp::BuildSkull()
+void StencilApp::BuildSkullGeometry()
 {
 	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
@@ -1638,7 +1383,7 @@ void StencilApp::BuildSkull()
 	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
 
 	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "SkullGeo";
+	geo->Name = "skullGeo";
 
 	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
 	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), SkullVertices.data(), vbByteSize);
@@ -1676,167 +1421,135 @@ void StencilApp::BuildSkull()
 
 	geo->DrawArgs["skull"] = submesh;
 
-	m_Geometries["SkullGeo"] = std::move(geo);
+	m_Geometries["skullGeo"] = std::move(geo);
 }
 
-void StencilApp::BuildSkullNGeoMaterials()
+void StencilApp::BuildSkullRoomMaterials()
 {
+	std::unique_ptr<Material> bricksMat = std::make_unique<Material>();
+	bricksMat->Name = "bricks";
+	bricksMat->MatCBIndex = 0;
+	bricksMat->DiffuseSrvHeapIndex = 0;
+	bricksMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	bricksMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	bricksMat->Roughness = 0.25f;
+
+	std::unique_ptr<Material> checkertileMat = std::make_unique<Material>();
+	checkertileMat->Name = "checkertile";
+	checkertileMat->MatCBIndex = 1;
+	checkertileMat->DiffuseSrvHeapIndex = 1;
+	checkertileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	checkertileMat->FresnelR0 = XMFLOAT3(0.07f, 0.07f, 0.07f);
+	checkertileMat->Roughness = 0.3f;
+
+	std::unique_ptr<Material> icemirrorMat = std::make_unique<Material>();
+	icemirrorMat->Name = "icemirror";
+	icemirrorMat->MatCBIndex = 2;
+	icemirrorMat->DiffuseSrvHeapIndex = 2;
+	icemirrorMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);
+	icemirrorMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	icemirrorMat->Roughness = 0.5f;
+
 	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
 	skullMat->Name = "skullMat";
-	skullMat->MatCBIndex = 0;
-	skullMat->DiffuseSrvHeapIndex = 0;
+	skullMat->MatCBIndex = 3;
+	skullMat->DiffuseSrvHeapIndex = 3;
 	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	skullMat->Roughness = 0.125f;
+	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	skullMat->Roughness = 0.3f;
 
-	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
-	brickMat->Name = "brickMat";
-	brickMat->MatCBIndex = 1;
-	brickMat->DiffuseSrvHeapIndex = 1;
-	brickMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	brickMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	brickMat->Roughness = 0.3f;
+	std::unique_ptr<Material> shadowMat = std::make_unique<Material>();
+	shadowMat->Name = "shadowMat";
+	shadowMat->MatCBIndex = 4;
+	shadowMat->DiffuseSrvHeapIndex = 3;
+	shadowMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);
+	shadowMat->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
+	shadowMat->Roughness = 0.0f;
 
-	std::unique_ptr<Material> stoneMat = std::make_unique<Material>();
-	stoneMat->Name = "stoneMat";
-	stoneMat->MatCBIndex = 2;
-	stoneMat->DiffuseSrvHeapIndex = 2;
-	stoneMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	stoneMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	stoneMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
-	tileMat->Name = "tileMat";
-	tileMat->MatCBIndex = 3;
-	tileMat->DiffuseSrvHeapIndex = 3;
-	tileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	tileMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	tileMat->Roughness = 0.3f;
-
+	m_Materials["bricksMat"] = std::move(bricksMat);
+	m_Materials["checkertileMat"] = std::move(checkertileMat);
+	m_Materials["icemirrorMat"] = std::move(icemirrorMat);
 	m_Materials["skullMat"] = std::move(skullMat);
-	m_Materials["brickMat"] = std::move(brickMat);
-	m_Materials["stoneMat"] = std::move(stoneMat);
-	m_Materials["tileMat"] = std::move(tileMat);
+	m_Materials["shadowMat"] = std::move(shadowMat);
 }
 
-void StencilApp::BuildSkullNGeoRenderItem()
+void StencilApp::BuildSkullRoomRenderItem()
 {
-	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
+	std::unique_ptr<RenderItem> floorRenderitem = std::make_unique<RenderItem>();
+	floorRenderitem->WorldMat = MathHelper::Identity4x4();
+	floorRenderitem->TexTransform = MathHelper::Identity4x4();
+	floorRenderitem->ObjCBIndex = 0;
+	floorRenderitem->Mat = m_Materials["checkertileMat"].get();
+	floorRenderitem->Geo = m_Geometries["roomGeo"].get();
+	floorRenderitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	floorRenderitem->IndexCount = floorRenderitem->Geo->DrawArgs["floor"].IndexCount;
+	floorRenderitem->StartIndexLocation = floorRenderitem->Geo->DrawArgs["floor"].StartIndexLocation;
+	floorRenderitem->BaseVertexLocation = floorRenderitem->Geo->DrawArgs["floor"].BaseVertexLocation;
 
-	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
-	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
-	boxRitem->ObjCBIndex = 1;
-	boxRitem->Geo = m_Geometries["shapeGeo"].get();
-	boxRitem->Mat = m_Materials["stoneMat"].get();
-	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
-	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
-	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(floorRenderitem.get());
 
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
-	m_AllRenderItems.push_back(std::move(boxRitem));
+	std::unique_ptr<RenderItem> wallsRenderItem = std::make_unique<RenderItem>();
+	wallsRenderItem->WorldMat = MathHelper::Identity4x4();
+	wallsRenderItem->TexTransform = MathHelper::Identity4x4();
+	wallsRenderItem->ObjCBIndex = 1;
+	wallsRenderItem->Mat = m_Materials["bricksMat"].get();
+	wallsRenderItem->Geo = m_Geometries["roomGeo"].get();
+	wallsRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	wallsRenderItem->IndexCount = wallsRenderItem->Geo->DrawArgs["wall"].IndexCount;
+	wallsRenderItem->StartIndexLocation = wallsRenderItem->Geo->DrawArgs["wall"].StartIndexLocation;
+	wallsRenderItem->BaseVertexLocation = wallsRenderItem->Geo->DrawArgs["wall"].BaseVertexLocation;
 
-	// 그리드 아이템
-	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(8.0f, 8.0f, 1.0f));
-	gridRitem->WorldMat = MathHelper::Identity4x4();
-	gridRitem->ObjCBIndex = 2;
-	gridRitem->Geo = m_Geometries["shapeGeo"].get();
-	gridRitem->Mat = m_Materials["tileMat"].get();
-	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
-	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
-	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
-
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
-	m_AllRenderItems.push_back(std::move(gridRitem));
-
-	// 원기둥과 구 5개씩 2줄
-	UINT objCBIndex = 3;
-	for (int i = 0; i < 5; ++i)
-	{
-		std::unique_ptr<RenderItem> leftCylRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> rightCylRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> leftSphereRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> rightSphereRitem = std::make_unique<RenderItem>();
-
-		//  z 축으로 10칸씩 옮긴다.
-		XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
-		XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
-
-#if 0
-		m_SpherePosArray[i * 2] = { -5.0f, 3.5f, -10.0f + i * 5.0f };
-		m_SpherePosArray[i * 2 + 1] = { +5.0f, 3.5f, -10.0f + i * 5.0f };
-#endif
-		XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i * 5.0f);
-		XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
-
-		XMStoreFloat4x4(&leftCylRitem->WorldMat, rightCylWorld);
-		XMStoreFloat4x4(&leftCylRitem->TexTransform, XMMatrixIdentity());
-		leftCylRitem->ObjCBIndex = objCBIndex++;
-		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftCylRitem->Mat = m_Materials["brickMat"].get();
-		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
-		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
-		leftCylRitem->BaseVertexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&rightCylRitem->WorldMat, leftCylWorld);
-		XMStoreFloat4x4(&rightCylRitem->TexTransform, XMMatrixIdentity());
-		rightCylRitem->ObjCBIndex = objCBIndex++;
-		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightCylRitem->Mat = m_Materials["brickMat"].get();
-		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
-		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
-		rightCylRitem->BaseVertexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
-		leftSphereRitem->ObjCBIndex = objCBIndex++;
-		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftSphereRitem->Mat = m_Materials["stoneMat"].get();
-		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
-		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
-		leftSphereRitem->BaseVertexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
-		rightSphereRitem->ObjCBIndex = objCBIndex++;
-		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightSphereRitem->Mat = m_Materials["stoneMat"].get();
-		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
-		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
-		rightSphereRitem->BaseVertexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
-
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftCylRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightCylRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftSphereRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightSphereRitem.get());
-
-		m_AllRenderItems.push_back(std::move(leftCylRitem));
-		m_AllRenderItems.push_back(std::move(rightCylRitem));
-		m_AllRenderItems.push_back(std::move(leftSphereRitem));
-		m_AllRenderItems.push_back(std::move(rightSphereRitem));
-	}
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wallsRenderItem.get());
 
 	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
-	XMMATRIX ScaleHalfMat = XMMatrixScaling(0.5f, 0.5f, 0.5f);
-	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, 1.f, 0.f);
-	XMMATRIX SkullWorldMat = ScaleHalfMat * TranslateDown5Units;
-	// skullRenderItem->WorldMat = MathHelper::Identity4x4();
-	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
-	skullRenderItem->ObjCBIndex = 0;
-	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
+	skullRenderItem->WorldMat = MathHelper::Identity4x4();
+	skullRenderItem->TexTransform = MathHelper::Identity4x4();
+	skullRenderItem->ObjCBIndex = 2;
 	skullRenderItem->Mat = m_Materials["skullMat"].get();
-	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	skullRenderItem->Geo = m_Geometries["skullGeo"].get();
+	skullRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
-
+	// 업데이트가 필요하기 때문에 app에서 따로 변수를 가진다.
+	m_SkullRenderItem = skullRenderItem.get();
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
+	// Reflected skull will have different world matrix, so it needs to be its own render item.
+	std::unique_ptr<RenderItem> reflectedSkullRenderItem = std::make_unique<RenderItem>();
+	*reflectedSkullRenderItem = *skullRenderItem;
+	reflectedSkullRenderItem->ObjCBIndex = 3;
+	m_ReflectedSkullRenderItem = reflectedSkullRenderItem.get();
+	m_RenderItemLayer[(int)RenderLayer::Reflected].push_back(reflectedSkullRenderItem.get());
+
+	// Shadowed skull will have different world matrix, so it needs to be its own render item.
+	std::unique_ptr<RenderItem> shadowedSkullRenderItem = std::make_unique<RenderItem>();
+	*shadowedSkullRenderItem = *skullRenderItem;
+	shadowedSkullRenderItem->ObjCBIndex = 4;
+	shadowedSkullRenderItem->Mat = m_Materials["shadowMat"].get();
+	m_ShadowedSkullRenderItem = shadowedSkullRenderItem.get();
+	m_RenderItemLayer[(int)RenderLayer::Shadow].push_back(shadowedSkullRenderItem.get());
+
+	std::unique_ptr<RenderItem> mirrorRenderItem = std::make_unique<RenderItem>();
+	mirrorRenderItem->WorldMat = MathHelper::Identity4x4();
+	mirrorRenderItem->TexTransform = MathHelper::Identity4x4();
+	mirrorRenderItem->ObjCBIndex = 5;
+	mirrorRenderItem->Mat = m_Materials["icemirrorMat"].get();
+	mirrorRenderItem->Geo = m_Geometries["roomGeo"].get();
+	mirrorRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	mirrorRenderItem->IndexCount = mirrorRenderItem->Geo->DrawArgs["mirror"].IndexCount;
+	mirrorRenderItem->StartIndexLocation = mirrorRenderItem->Geo->DrawArgs["mirror"].StartIndexLocation;
+	mirrorRenderItem->BaseVertexLocation = mirrorRenderItem->Geo->DrawArgs["mirror"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRenderItem.get());
+	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(mirrorRenderItem.get());
+
+	m_AllRenderItems.push_back(std::move(floorRenderitem));
+	m_AllRenderItems.push_back(std::move(wallsRenderItem));
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
+	m_AllRenderItems.push_back(std::move(reflectedSkullRenderItem));
+	m_AllRenderItems.push_back(std::move(shadowedSkullRenderItem));
+	m_AllRenderItems.push_back(std::move(mirrorRenderItem));
 }
 
 void StencilApp::BuildPSOs()
@@ -1889,16 +1602,11 @@ void StencilApp::BuildPSOs()
 	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
 
-	// 알파 자르기 PSO
+	// Stencil 마킹하는 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPSODesc = opaquePSODesc;
 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
-	alphaTestPSODesc.PS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["alphaTestedPS"]->GetBufferPointer()),
-		m_Shaders["alphaTestedPS"]->GetBufferSize()
-	};
-	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
+	CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
+	assert(false && "from here");
 }
 
 void StencilApp::BuildFrameResources()
@@ -2015,11 +1723,6 @@ void StencilApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
 	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
-
-#if MIPMAPTEST
-	CD3DX12_GPU_DESCRIPTOR_HANDLE sam(m_SamplerHeap->GetGPUDescriptorHandleForHeapStart());
-	_cmdList->SetGraphicsRootDescriptorTable(4, sam);
-#endif
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{

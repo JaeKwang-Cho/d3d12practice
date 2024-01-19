@@ -71,7 +71,7 @@ struct VertexIn
     float3 NormalL : NORMAL;
 };
 
-// 출력으로는 World Pos와 Render(Homogeneous clip space) Pos로 나눈다.
+// 출력으로는 World Pos와 동차 (Homogeneous clip space) Pos로 나눈다.
 struct VertexOut
 {
     float4 PosH : SV_POSITION;
