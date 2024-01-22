@@ -109,6 +109,7 @@ VertexOut VS(VertexIn vin)
 {
     VertexOut vout = (VertexOut) 0.0f;
 	
+#ifndef DEPTH_COMPLEXITY
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
     vout.PosW = posW.xyz;
@@ -118,13 +119,19 @@ VertexOut VS(VertexIn vin)
     vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
+
     vout.PosH = mul(posW, gViewProj);
     
     // Texture에게 주어진 Transform을 적용시킨 다음
     float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
     // World를 곱해서 PS로 넘겨준다.
     vout.TexC = mul(texC, gMatTransform).xy;
-
+#else
+    vout.PosW = vin.PosL;
+    vout.PosH = float4(vin.PosL, 1.f);
+    vout.NormalW = vin.NormalL;
+    vout.TexC = vin.TexC;
+#endif
     return vout;
 }
 
@@ -136,8 +143,10 @@ float4 PS(VertexOut pin) : SV_Target
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
     clip(diffuseAlbedo.a - 0.1f);
+    //clip(diffuseAlbedo.r + diffuseAlbedo.g + diffuseAlbedo.b - 0.1f);
 #endif
     
+#ifndef DEPTH_COMPLEXITY
     // 일단 정규화를 한다.
     pin.NormalW = normalize(pin.NormalW);
 
@@ -160,6 +169,9 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
+#else
+    float4 litColor = diffuseAlbedo;
+#endif
     
 #ifdef FOG
     // 카메라에서 거리가 멀 수록

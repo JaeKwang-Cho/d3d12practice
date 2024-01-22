@@ -17,11 +17,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="Waves.h" />
@@ -81,6 +76,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\08_Stencil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="packages.config" />
+    <None Include="Shaders\LightingUtil.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

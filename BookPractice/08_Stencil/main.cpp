@@ -10,9 +10,17 @@
 #include <DirectXColors.h>
 #include "Waves.h"
 #include "FileReader.h"
+#include "WICTextureLoader.h"
+#include "ResourceUploadBatch.h"
+#include <iomanip>
 
-#define WAVE (0)
-#define SKULL (1)
+#define WAVE (1)
+#define SKULL (0)
+
+#define PRAC5 (0)
+#define PRAC6 (0)
+#define PRAC7 (0)
+#define PRAC8 (1)
 
 const int g_NumFrameResources = 3;
 
@@ -62,6 +70,7 @@ enum class RenderLayer : int
 	Transparent,
 	AlphaTested,
 	Shadow,
+	Practice,
 	Count
 };
 
@@ -108,9 +117,11 @@ private:
 
 	// Wave 용이다.
 	void LoadWaveTextures();
+	void LoadFenceAnimation();
 	void BuildWaveDescriptorHeaps();
 	void BuildLandGeometry();
 	void BuildFenceGeometry();
+	void BuildQuadGeometry();
 	void BuildWavesGeometryBuffers();
 	void BuildWaveMaterials();
 	void BuildWaveRenderItems();
@@ -127,6 +138,7 @@ private:
 	void BuildFrameResources();
 
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems);
+	void DrawComplexityQuad(ID3D12GraphicsCommandList* _cmdList, int _StencilRef);
 
 	// 지형의 높이와 노멀을 계산하는 함수다.
 	float GetHillsHeight(float _x, float _z) const;
@@ -328,10 +340,11 @@ void StencilApp::Update(const GameTimer& _gt)
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
-	UpdateReflectedPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
-#if WAVE
+#if SKULL
+	UpdateReflectedPassCB(_gt);
+#elif WAVE
 	UpdateWaves(_gt);
 #endif
 }
@@ -396,8 +409,28 @@ void StencilApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
 
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
+#if PRAC8
+	m_CommandList->SetPipelineState(m_PSOs["writeDepthComplexity"].Get());
+	for (int i = 0; i < (int)RenderLayer::Practice; i++)
+	{
+		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[i]);
+	}
+	m_CommandList->SetPipelineState(m_PSOs["readDepthComplexity"].Get());
+	for (int i = 0; i < m_RenderItemLayer[(int)RenderLayer::Practice].size(); i++)
+	{
+		m_CommandList->OMSetStencilRef(i);
+		DrawComplexityQuad(m_CommandList.Get(), i);
+	}
+#else
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+#endif
 
+#if SKULL && PRAC5
+	m_CommandList->SetPipelineState(m_PSOs["prac4Wall"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+#endif
+
+#if SKULL
 	// 지금 부터 거울구역을 마킹하는데, 이 친구는 stencil에 Ref값을 1을 써주면서 그려진다.
 	m_CommandList->OMSetStencilRef(1);
 	m_CommandList->SetPipelineState(m_PSOs["markStencilMirrors"].Get());
@@ -420,6 +453,16 @@ void StencilApp::Draw(const GameTimer& _gt)
 	// 그림자를 출력해준다
 	m_CommandList->SetPipelineState(m_PSOs["shadow"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Shadow]);
+
+#elif WAVE && !PRAC8
+	// 알파 자르기하는 친구들을 출력해주고
+	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
+
+	// 이제 반투명한 애들을 출력해준다.
+	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+#endif
 
 
 	// =============================
@@ -502,6 +545,7 @@ void StencilApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 void StencilApp::OnKeyboardInput(const GameTimer _gt)
 {
+#if SKULL
 	const float dt = _gt.GetDeltaTime();
 
 	// wasd로 skull을 움직이도록 한다.
@@ -542,6 +586,7 @@ void StencilApp::OnKeyboardInput(const GameTimer _gt)
 	m_SkullRenderItem->NumFrameDirty = g_NumFrameResources;
 	m_ReflectedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
 	m_ShadowedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
+#endif
 }
 
 void StencilApp::UpdateCamera(const GameTimer& _gt)
@@ -750,6 +795,24 @@ void StencilApp::AnimateMaterials(const GameTimer& _gt)
 	// dirty flag를 켜준다.
 	waterMat->NumFramesDirty = g_NumFrameResources;
 #endif
+#if WAVE && PRAC7
+	static float timeBase = 0.f;
+	static int fenceSrvHeapIndex = 2;
+	timeBase += _gt.GetDeltaTime();
+
+	if (timeBase >= 0.01667f)
+	{
+		timeBase = 0.f;
+
+		Material* fenceMat = m_Materials["fence"].get();
+		fenceSrvHeapIndex++;
+		if (fenceSrvHeapIndex > 61)
+			fenceSrvHeapIndex = 2;
+		fenceMat->DiffuseSrvHeapIndex = fenceSrvHeapIndex;
+
+		fenceMat->NumFramesDirty = g_NumFrameResources;
+	}
+#endif
 }
 
 void StencilApp::BuildSamplerHeap()
@@ -864,9 +927,17 @@ void StencilApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO depthComplexity[] =
+	{
+		"DEPTH_COMPLEXITY", "1",
+		NULL, NULL
+	};
+
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\08_Stencil.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\08_Stencil.hlsl", defines, "PS", "ps_5_1");
 	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\08_Stencil.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	m_Shaders["depthComplexityVS"] = d3dUtil::CompileShader(L"Shaders\\08_Stencil.hlsl", depthComplexity, "VS", "vs_5_1");
+	m_Shaders["depthComplexityPS"] = d3dUtil::CompileShader(L"Shaders\\08_Stencil.hlsl", depthComplexity, "PS", "ps_5_1");
 
 	m_InputLayout =
 	{
@@ -900,6 +971,9 @@ void StencilApp::LoadWaveTextures()
 		waterTex->UploadHeap
 	));
 
+#if PRAC7
+	LoadFenceAnimation();
+#else
 	std::unique_ptr<Texture> fenceTex = std::make_unique<Texture>();
 	fenceTex->Name = "fenceTex";
 	fenceTex->Filename = L"../Textures/WireFence.dds";
@@ -911,16 +985,93 @@ void StencilApp::LoadWaveTextures()
 		fenceTex->UploadHeap
 	));
 
+	m_Textures[fenceTex->Name] = std::move(fenceTex);
+#endif
+
+#if PRAC8
+	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
+	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
+	white1x1Tex->Name = "white1x1Tex";
+	white1x1Tex->Filename = L"../Textures/white1x1.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		white1x1Tex->Filename.c_str(),
+		white1x1Tex->Resource,
+		white1x1Tex->UploadHeap
+	));
+
+	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
+#endif
+
 	m_Textures[grassTex->Name] = std::move(grassTex);
 	m_Textures[waterTex->Name] = std::move(waterTex);
-	m_Textures[fenceTex->Name] = std::move(fenceTex);
+	
+}
+
+void StencilApp::LoadFenceAnimation()
+{
+	wstring fileNameBolt = L"../Textures/BoltAnim/Bolt";
+	wstring fileFormat = L".bmp";
+
+	// Texture를 GPU에 올리기 위해서, Heap을 생성하는거
+	// Command List를 이용해서 GPU에 요청을 던졌던 게 기억이 날 것이다.
+	// 예제에서 Upload Heap을 그냥 Texture를 파괴할 때까지 들고 있었던 걸 생각해보면 알 수 있다.
+
+	vector<std::future<void>> finishArr(30);
+	finishArr.resize(0);
+
+	for (int i = 1; i <= 60; i++)
+	{
+		std::unique_ptr<Texture> fenceTex = std::make_unique<Texture>();
+
+		ostringstream textureNumStream;
+		textureNumStream << setfill('0') << setw(3) << i;
+		fenceTex->Name = "Bolt" + textureNumStream.str();
+
+		wostringstream BoltNumStream;
+		BoltNumStream << setfill(L'0') << setw(3) << i;
+		wstring BoltNum = BoltNumStream.str();
+		wstring filePath = fileNameBolt + BoltNum + fileFormat;
+		fenceTex->Filename = filePath;
+
+		// 이 친구는 더 개쩔게 멀티스레딩 할 때 쓰이는 std::future를 사용하게 한다.
+		ResourceUploadBatch upload(m_d3dDevice.Get());
+
+		// 근데 나는 올바른 멀티스레드 구조를 짤 줄 모르고,
+		// 여기서는 Initial 함수로 싹 메모리에 올려놓은 다음에 사용할 것이기 때문에,
+		// 싱글스레드 처럼 사용한다.
+		upload.Begin();
+
+		ThrowIfFailed(CreateWICTextureFromFile(
+			m_d3dDevice.Get(), // ID3D12Device
+			upload, // 여기에 ResourceUploadBatch 인스턴스
+			fenceTex->Filename.c_str(), // 파일 경로
+			fenceTex->Resource.GetAddressOf() // 이중 포인터로 넣어준다.
+		));
+
+		finishArr.push_back(upload.End(m_CommandQueue.Get()));
+		m_Textures[fenceTex->Name] = std::move(fenceTex);
+	}
+
+	vector<std::future<void>>::iterator iter = finishArr.begin();
+	for (; iter != finishArr.end(); iter++)
+	{
+		iter->wait();
+	}
 }
 
 void StencilApp::BuildWaveDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+#if PRAC7
+	srvHeapDesc.NumDescriptors = 62;
+#elif PRAC8
+	srvHeapDesc.NumDescriptors = 4;
+#else
 	srvHeapDesc.NumDescriptors = 3;
+#endif
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
@@ -931,8 +1082,12 @@ void StencilApp::BuildWaveDescriptorHeaps()
 	// 텍스쳐 리소스를 얻은 다음
 	ID3D12Resource* grassTex = m_Textures["grassTex"].get()->Resource.Get();
 	ID3D12Resource* waterTex = m_Textures["waterTex"].get()->Resource.Get();
+#if !PRAC7
 	ID3D12Resource* fenceTex = m_Textures["fenceTex"].get()->Resource.Get();
-
+#endif
+#if PRAC8
+	ID3D12Resource* white1x1Tex = m_Textures["white1x1Tex"].get()->Resource.Get();
+#endif
 
 	// view를 만들어주고
 	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
@@ -950,9 +1105,30 @@ void StencilApp::BuildWaveDescriptorHeaps()
 	srcDesc.Format = waterTex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(waterTex, &srcDesc, viewHandle);
 
+#if PRAC7
+	for (int i = 1; i <= 60; i++)
+	{
+		ostringstream textureNumStream;
+		textureNumStream << setfill('0') << setw(3) << i;
+		string textureNum = "Bolt" + textureNumStream.str();
+		ID3D12Resource* fenceTex = m_Textures[textureNum].get()->Resource.Get();
+
+		viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+		srcDesc.Format = fenceTex->GetDesc().Format;
+		m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
+	}
+#else
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = fenceTex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
+#endif
+
+#if PRAC8
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = white1x1Tex->GetDesc().Format;
+	m_d3dDevice->CreateShaderResourceView(white1x1Tex, &srcDesc, viewHandle);
+#endif
+
 }
 
 void StencilApp::BuildLandGeometry()
@@ -1024,7 +1200,11 @@ void StencilApp::BuildLandGeometry()
 void StencilApp::BuildFenceGeometry()
 {
 	GeometryGenerator geoGen;
+#if PRAC7
+	GeometryGenerator::MeshData box = geoGen.CreateCylinder(8.0f, 8.0f, 8.0f, 8, 8);
+#else
 	GeometryGenerator::MeshData box = geoGen.CreateBox(8.0f, 8.0f, 8.0f, 3);
+#endif
 
 	std::vector<Vertex> vertices(box.Vertices.size());
 	for (size_t i = 0; i < box.Vertices.size(); ++i)
@@ -1078,6 +1258,84 @@ void StencilApp::BuildFenceGeometry()
 	geo->DrawArgs["fence"] = submesh;
 
 	m_Geometries["fenceGeo"] = std::move(geo);
+
+#if PRAC8
+	BuildQuadGeometry();
+#endif
+}
+
+void StencilApp::BuildQuadGeometry()
+{
+	std::vector<Vertex> vertices(4);
+
+	vertices[0].Pos = XMFLOAT3(-1.f, 1.f, 0.f);
+	vertices[0].Normal = XMFLOAT3(0.f, 0.f, -1.f);
+	vertices[0].TexC = XMFLOAT2(0.f, 0.f);
+
+	vertices[1].Pos = XMFLOAT3(1.f, 1.f, 0.f);
+	vertices[1].Normal = XMFLOAT3(0.f, 0.f, -1.f);
+	vertices[1].TexC = XMFLOAT2(1.f, 0.f);
+
+	vertices[2].Pos = XMFLOAT3(-1.f, -1.f, 0.f);
+	vertices[2].Normal = XMFLOAT3(0.f, 0.f, -1.f);
+	vertices[2].TexC = XMFLOAT2(0.f, 1.f);
+
+	vertices[3].Pos = XMFLOAT3(1.f, -1.f, 0.f);
+	vertices[3].Normal = XMFLOAT3(0.f, 0.f, -1.f);
+	vertices[3].TexC = XMFLOAT2(1.f, 1.f);
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+
+	std::vector<std::uint16_t> indices;
+
+	indices.push_back(0);
+	indices.push_back(1); 
+	indices.push_back(3);
+
+	indices.push_back(0); 
+	indices.push_back(3); 
+	indices.push_back(2);
+
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "quadGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["quad"] = submesh;
+
+	m_Geometries["quadGeo"] = std::move(geo);
 }
 
 void StencilApp::BuildWavesGeometryBuffers()
@@ -1499,7 +1757,12 @@ void StencilApp::BuildSkullRoomRenderItem()
 	wallsRenderItem->StartIndexLocation = wallsRenderItem->Geo->DrawArgs["wall"].StartIndexLocation;
 	wallsRenderItem->BaseVertexLocation = wallsRenderItem->Geo->DrawArgs["wall"].BaseVertexLocation;
 
+#if  SKULL && PRAC5
+	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(wallsRenderItem.get());
+#else
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wallsRenderItem.get());
+#endif
+	
 
 	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
 	skullRenderItem->WorldMat = MathHelper::Identity4x4();
@@ -1580,7 +1843,6 @@ void StencilApp::BuildPSOs()
 	opaquePSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
 	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
 	// #2 반투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
@@ -1598,7 +1860,6 @@ void StencilApp::BuildPSOs()
 	transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
 	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
 
 	// #3 Stencil 마킹하는 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPSODesc = opaquePSODesc;
@@ -1624,42 +1885,45 @@ void StencilApp::BuildPSOs()
 
 	mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
 	mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
 	// PSO desc에 넣어주고 만든다.
 	markMirrorsPSODesc.BlendState = mirrorBlendState;
 	markMirrorsPSODesc.DepthStencilState = mirrorDSS;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
 
 	// #4 스텐실 값을 판정해서 반사된 skull을 그릴 PSO
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionsPSODesc = opaquePSODesc;
 
-	D3D12_DEPTH_STENCIL_DESC reflectionsDDS;
-	reflectionsDDS.DepthEnable = true;
-	reflectionsDDS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	reflectionsDDS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	reflectionsDDS.StencilEnable = true;
-	reflectionsDDS.StencilReadMask = 0xff;
-	reflectionsDDS.StencilWriteMask = 0xff;
+	D3D12_DEPTH_STENCIL_DESC reflectionsDSS;
+	reflectionsDSS.DepthEnable = true;
+	reflectionsDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	reflectionsDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	reflectionsDSS.StencilEnable = true;
+	reflectionsDSS.StencilReadMask = 0xff;
+	reflectionsDSS.StencilWriteMask = 0xff;
 
 	// 스텐실 판정이 1값일 때, 통과한 것으로 본다.
-	reflectionsDDS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	reflectionsDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	//reflectionsDDS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
-	reflectionsDDS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDDS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	reflectionsDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
 	// 라스터라이저 상태를 바꿔줘서, 반대로 삼각형이 그려지게 만들어서 앞뒤를 바꾼다.
-	drawReflectionsPSODesc.DepthStencilState = reflectionsDDS;
+	drawReflectionsPSODesc.DepthStencilState = reflectionsDSS;
 	drawReflectionsPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+#if  SKULL && PRAC6
+	drawReflectionsPSODesc.RasterizerState.FrontCounterClockwise = false;
+#else
 	drawReflectionsPSODesc.RasterizerState.FrontCounterClockwise = true;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
+#endif
 
 	// #5 그림자를 그리는 PSO
 	// 얘는 Transparent한 친구다. 아예 시커멓지는 않지 않은가?
@@ -1678,29 +1942,140 @@ void StencilApp::BuildPSOs()
 	shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
 	shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	//shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
 	shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
 
 	shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
 	shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
-	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
 
 	shadowPSODesc.DepthStencilState = shadowDSS;
+
+	// #6 알파 자르기 PSO
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
+	alphaTestPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["alphaTestedPS"]->GetBufferPointer()),
+		m_Shaders["alphaTestedPS"]->GetBufferSize()
+	};
+	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	// (연습 문제 5번용 벽 PSO)
+#if  SKULL && PRAC5
+	// 일단 Wall용을 하나 만들고
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC prac4WallPSODesc = opaquePSODesc;
+
+	prac4WallPSODesc.DepthStencilState.DepthEnable = true;
+	prac4WallPSODesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	prac4WallPSODesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+
+	drawReflectionsPSODesc.DepthStencilState.DepthEnable = true;
+	drawReflectionsPSODesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	drawReflectionsPSODesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+
+	drawReflectionsPSODesc.DepthStencilState.StencilEnable = false;
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&prac4WallPSODesc, IID_PPV_ARGS(&m_PSOs["prac4Wall"])));
+#endif
+
+	// (연습 문제 8번용 깊이 복잡도 Write PSO)
+	// (연습 문제 8번용 깊이 복잡도 Read PSO)
+#if PRAC8
+	// Render 요청이 있으면, 냅다 RenderTarget 위치의
+	// Stencil 값만 1 늘려주는 Depth-Stencil state이다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC writeDepthComplexityPSODesc = opaquePSODesc;
+
+	D3D12_DEPTH_STENCIL_DESC onlyStencilDSS;
+	onlyStencilDSS.DepthEnable = true;
+	onlyStencilDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	onlyStencilDSS.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS; // draw 요청이 있으면, 무조건 그린다.
+	onlyStencilDSS.StencilEnable = true; // 스텐실 테스트를 해야, 스텐실 작성도 할 수 있는거다.
+	onlyStencilDSS.StencilReadMask = 0xff;
+	onlyStencilDSS.StencilWriteMask = 0xff; // 마스크도 켜준다
+
+	// 그리기에 시도할 때 마다, stencil 값을 1씩 늘린다.
+	onlyStencilDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	onlyStencilDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	onlyStencilDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	onlyStencilDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	onlyStencilDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	onlyStencilDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	onlyStencilDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	onlyStencilDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	// PSO desc에 넣어주고 만든다.
+	writeDepthComplexityPSODesc.DepthStencilState = onlyStencilDSS;
+
+	// Stencil Ref 값에 따라 랜더링이 결정이되고,
+	// Depth 판정도 안하고, 냅다 그리기만 하는 PSO다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC readDepthComplexcityPSODesc = opaquePSODesc;
+	
+	// 이제 마스크를 켜주어서, Rendering을 한다.
+	readDepthComplexcityPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["depthComplexityVS"]->GetBufferPointer()),
+		m_Shaders["depthComplexityVS"]->GetBufferSize()
+	};
+
+	readDepthComplexcityPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["depthComplexityPS"]->GetBufferPointer()),
+		m_Shaders["depthComplexityPS"]->GetBufferSize()
+	};
+	
+	D3D12_DEPTH_STENCIL_DESC readStencilDSS;
+	readStencilDSS.DepthEnable = true;
+	readStencilDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	readStencilDSS.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS; // draw 요청이 있으면, 무조건 그린다.
+	readStencilDSS.StencilEnable = true; // 스텐실 테스트를 해야, 스텐실 작성도 할 수 있는거다.
+	readStencilDSS.StencilReadMask = 0xff;
+	readStencilDSS.StencilWriteMask = 0xff; // 마스크도 켜준다
+
+	// 여기는 읽기만 하니까 Keep을 걸어준다.
+	readStencilDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	readStencilDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	readStencilDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	readDepthComplexcityPSODesc.DepthStencilState = readStencilDSS;
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&writeDepthComplexityPSODesc, IID_PPV_ARGS(&m_PSOs["writeDepthComplexity"])));
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&readDepthComplexcityPSODesc, IID_PPV_ARGS(&m_PSOs["readDepthComplexity"])));
+#endif
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowPSODesc, IID_PPV_ARGS(&m_PSOs["shadow"])));
 }
 
 void StencilApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
+	UINT passCBCount = 1;
 #if WAVE
 	waveVerCount = m_Waves->VertexCount();
+#elif SKULL
+	passCBCount = 2;
 #endif
 	// 반사상 용 PassCB가 하나 추가 된다.
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
 			std::make_unique<FrameResource>(m_d3dDevice.Get(),
-			2, 
+			passCBCount,
 			(UINT)m_AllRenderItems.size(),
 			(UINT)m_Materials.size(),
 			waveVerCount
@@ -1736,6 +2111,34 @@ void StencilApp::BuildWaveMaterials()
 	fence->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	fence->Roughness = 0.25f;
 
+#if PRAC8
+
+	XMFLOAT4 depthComplexityColors[] =
+	{
+		XMFLOAT4(0.f, 1.f, 0.f, 1.f),
+		XMFLOAT4(0.5f, 1.f, 0.f, 1.f),
+		XMFLOAT4(1.f, 1.f, 0.f, 1.f),
+		XMFLOAT4(1.f, 0.75f, 0.f, 1.f),
+		XMFLOAT4(1.f, 0.5f, 0.f, 1.f),
+		XMFLOAT4(1.f, 0.25f, 0.f, 1.f),
+		XMFLOAT4(1.f, 0.f, 0.f, 1.f)
+	};
+
+	int index = 3;
+	for (int i = 0; i < _countof(depthComplexityColors); i++)
+	{
+		std::unique_ptr<Material> depthColor = std::make_unique<Material>();
+		depthColor->Name = "depthColor" + to_string(i);
+		depthColor->MatCBIndex = index++;
+		depthColor->DiffuseSrvHeapIndex = 3;
+		depthColor->DiffuseAlbedo = depthComplexityColors[i];
+		depthColor->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+		depthColor->Roughness = 0.25f;
+
+		m_Materials[depthColor->Name] = std::move(depthColor);
+	}
+#endif
+
 
 	m_Materials["grass"] = std::move(grass);
 	m_Materials["water"] = std::move(water);
@@ -1758,8 +2161,6 @@ void StencilApp::BuildWaveRenderItems()
 	wavesRenderItem->BaseVertexLocation = wavesRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 	// 업데이트를 위해 맴버로 관리해준다.
 	m_WavesRenderItem = wavesRenderItem.get();
-	// 파도는 반투명한 친구이다.
-	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
 
 	// 지형을 아이템화 시키기
 	std::unique_ptr<RenderItem> gridRenderItem = std::make_unique<RenderItem>();
@@ -1774,9 +2175,6 @@ void StencilApp::BuildWaveRenderItems()
 	gridRenderItem->StartIndexLocation = gridRenderItem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRenderItem->BaseVertexLocation = gridRenderItem->Geo->DrawArgs["grid"].BaseVertexLocation;
 
-	// 얘는 불투명한 친구
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
-
 	std::unique_ptr<RenderItem> fenceRenderItem = std::make_unique<RenderItem>();
 	XMStoreFloat4x4(&fenceRenderItem->WorldMat, XMMatrixTranslation(3.f, 2.f, -9.f));
 	fenceRenderItem->ObjCBIndex = 2;
@@ -1787,8 +2185,33 @@ void StencilApp::BuildWaveRenderItems()
 	fenceRenderItem->StartIndexLocation = fenceRenderItem->Geo->DrawArgs["fence"].StartIndexLocation;
 	fenceRenderItem->BaseVertexLocation = fenceRenderItem->Geo->DrawArgs["fence"].BaseVertexLocation;
 
+#if PRAC8
+	int index = 3;
+	for (int i = 0; i < 7; i++)
+	{
+		std::unique_ptr<RenderItem> quadRenderItem = std::make_unique<RenderItem>();
+		quadRenderItem->WorldMat = MathHelper::Identity4x4();
+		quadRenderItem->ObjCBIndex = index++;
+		string MatName = "depthColor" + to_string(i);
+		quadRenderItem->Mat = m_Materials[MatName].get();
+		quadRenderItem->Geo = m_Geometries["quadGeo"].get();
+		quadRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		quadRenderItem->IndexCount = quadRenderItem->Geo->DrawArgs["quad"].IndexCount;
+		quadRenderItem->StartIndexLocation = quadRenderItem->Geo->DrawArgs["quad"].StartIndexLocation;
+		quadRenderItem->BaseVertexLocation = quadRenderItem->Geo->DrawArgs["quad"].BaseVertexLocation;
+
+		m_RenderItemLayer[(int)RenderLayer::Practice].push_back(quadRenderItem.get());
+		m_AllRenderItems.push_back(std::move(quadRenderItem));
+	}
+#endif
+
+	// 파도는 반투명한 친구이다.
+	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
+	// 얘는 불투명한 친구
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 	// Fence는 알파 자르기를 하는 Render Item이다.
 	m_RenderItemLayer[(int)RenderLayer::AlphaTested].push_back(fenceRenderItem.get());
+
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
@@ -1832,6 +2255,42 @@ void StencilApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
+}
+
+void StencilApp::DrawComplexityQuad(ID3D12GraphicsCommandList* _cmdList, int _StencilRef)
+{
+	// 이제 Material도 물체마다 업데이트 해줘야 한다.
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
+
+	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
+	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
+
+	RenderItem* ri = m_RenderItemLayer[(int)RenderLayer::Practice][_StencilRef];
+
+	// 일단 Vertex, Index를 IA에 세팅해주고
+	D3D12_VERTEX_BUFFER_VIEW VBView = ri->Geo->VertexBufferView();
+	_cmdList->IASetVertexBuffers(0, 1, &VBView);
+	D3D12_INDEX_BUFFER_VIEW IBView = ri->Geo->IndexBufferView();
+	_cmdList->IASetIndexBuffer(&IBView);
+	_cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
+
+	CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_SrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
+
+	// Object Constant와
+	D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
+	objCBAddress += ri->ObjCBIndex * objCBByteSize;
+	// Material Constant를
+	D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress();
+	matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
+
+	// PSO에 연결해준다.
+	_cmdList->SetGraphicsRootDescriptorTable(0, tex);
+	_cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
+	_cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
+
+	_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 }
 
 float StencilApp::GetHillsHeight(float _x, float _z) const
