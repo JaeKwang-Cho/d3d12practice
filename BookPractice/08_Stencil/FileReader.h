@@ -65,7 +65,8 @@ namespace Prac3
 				fin >> px >> py >> pz >> nx >> ny >> nz;
 				XMFLOAT3 pos(px, py, pz);
 				XMFLOAT3 norm(nx, ny, nz);
-				XMFLOAT2 uv = VertexToApproxSphericalRadian(pos);
+				// XMFLOAT2 uv = VertexToApproxSphericalRadian(pos);
+				XMFLOAT2 uv(0.f, 0.f);
 				Vertex skullVert = { pos, norm, uv };
 				_outVertices.push_back(skullVert);
 			}

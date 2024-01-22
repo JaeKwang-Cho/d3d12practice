@@ -59,6 +59,9 @@ struct Vertex {
 		Normal(nx, ny, nz),
 		TexC(u, v)
 	{}
+	Vertex(XMFLOAT3 _Pos, XMFLOAT3 _Normal, XMFLOAT2 _TexC)
+		: Pos(_Pos), Normal(_Normal), TexC(_TexC)
+	{ }
 	XMFLOAT3 Pos;
 	XMFLOAT3 Normal;
 	XMFLOAT2 TexC;

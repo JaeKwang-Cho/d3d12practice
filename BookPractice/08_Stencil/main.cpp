@@ -536,7 +536,7 @@ void StencilApp::OnKeyboardInput(const GameTimer _gt)
 	XMVECTOR shadowPlane = XMVectorSet(0.f, 1.f, 0.f, 0.f); // xz 평면
 	XMVECTOR toMainLight = -XMLoadFloat3(&m_MainPassCB.Lights[0].Direction);
 	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight); // directxmath에서 제공하는 평면에 대한 조명 사영 행렬 함수이다.
-	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.001f, 0.f); // z fighting 이 일어나지 않기 위해 살짝 띄워준다.
+	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.005f, 0.f); // z fighting 이 일어나지 않기 위해 살짝 띄워준다.
 	XMStoreFloat4x4(&m_ShadowedSkullRenderItem->WorldMat, skullWorld * S * shadowOffsetY);
 
 	m_SkullRenderItem->NumFrameDirty = g_NumFrameResources;
@@ -1165,7 +1165,7 @@ void StencilApp::LoadSkullRoomTextures()
 
 	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
 	bricksTex->Name = "bricksTex";
-	bricksTex->Filename = L"../Textures/brick3.dds";
+	bricksTex->Filename = L"../Textures/bricks3.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
@@ -1427,7 +1427,7 @@ void StencilApp::BuildSkullGeometry()
 void StencilApp::BuildSkullRoomMaterials()
 {
 	std::unique_ptr<Material> bricksMat = std::make_unique<Material>();
-	bricksMat->Name = "bricks";
+	bricksMat->Name = "bricksMat";
 	bricksMat->MatCBIndex = 0;
 	bricksMat->DiffuseSrvHeapIndex = 0;
 	bricksMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1435,7 +1435,7 @@ void StencilApp::BuildSkullRoomMaterials()
 	bricksMat->Roughness = 0.25f;
 
 	std::unique_ptr<Material> checkertileMat = std::make_unique<Material>();
-	checkertileMat->Name = "checkertile";
+	checkertileMat->Name = "checkertileMat";
 	checkertileMat->MatCBIndex = 1;
 	checkertileMat->DiffuseSrvHeapIndex = 1;
 	checkertileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -1443,7 +1443,7 @@ void StencilApp::BuildSkullRoomMaterials()
 	checkertileMat->Roughness = 0.3f;
 
 	std::unique_ptr<Material> icemirrorMat = std::make_unique<Material>();
-	icemirrorMat->Name = "icemirror";
+	icemirrorMat->Name = "icemirrorMat";
 	icemirrorMat->MatCBIndex = 2;
 	icemirrorMat->DiffuseSrvHeapIndex = 2;
 	icemirrorMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);
@@ -1554,7 +1554,7 @@ void StencilApp::BuildSkullRoomRenderItem()
 
 void StencilApp::BuildPSOs()
 {
-	// 불투명 PSO
+	// #1 불투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
 
 	ZeroMemory(&opaquePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
@@ -1582,16 +1582,14 @@ void StencilApp::BuildPSOs()
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
-	// 반투명 PSO
+	// #2 반투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
-	
+	// 이전 예제랑 똑같이 해준다.
 	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
 	transparencyBlendDesc.BlendEnable = true;
 	transparencyBlendDesc.LogicOpEnable = false;	
 	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-	// transparencyBlendDesc.SrcBlend = D3D12_BLEND_BLEND_FACTOR;
-	// transparencyBlendDesc.DestBlend = D3D12_BLEND_BLEND_FACTOR;
 	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
 	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
 	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
@@ -1602,11 +1600,93 @@ void StencilApp::BuildPSOs()
 	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
 
-	// Stencil 마킹하는 PSO
+	// #3 Stencil 마킹하는 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPSODesc = opaquePSODesc;
 
+	// 얘는 RenderTargetWriteMask를 0으로 해줘서 RGBA를 기록하지 않는다.
 	CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
-	assert(false && "from here");
+	mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0; 
+	// Stencil의 Depth도 기록하지 않는다.
+	D3D12_DEPTH_STENCIL_DESC mirrorDSS;
+	mirrorDSS.DepthEnable = true; // depth 판정을 하는데
+	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; // 기록은 하지 않는다.
+	mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	mirrorDSS.StencilEnable = true; // 스텐실 테스트를 켜주고
+	mirrorDSS.StencilReadMask = 0xff;
+	mirrorDSS.StencilWriteMask = 0xff; // 마스크도 켜준다
+
+	// 깊이 판정을 실패 했을 때는, 스텐실을 쓰지 않는다.
+	// 그 이외 조건이 없으니, 스탠실을 항상 작성한다.
+	mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
+	mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	// PSO desc에 넣어주고 만든다.
+	markMirrorsPSODesc.BlendState = mirrorBlendState;
+	markMirrorsPSODesc.DepthStencilState = mirrorDSS;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
+
+	// #4 스텐실 값을 판정해서 반사된 skull을 그릴 PSO
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionsPSODesc = opaquePSODesc;
+
+	D3D12_DEPTH_STENCIL_DESC reflectionsDDS;
+	reflectionsDDS.DepthEnable = true;
+	reflectionsDDS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	reflectionsDDS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	reflectionsDDS.StencilEnable = true;
+	reflectionsDDS.StencilReadMask = 0xff;
+	reflectionsDDS.StencilWriteMask = 0xff;
+
+	// 스텐실 판정이 1값일 때, 통과한 것으로 본다.
+	reflectionsDDS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	reflectionsDDS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	reflectionsDDS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	// 라스터라이저 상태를 바꿔줘서, 반대로 삼각형이 그려지게 만들어서 앞뒤를 바꾼다.
+	drawReflectionsPSODesc.DepthStencilState = reflectionsDDS;
+	drawReflectionsPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	drawReflectionsPSODesc.RasterizerState.FrontCounterClockwise = true;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
+
+	// #5 그림자를 그리는 PSO
+	// 얘는 Transparent한 친구다. 아예 시커멓지는 않지 않은가?
+
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPSODesc = transparentPSODesc;
+	D3D12_DEPTH_STENCIL_DESC shadowDSS;
+
+	shadowDSS.DepthEnable = true;
+	shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
+	shadowDSS.StencilEnable = true;
+	shadowDSS.StencilReadMask = 0xff;
+	shadowDSS.StencilWriteMask = 0xff;
+
+	// Stencil 판정을 통과하면 1을 늘려서, 그림자 여러번 그리는 걸 방지한다.
+	shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
+	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
+
+	shadowPSODesc.DepthStencilState = shadowDSS;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowPSODesc, IID_PPV_ARGS(&m_PSOs["shadow"])));
 }
 
 void StencilApp::BuildFrameResources()
@@ -1615,12 +1695,12 @@ void StencilApp::BuildFrameResources()
 #if WAVE
 	waveVerCount = m_Waves->VertexCount();
 #endif
-
+	// 반사상 용 PassCB가 하나 추가 된다.
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
 			std::make_unique<FrameResource>(m_d3dDevice.Get(),
-			1,
+			2, 
 			(UINT)m_AllRenderItems.size(),
 			(UINT)m_Materials.size(),
 			waveVerCount
