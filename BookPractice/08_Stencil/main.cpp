@@ -14,13 +14,15 @@
 #include "ResourceUploadBatch.h"
 #include <iomanip>
 
-#define WAVE (1)
-#define SKULL (0)
+#define WAVE (0)
+#define SKULL (1)
 
-#define PRAC5 (0)
-#define PRAC6 (0)
-#define PRAC7 (0)
-#define PRAC8 (1)
+#define PRAC5 (0 && SKULL)
+#define PRAC6 (0 && SKULL)
+#define PRAC7 (0 && SKULL)
+#define PRAC8 (0 && WAVE)
+#define PRAC9 (0 && WAVE)
+#define PRAC11 (0 && SKULL)
 
 const int g_NumFrameResources = 3;
 
@@ -176,6 +178,10 @@ private:
 	RenderItem* m_SkullRenderItem = nullptr;
 	RenderItem* m_ReflectedSkullRenderItem = nullptr;
 	RenderItem* m_ShadowedSkullRenderItem = nullptr;
+
+#if PRAC11
+	RenderItem* m_ReflectedShadowRenderItem = nullptr;
+#endif
 
 	// RenderItem 리스트
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
@@ -380,7 +386,7 @@ void StencilApp::Draw(const GameTimer& _gt)
 	// 백 버퍼와 깊이 버퍼를 초기화 한다.
 	m_CommandList->ClearRenderTargetView(
 		GetCurrentBackBufferView(), 
-		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
+		Colors::Black, //(float*)&m_MainPassCB.FogColor  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
 		0, 
 		nullptr);
 	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
@@ -420,6 +426,12 @@ void StencilApp::Draw(const GameTimer& _gt)
 	{
 		m_CommandList->OMSetStencilRef(i);
 		DrawComplexityQuad(m_CommandList.Get(), i);
+	}
+#elif PRAC9
+	m_CommandList->SetPipelineState(m_PSOs["depthBlend"].Get());
+	for (int i = 0; i < (int)RenderLayer::Count; i++)
+	{
+		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[i]);
 	}
 #else
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
@@ -581,11 +593,22 @@ void StencilApp::OnKeyboardInput(const GameTimer _gt)
 	XMVECTOR toMainLight = -XMLoadFloat3(&m_MainPassCB.Lights[0].Direction);
 	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight); // directxmath에서 제공하는 평면에 대한 조명 사영 행렬 함수이다.
 	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.005f, 0.f); // z fighting 이 일어나지 않기 위해 살짝 띄워준다.
-	XMStoreFloat4x4(&m_ShadowedSkullRenderItem->WorldMat, skullWorld * S * shadowOffsetY);
+	XMMATRIX shadowSkullWorld = skullWorld * S * shadowOffsetY;
+	XMStoreFloat4x4(&m_ShadowedSkullRenderItem->WorldMat, shadowSkullWorld);
 
 	m_SkullRenderItem->NumFrameDirty = g_NumFrameResources;
 	m_ReflectedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
 	m_ShadowedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
+#endif
+
+#if PRAC11
+	XMMATRIX mirrorSkullWorld = skullWorld * R;
+	XMVECTOR toMirrorMainLight = XMVector4Transform(toMainLight, R); // 거울 속 메인 조명
+	XMMATRIX mirrorS = XMMatrixShadow(shadowPlane, toMirrorMainLight);
+	XMMATRIX mirrorShadowWorld = mirrorSkullWorld * mirrorS * shadowOffsetY;
+	XMStoreFloat4x4(&m_ReflectedShadowRenderItem->WorldMat, mirrorShadowWorld);
+
+	m_ReflectedShadowRenderItem->NumFrameDirty = g_NumFrameResources;
 #endif
 }
 
@@ -988,7 +1011,7 @@ void StencilApp::LoadWaveTextures()
 	m_Textures[fenceTex->Name] = std::move(fenceTex);
 #endif
 
-#if PRAC8
+#if PRAC8 || PRAC9
 	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
 	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
 	white1x1Tex->Name = "white1x1Tex";
@@ -1067,7 +1090,7 @@ void StencilApp::BuildWaveDescriptorHeaps()
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
 #if PRAC7
 	srvHeapDesc.NumDescriptors = 62;
-#elif PRAC8
+#elif PRAC8 || PRAC9
 	srvHeapDesc.NumDescriptors = 4;
 #else
 	srvHeapDesc.NumDescriptors = 3;
@@ -1085,7 +1108,7 @@ void StencilApp::BuildWaveDescriptorHeaps()
 #if !PRAC7
 	ID3D12Resource* fenceTex = m_Textures["fenceTex"].get()->Resource.Get();
 #endif
-#if PRAC8
+#if PRAC8 || PRAC9
 	ID3D12Resource* white1x1Tex = m_Textures["white1x1Tex"].get()->Resource.Get();
 #endif
 
@@ -1123,7 +1146,7 @@ void StencilApp::BuildWaveDescriptorHeaps()
 	m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
 #endif
 
-#if PRAC8
+#if PRAC8 || PRAC9
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = white1x1Tex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(white1x1Tex, &srcDesc, viewHandle);
@@ -1763,7 +1786,6 @@ void StencilApp::BuildSkullRoomRenderItem()
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wallsRenderItem.get());
 #endif
 	
-
 	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
 	skullRenderItem->WorldMat = MathHelper::Identity4x4();
 	skullRenderItem->TexTransform = MathHelper::Identity4x4();
@@ -1778,20 +1800,40 @@ void StencilApp::BuildSkullRoomRenderItem()
 	m_SkullRenderItem = skullRenderItem.get();
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
-	// Reflected skull will have different world matrix, so it needs to be its own render item.
+	// 반사되는 친구는 World를 따로 가지는게 맞다. 그래서 아이템도 별개다.
 	std::unique_ptr<RenderItem> reflectedSkullRenderItem = std::make_unique<RenderItem>();
 	*reflectedSkullRenderItem = *skullRenderItem;
 	reflectedSkullRenderItem->ObjCBIndex = 3;
 	m_ReflectedSkullRenderItem = reflectedSkullRenderItem.get();
 	m_RenderItemLayer[(int)RenderLayer::Reflected].push_back(reflectedSkullRenderItem.get());
 
-	// Shadowed skull will have different world matrix, so it needs to be its own render item.
+	// 그림자도 마찬가지
 	std::unique_ptr<RenderItem> shadowedSkullRenderItem = std::make_unique<RenderItem>();
 	*shadowedSkullRenderItem = *skullRenderItem;
 	shadowedSkullRenderItem->ObjCBIndex = 4;
 	shadowedSkullRenderItem->Mat = m_Materials["shadowMat"].get();
 	m_ShadowedSkullRenderItem = shadowedSkullRenderItem.get();
 	m_RenderItemLayer[(int)RenderLayer::Shadow].push_back(shadowedSkullRenderItem.get());
+
+#if PRAC11
+	// 거울에 반사된 바닥
+	std::unique_ptr<RenderItem> reflectedFloorRenderItem = std::make_unique<RenderItem>();
+	*reflectedFloorRenderItem = *floorRenderitem;
+	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMMATRIX R = XMMatrixReflect(mirrorPlane);
+	XMStoreFloat4x4(&reflectedFloorRenderItem->WorldMat, R);
+	floorRenderitem->ObjCBIndex = 6;
+	m_RenderItemLayer[(int)RenderLayer::Reflected].push_back(reflectedFloorRenderItem.get());
+	m_AllRenderItems.push_back(std::move(reflectedFloorRenderItem));
+
+	// 거울에 반사된 그림자
+	std::unique_ptr<RenderItem> reflectedShadowRenderItem = std::make_unique<RenderItem>();
+	*reflectedShadowRenderItem = *shadowedSkullRenderItem;
+	reflectedShadowRenderItem->ObjCBIndex = 7;
+	m_ReflectedShadowRenderItem = reflectedShadowRenderItem.get();
+	m_RenderItemLayer[(int)RenderLayer::Reflected].push_back(reflectedShadowRenderItem.get());
+	m_AllRenderItems.push_back(std::move(reflectedShadowRenderItem));
+#endif
 
 	std::unique_ptr<RenderItem> mirrorRenderItem = std::make_unique<RenderItem>();
 	mirrorRenderItem->WorldMat = MathHelper::Identity4x4();
@@ -1963,7 +2005,7 @@ void StencilApp::BuildPSOs()
 	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 	// (연습 문제 5번용 벽 PSO)
-#if  SKULL && PRAC5
+#if  PRAC5
 	// 일단 Wall용을 하나 만들고
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC prac4WallPSODesc = opaquePSODesc;
 
@@ -2049,6 +2091,48 @@ void StencilApp::BuildPSOs()
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&writeDepthComplexityPSODesc, IID_PPV_ARGS(&m_PSOs["writeDepthComplexity"])));
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&readDepthComplexcityPSODesc, IID_PPV_ARGS(&m_PSOs["readDepthComplexity"])));
+#endif
+
+	// (연습 문제 9번용 깊이 복잡도 Blend PSO)
+#if PRAC9
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC depthBlendPSODesc = opaquePSODesc;
+
+	// 이전 예제랑 똑같이 해준다.
+	D3D12_RENDER_TARGET_BLEND_DESC depthBlendDesc;
+	depthBlendDesc.BlendEnable = true;
+	depthBlendDesc.LogicOpEnable = false;
+	depthBlendDesc.SrcBlend = D3D12_BLEND_ONE;
+	depthBlendDesc.DestBlend = D3D12_BLEND_ONE;
+	depthBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
+	depthBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
+	depthBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
+	depthBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+	depthBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
+	depthBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+
+	D3D12_DEPTH_STENCIL_DESC depthBlendDSS;
+	depthBlendDSS.DepthEnable = true;
+	depthBlendDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
+	depthBlendDSS.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	depthBlendDSS.StencilEnable = true;
+	depthBlendDSS.StencilReadMask = 0xff;
+	depthBlendDSS.StencilWriteMask = 0xff;
+
+	// 스텐실 판정이 1값일 때, 통과한 것으로 본다.
+	depthBlendDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	depthBlendDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
+	depthBlendDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+
+	depthBlendPSODesc.BlendState.RenderTarget[0] = depthBlendDesc;
+	depthBlendPSODesc.DepthStencilState = depthBlendDSS;
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&depthBlendPSODesc, IID_PPV_ARGS(&m_PSOs["depthBlend"])));
 #endif
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
@@ -2138,7 +2222,16 @@ void StencilApp::BuildWaveMaterials()
 		m_Materials[depthColor->Name] = std::move(depthColor);
 	}
 #endif
+#if PRAC9
+	std::unique_ptr<Material> depthBlendColor = std::make_unique<Material>();
+	depthBlendColor->Name = "depthBlendColor";
+	depthBlendColor->MatCBIndex = 3;
+	depthBlendColor->DiffuseSrvHeapIndex = 3;
+	depthBlendColor->DiffuseAlbedo = XMFLOAT4(0.005f, 0.005f, 0.005f, 1.f);
+	depthBlendColor->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 
+	m_Materials["depthBlendColor"] = std::move(depthBlendColor);
+#endif
 
 	m_Materials["grass"] = std::move(grass);
 	m_Materials["water"] = std::move(water);
@@ -2203,6 +2296,12 @@ void StencilApp::BuildWaveRenderItems()
 		m_RenderItemLayer[(int)RenderLayer::Practice].push_back(quadRenderItem.get());
 		m_AllRenderItems.push_back(std::move(quadRenderItem));
 	}
+#endif
+
+#if PRAC9
+	wavesRenderItem->Mat = m_Materials["depthBlendColor"].get();
+	gridRenderItem->Mat = m_Materials["depthBlendColor"].get();
+	fenceRenderItem->Mat = m_Materials["depthBlendColor"].get();
 #endif
 
 	// 파도는 반투명한 친구이다.
