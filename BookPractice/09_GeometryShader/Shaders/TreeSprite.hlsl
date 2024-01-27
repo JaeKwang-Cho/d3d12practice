@@ -21,14 +21,14 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-Texture2D gDiffuseMap : register(t0);
+Texture2DArray gTreeMapArray: register(t0);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
 SamplerState gSamPointMirror : register(s2);
 SamplerState gSamPointBorder : register(s3);
 SamplerState gSamLinearWrap : register(s4);
-SamplerState gSamLinearClamp: register(s5);
+SamplerState gSamLinearClamp : register(s5);
 SamplerState gSamLinearMirror : register(s6);
 SamplerState gSamLinearBorder : register(s7);
 SamplerState gSamAnisotropicWrap : register(s8);
@@ -88,50 +88,97 @@ cbuffer cbMaterial : register(b2)
 };
 
  
-// 입력으로 Pos, Norm 을 받는다.
+// 입력으로 Pos, Size를 받는다.
 struct VertexIn
 {
-    float3 PosL : POSITION;
-    float3 NormalL : NORMAL;
-    float2 TexC : TEXCOORD;
+    float3 PosW : POSITION;
+    float2 SizeW : SIZE;
 };
 
-// 출력으로는 World Pos와 동차 (Homogeneous clip space) Pos로 나눈다.
+// 출력으로는 world Centher pos와 world size를 뱉는다.
 struct VertexOut
+{
+    float3 CenterW : POSITION;
+    float2 SizeW : SIZE;
+};
+
+// 지오메트리 쉐이더의 출력 구조체이다.
+struct GeoOut
 {
     float4 PosH : SV_POSITION;
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
+    uint PrimID : SV_PrimitiveID; // 어떤 primitive인지 명시하는 맴버가 있다.
 };
 
 VertexOut VS(VertexIn vin)
 {
-    VertexOut vout = (VertexOut) 0.0f;
-	
-    // World Pos로 바꾼다.
-    float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
-    vout.PosW = posW.xyz;
-
-    // Uniform Scaling 이라고 가정하고 계산한다.
-    // (그렇지 않으면, 역전치 행렬을 사용해야 한다.)
-    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
-
-    // Render(Homogeneous clip space) Pos로 바꾼다.
-
-    vout.PosH = mul(posW, gViewProj);
+    VertexOut vout;
     
-    // Texture에게 주어진 Transform을 적용시킨 다음
-    float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
-    // World를 곱해서 PS로 넘겨준다.
-    vout.TexC = mul(texC, gMatTransform).xy;
+    // VS에서는 아무것도 안한다.
+    vout.CenterW = vin.PosW;
+    vout.SizeW = vin.SizeW;
+    
     return vout;
 }
 
-float4 PS(VertexOut pin) : SV_Target
+// Geometry Shader로 생성 되는 점의 최대 개수를 4개로 설정한다.
+[maxvertexcount(4)]
+void GS(
+    point VertexOut gin[1], // 배열 크기를 1로 설정해서 점으로 입력받고
+    uint primID : SV_PrimitiveID, 
+    inout TriangleStream<GeoOut> triStream // 삼각형띠로 출력을 한다.
+        )
 {
+    // Sprite 를 카메라에 y-axis align 시킬 수 있도록 계산을 한다.
+
+    float3 up = float3(0.0f, 1.0f, 0.0f);
+    float3 look = gEyePosW - gin[0].CenterW;
+    look.y = 0.0f; // xz-평면에 사영시킨다.
+    look = normalize(look);
+    float3 right = cross(up, look);
+
+	// 생성된 Vertex를 world로 표현한다.
+    float halfWidth = 0.5f * gin[0].SizeW.x;
+    float halfHeight = 0.5f * gin[0].SizeW.y;
+	
+    float4 v[4];
+    v[0] = float4(gin[0].CenterW + halfWidth * right - halfHeight * up, 1.0f);
+    v[1] = float4(gin[0].CenterW + halfWidth * right + halfHeight * up, 1.0f);
+    v[2] = float4(gin[0].CenterW - halfWidth * right - halfHeight * up, 1.0f);
+    v[3] = float4(gin[0].CenterW - halfWidth * right + halfHeight * up, 1.0f);
+
+	// 이제 triangle strip으로서 출력해준다.
+	
+    float2 texC[4] =
+    {
+        float2(0.0f, 1.0f),
+		float2(0.0f, 0.0f),
+		float2(1.0f, 1.0f),
+		float2(1.0f, 0.0f)
+    };
+	
+    GeoOut gout;
+	[unroll]
+    for (int i = 0; i < 4; ++i)
+    {
+        gout.PosH = mul(v[i], gViewProj);
+        gout.PosW = v[i].xyz;
+        gout.NormalW = look;
+        gout.TexC = texC[i];
+        gout.PrimID = primID;
+		
+        triStream.Append(gout);
+    }
+}
+
+float4 PS(GeoOut pin) : SV_Target
+{
+    // w 성분도 이용해서 Texture2DArray에서  Sample을 뽑아온다.
+    float3 uvw = float3(pin.TexC, pin.PrimID % 2);
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
-    float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
+    float4 diffuseAlbedo = gTreeMapArray.Sample(gSamAnisotropicWrap, uvw) * gDiffuseAlbedo;
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
@@ -175,7 +222,3 @@ float4 PS(VertexOut pin) : SV_Target
     // 출력한다.
     return litColor;
 }
-
-// fxc "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\02_Rendering\Shaders\02_Rendering_Shader.hlsl" /Od /Zi /T vs_5_1 /E "VS" /Fo "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\02_Rendering\Shader\02_Rendering_VS.cso" /Fc "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\02_Rendering\Shader\02_Rendering_VS.asm"
-
-//fxc "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\07_Blending\Shaders\07_Blend.hlsl" /Od /D "ALPHA_TEST"="1"/Zi /T ps_5_1 /E "PS" /Fo "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\07_Blending\Shaders\07_Blending_PS_Alpha.cso" /Fc "A:\[DirectX]\MyDirectX\PracticeD3D12\BookPractice\07_Blending\Shaders\07_Blending_PS_Alpha.asm"

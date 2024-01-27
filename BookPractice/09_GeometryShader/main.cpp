@@ -12,8 +12,7 @@
 #include "FileReader.h"
 #include <iomanip>
 
-#define WAVE (0)
-#define SKULL (1)
+#define WAVE (1)
 
 const int g_NumFrameResources = 3;
 
@@ -62,6 +61,7 @@ enum class RenderLayer : int
 	Reflected,
 	Transparent,
 	AlphaTested,
+	AlphaTestedSprites,
 	Shadow,
 	Practice,
 	Count
@@ -113,18 +113,10 @@ private:
 	void BuildWaveDescriptorHeaps();
 	void BuildLandGeometry();
 	void BuildFenceGeometry();
-	void BuildQuadGeometry();
 	void BuildWavesGeometryBuffers();
+	void BuildTreeSpritesGeometry();
 	void BuildWaveMaterials();
 	void BuildWaveRenderItems();
-
-	// Skull 용이다.
-	void LoadSkullRoomTextures();
-	void BuildSkullDescriptorHeaps();
-	void BuildRoomGeometry();
-	void BuildSkullGeometry();
-	void BuildSkullRoomMaterials();
-	void BuildSkullRoomRenderItem();
 
 	void BuildPSOs();
 	void BuildFrameResources();
@@ -162,12 +154,11 @@ private:
 
 	// input layout도 백터로 가지고 있는다
 	std::vector<D3D12_INPUT_ELEMENT_DESC> m_InputLayout;
+	// Sprite Layout은 다르기 때문에 따로 가지고 있는다.
+	std::vector<D3D12_INPUT_ELEMENT_DESC> m_TreeSpriteInputLayout;
 
 	//  App 단에서 RenderItem 포인터를 가지고 있는다
 	RenderItem* m_WavesRenderItem = nullptr;
-	RenderItem* m_SkullRenderItem = nullptr;
-	RenderItem* m_ReflectedSkullRenderItem = nullptr;
-	RenderItem* m_ShadowedSkullRenderItem = nullptr;
 
 	// RenderItem 리스트
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
@@ -181,21 +172,13 @@ private:
 	PassConstants m_MainPassCB;
 	PassConstants m_ReflectedPassCB;
 
-	XMFLOAT3 m_SkullTranslation = { 0.f, 1.f, -5.f };
-
 	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
-#if  SKULL
-	float m_Radius = 12.f;
-#elif WAVE
 	float m_Radius = 50.f;
-#endif
-	float m_SunPhi = 1.25f * XM_PI;
-	float m_SunTheta = XM_PIDIV4;
 
 	POINT m_LastMousePos = {};
 };
@@ -249,18 +232,7 @@ bool GeoShaderApp::Initialize()
 	// 얘는 좀 복잡해서 따로 클래스로 만들었다.
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
 
-
 	BuildShadersAndInputLayout();
-
-#if SKULL
-	LoadSkullRoomTextures();
-	BuildSkullDescriptorHeaps();
-	BuildRootSignature();
-	BuildRoomGeometry();
-	BuildSkullGeometry();
-	BuildSkullRoomMaterials();
-	BuildSkullRoomRenderItem();
-#elif WAVE
 	LoadWaveTextures();
 	BuildRootSignature();
 	BuildWaveDescriptorHeaps();
@@ -269,11 +241,12 @@ bool GeoShaderApp::Initialize()
 	// 그 버퍼를 만들고
 	BuildWavesGeometryBuffers();
 	BuildFenceGeometry();
+
+	BuildTreeSpritesGeometry();
 	// 지형과 파도에 맞는 머테리얼을 만든다.
 	BuildWaveMaterials();
 	// 아이템 화를 시킨다.
 	BuildWaveRenderItems();
-#endif
 
 	// 이제 FrameResource를 만들고
 	BuildFrameResources();
@@ -334,11 +307,7 @@ void GeoShaderApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
-#if SKULL
-	UpdateReflectedPassCB(_gt);
-#elif WAVE
 	UpdateWaves(_gt);
-#endif
 }
 
 void GeoShaderApp::Draw(const GameTimer& _gt)
@@ -372,7 +341,7 @@ void GeoShaderApp::Draw(const GameTimer& _gt)
 	// 백 버퍼와 깊이 버퍼를 초기화 한다.
 	m_CommandList->ClearRenderTargetView(
 		GetCurrentBackBufferView(), 
-		Colors::Black, //(float*)&m_MainPassCB.FogColor  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
+		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
 		0, 
 		nullptr);
 	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
@@ -403,40 +372,17 @@ void GeoShaderApp::Draw(const GameTimer& _gt)
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-#if SKULL
-	// 지금 부터 거울구역을 마킹하는데, 이 친구는 stencil에 Ref값을 1을 써주면서 그려진다.
-	m_CommandList->OMSetStencilRef(1);
-	m_CommandList->SetPipelineState(m_PSOs["markStencilMirrors"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Mirrors]);
-
-	// 거울에 반사된 모습의 skull을 그리는데, stencil Ref 값이 1인 픽셀에만 그린다.
-	// 그리고 이 친구한테는 light도 반대에서 오는 걸로 적용해서 그려줘야한다.
-	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress() + 1 * d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants)));
-	m_CommandList->SetPipelineState(m_PSOs["drawStencilReflections"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Reflected]);
-
-	// 다시 거울 바깥쪽을 Stencil Ref 0으로 그릴 준비를 하고, PassCB도 원래대로 세팅한다.
-	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
-	m_CommandList->OMSetStencilRef(0);
-
-	// 반투명한 거울을 출력해준다.
-	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
-
-	// 그림자를 출력해준다
-	m_CommandList->SetPipelineState(m_PSOs["shadow"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Shadow]);
-
-#elif WAVE
 	// 알파 자르기하는 친구들을 출력해주고
 	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
 
+	// Sprite를 출력해주고,
+	m_CommandList->SetPipelineState(m_PSOs["treeSprites"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTestedSprites]);
+
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
-#endif
-
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -518,49 +464,6 @@ void GeoShaderApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 void GeoShaderApp::OnKeyboardInput(const GameTimer _gt)
 {
-#if SKULL
-	const float dt = _gt.GetDeltaTime();
-
-	// wasd로 skull을 움직이도록 한다.
-	if (GetAsyncKeyState('A') & 0x8000)
-		m_SkullTranslation.x -= 1.0f * dt;
-
-	if (GetAsyncKeyState('D') & 0x8000)
-		m_SkullTranslation.x += 1.0f * dt;
-
-	if (GetAsyncKeyState('W') & 0x8000)
-		m_SkullTranslation.y += 1.0f * dt;
-
-	if (GetAsyncKeyState('S') & 0x8000)
-		m_SkullTranslation.y -= 1.0f * dt;
-
-	// 땅 밑으로 들어가지는 않게 한다.
-	m_SkullTranslation.y = MathHelper::Max(m_SkullTranslation.y, 0.0f);
-
-	// skull을 움직였으니, Object Constant를 업데이트 시키도록한다.
-	XMMATRIX skullRotate = XMMatrixRotationY(0.5 * XM_PI);
-	XMMATRIX skullScale = XMMatrixScaling(0.45f, 0.45f, 0.45f);
-	XMMATRIX skullOffset = XMMatrixTranslation(m_SkullTranslation.x, m_SkullTranslation.y, m_SkullTranslation.z);
-	XMMATRIX skullWorld = skullRotate * skullScale * skullOffset;
-	XMStoreFloat4x4(&m_SkullRenderItem->WorldMat, skullWorld);
-
-	// 반사된 skull도 업데이트 시켜준다.
-	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f); // xy 평면
-	XMMATRIX R = XMMatrixReflect(mirrorPlane); // directxmath에서 제공하는 평면 반사 행렬 함수이다.
-	XMStoreFloat4x4(&m_ReflectedSkullRenderItem->WorldMat, skullWorld * R);
-
-	// 그림자도 Update 시켜준다.
-	XMVECTOR shadowPlane = XMVectorSet(0.f, 1.f, 0.f, 0.f); // xz 평면
-	XMVECTOR toMainLight = -XMLoadFloat3(&m_MainPassCB.Lights[0].Direction);
-	XMMATRIX S = XMMatrixShadow(shadowPlane, toMainLight); // directxmath에서 제공하는 평면에 대한 조명 사영 행렬 함수이다.
-	XMMATRIX shadowOffsetY = XMMatrixTranslation(0.f, 0.005f, 0.f); // z fighting 이 일어나지 않기 위해 살짝 띄워준다.
-	XMMATRIX shadowSkullWorld = skullWorld * S * shadowOffsetY;
-	XMStoreFloat4x4(&m_ShadowedSkullRenderItem->WorldMat, shadowSkullWorld);
-
-	m_SkullRenderItem->NumFrameDirty = g_NumFrameResources;
-	m_ReflectedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
-	m_ShadowedSkullRenderItem->NumFrameDirty = g_NumFrameResources;
-#endif
 }
 
 void GeoShaderApp::UpdateCamera(const GameTimer& _gt)
@@ -1188,412 +1091,8 @@ void GeoShaderApp::BuildWavesGeometryBuffers()
 	m_Geometries["WaterGeo"] = std::move(geo);
 }
 
-void GeoShaderApp::LoadSkullRoomTextures()
+void GeoShaderApp::BuildTreeSpritesGeometry()
 {
-	std::unique_ptr<Texture> iceTex = std::make_unique<Texture>();
-	iceTex->Name = "iceTex";
-	iceTex->Filename = L"../Textures/ice.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		iceTex->Filename.c_str(),
-		iceTex->Resource,
-		iceTex->UploadHeap
-	));
-
-	m_Textures[iceTex->Name] = std::move(iceTex);
-
-	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
-	bricksTex->Name = "bricksTex";
-	bricksTex->Filename = L"../Textures/bricks3.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		bricksTex->Filename.c_str(),
-		bricksTex->Resource,
-		bricksTex->UploadHeap
-	));
-
-	m_Textures[bricksTex->Name] = std::move(bricksTex);
-
-	std::unique_ptr<Texture> checkboardTex = std::make_unique<Texture>();
-	checkboardTex->Name = "checkboardTex";
-	checkboardTex->Filename = L"../Textures/checkboard.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		checkboardTex->Filename.c_str(),
-		checkboardTex->Resource,
-		checkboardTex->UploadHeap
-	));
-
-	m_Textures[checkboardTex->Name] = std::move(checkboardTex);
-
-	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
-	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
-	white1x1Tex->Name = "white1x1Tex";
-	white1x1Tex->Filename = L"../Textures/white1x1.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		white1x1Tex->Filename.c_str(),
-		white1x1Tex->Resource,
-		white1x1Tex->UploadHeap
-	));
-
-	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
-}
-
-void GeoShaderApp::BuildSkullDescriptorHeaps()
-{
-	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 4;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
-
-	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* iceTex = m_Textures["iceTex"].get()->Resource.Get();
-	ID3D12Resource* bricksTex = m_Textures["bricksTex"].get()->Resource.Get();
-	ID3D12Resource* checkboardTex = m_Textures["checkboardTex"].get()->Resource.Get();
-	ID3D12Resource* white1x1Tex = m_Textures["white1x1Tex"].get()->Resource.Get();
-
-
-	// view를 만들어주고
-	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
-	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = bricksTex->GetDesc().Format;
-	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srcDesc.Texture2D.MostDetailedMip = 0;
-	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
-	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
-
-	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
-
-	// view를 만들면서 연결해준다.
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = checkboardTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = checkboardTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(checkboardTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = iceTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = iceTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(iceTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = white1x1Tex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = white1x1Tex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(white1x1Tex, &srcDesc, viewHandle);
-}
-
-void GeoShaderApp::BuildRoomGeometry()
-{
-	// 예제 너무 좋다.
-	//
-	//   |--------------|
-	//   |              |
-	//   |----|----|----|
-	//   |Wall|Mirr|Wall|
-	//   |    | or |    |
-	//   /--------------/
-	//  /   Floor      /
-	// /--------------/
-
-	std::array<Vertex, 20> vertices =
-	{
-		// 정의역을 (0, 4)로 늘려서 4배 타일링이 되도록 하였다.
-		Vertex(-3.5f, 0.0f, -10.0f, 0.0f, 1.0f, 0.0f, 0.0f, 4.0f), // 0 
-		Vertex(-3.5f, 0.0f,   0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f),
-		Vertex(7.5f, 0.0f,   0.0f, 0.0f, 1.0f, 0.0f, 4.0f, 0.0f),
-		Vertex(7.5f, 0.0f, -10.0f, 0.0f, 1.0f, 0.0f, 4.0f, 4.0f),
-
-		// 거울 양옆의 벽과 위를 덮는 벽이다.
-		// vertex와 uv를 보면 대충 u와 v의 비율이 같아보인다.
-		Vertex(-3.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 2.0f), // 4
-		Vertex(-3.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
-		Vertex(-2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.5f, 0.0f),
-		Vertex(-2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.5f, 2.0f),
-
-		Vertex(2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 2.0f), // 8 
-		Vertex(2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
-		Vertex(7.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 2.0f, 0.0f),
-		Vertex(7.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 2.0f, 2.0f),
-
-		Vertex(-3.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f), // 12
-		Vertex(-3.5f, 6.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
-		Vertex(7.5f, 6.0f, 0.0f, 0.0f, 0.0f, -1.0f, 6.0f, 0.0f),
-		Vertex(7.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 6.0f, 1.0f),
-
-		// 거울
-		Vertex(-2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f), // 16
-		Vertex(-2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f),
-		Vertex(2.5f, 4.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f),
-		Vertex(2.5f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f)
-	};
-
-	std::array<std::int16_t, 30> indices =
-	{
-		// 바닥
-		0, 1, 2,
-		0, 2, 3,
-
-		// 벽
-		4, 5, 6,
-		4, 6, 7,
-
-		8, 9, 10,
-		8, 10, 11,
-
-		12, 13, 14,
-		12, 14, 15,
-
-		// 거울
-		16, 17, 18,
-		16, 18, 19
-	};
-
-	SubmeshGeometry floorSubmesh;
-	floorSubmesh.IndexCount = 6;
-	floorSubmesh.StartIndexLocation = 0;
-	floorSubmesh.BaseVertexLocation = 0;
-
-	SubmeshGeometry wallSubmesh;
-	wallSubmesh.IndexCount = 18;
-	wallSubmesh.StartIndexLocation = 6;
-	wallSubmesh.BaseVertexLocation = 0;
-
-	SubmeshGeometry mirrorSubmesh;
-	mirrorSubmesh.IndexCount = 6;
-	mirrorSubmesh.StartIndexLocation = 24;
-	mirrorSubmesh.BaseVertexLocation = 0;
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	auto geo = std::make_unique<MeshGeometry>();
-	geo->Name = "roomGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(), 
-		vertices.data(),
-		vbByteSize, 
-		geo->VertexBufferUploader
-	);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),													   
-		m_CommandList.Get(),
-		indices.data(), 
-		ibByteSize, 
-		geo->IndexBufferUploader
-	);
-
-	geo->VertexByteStride = sizeof(Vertex);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	geo->DrawArgs["floor"] = floorSubmesh;
-	geo->DrawArgs["wall"] = wallSubmesh;
-	geo->DrawArgs["mirror"] = mirrorSubmesh;
-
-	m_Geometries[geo->Name] = std::move(geo);
-}
-
-void GeoShaderApp::BuildSkullGeometry()
-{
-	vector<Vertex> SkullVertices;
-	vector<uint32_t> SkullIndices;
-
-	Prac3::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices);
-
-	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
-
-	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "skullGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), SkullVertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), SkullIndices.data(), ibByteSize);
-
-	// Vertex 와 Index 정보를 Default Buffer로 만들고
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		SkullVertices.data(),
-		vbByteSize,
-		geo->VertexBufferUploader
-	);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		SkullIndices.data(),
-		ibByteSize,
-		geo->IndexBufferUploader
-	);
-
-	geo->VertexByteStride = sizeof(Vertex);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	// 서브 메쉬 설정을 해준다.
-	SubmeshGeometry submesh;
-	submesh.IndexCount = (UINT)SkullIndices.size();
-	submesh.StartIndexLocation = 0;
-	submesh.BaseVertexLocation = 0;
-
-	geo->DrawArgs["skull"] = submesh;
-
-	m_Geometries["skullGeo"] = std::move(geo);
-}
-
-void GeoShaderApp::BuildSkullRoomMaterials()
-{
-	std::unique_ptr<Material> bricksMat = std::make_unique<Material>();
-	bricksMat->Name = "bricksMat";
-	bricksMat->MatCBIndex = 0;
-	bricksMat->DiffuseSrvHeapIndex = 0;
-	bricksMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	bricksMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	bricksMat->Roughness = 0.25f;
-
-	std::unique_ptr<Material> checkertileMat = std::make_unique<Material>();
-	checkertileMat->Name = "checkertileMat";
-	checkertileMat->MatCBIndex = 1;
-	checkertileMat->DiffuseSrvHeapIndex = 1;
-	checkertileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	checkertileMat->FresnelR0 = XMFLOAT3(0.07f, 0.07f, 0.07f);
-	checkertileMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> icemirrorMat = std::make_unique<Material>();
-	icemirrorMat->Name = "icemirrorMat";
-	icemirrorMat->MatCBIndex = 2;
-	icemirrorMat->DiffuseSrvHeapIndex = 2;
-	icemirrorMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.3f);
-	icemirrorMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
-	icemirrorMat->Roughness = 0.5f;
-
-	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
-	skullMat->Name = "skullMat";
-	skullMat->MatCBIndex = 3;
-	skullMat->DiffuseSrvHeapIndex = 3;
-	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	skullMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> shadowMat = std::make_unique<Material>();
-	shadowMat->Name = "shadowMat";
-	shadowMat->MatCBIndex = 4;
-	shadowMat->DiffuseSrvHeapIndex = 3;
-	shadowMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 0.5f);
-	shadowMat->FresnelR0 = XMFLOAT3(0.001f, 0.001f, 0.001f);
-	shadowMat->Roughness = 0.0f;
-
-	m_Materials["bricksMat"] = std::move(bricksMat);
-	m_Materials["checkertileMat"] = std::move(checkertileMat);
-	m_Materials["icemirrorMat"] = std::move(icemirrorMat);
-	m_Materials["skullMat"] = std::move(skullMat);
-	m_Materials["shadowMat"] = std::move(shadowMat);
-}
-
-void GeoShaderApp::BuildSkullRoomRenderItem()
-{
-	std::unique_ptr<RenderItem> floorRenderitem = std::make_unique<RenderItem>();
-	floorRenderitem->WorldMat = MathHelper::Identity4x4();
-	floorRenderitem->TexTransform = MathHelper::Identity4x4();
-	floorRenderitem->ObjCBIndex = 0;
-	floorRenderitem->Mat = m_Materials["checkertileMat"].get();
-	floorRenderitem->Geo = m_Geometries["roomGeo"].get();
-	floorRenderitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	floorRenderitem->IndexCount = floorRenderitem->Geo->DrawArgs["floor"].IndexCount;
-	floorRenderitem->StartIndexLocation = floorRenderitem->Geo->DrawArgs["floor"].StartIndexLocation;
-	floorRenderitem->BaseVertexLocation = floorRenderitem->Geo->DrawArgs["floor"].BaseVertexLocation;
-
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(floorRenderitem.get());
-
-	std::unique_ptr<RenderItem> wallsRenderItem = std::make_unique<RenderItem>();
-	wallsRenderItem->WorldMat = MathHelper::Identity4x4();
-	wallsRenderItem->TexTransform = MathHelper::Identity4x4();
-	wallsRenderItem->ObjCBIndex = 1;
-	wallsRenderItem->Mat = m_Materials["bricksMat"].get();
-	wallsRenderItem->Geo = m_Geometries["roomGeo"].get();
-	wallsRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	wallsRenderItem->IndexCount = wallsRenderItem->Geo->DrawArgs["wall"].IndexCount;
-	wallsRenderItem->StartIndexLocation = wallsRenderItem->Geo->DrawArgs["wall"].StartIndexLocation;
-	wallsRenderItem->BaseVertexLocation = wallsRenderItem->Geo->DrawArgs["wall"].BaseVertexLocation;
-
-#if  SKULL && PRAC5
-	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(wallsRenderItem.get());
-#else
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(wallsRenderItem.get());
-#endif
-	
-	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
-	skullRenderItem->WorldMat = MathHelper::Identity4x4();
-	skullRenderItem->TexTransform = MathHelper::Identity4x4();
-	skullRenderItem->ObjCBIndex = 2;
-	skullRenderItem->Mat = m_Materials["skullMat"].get();
-	skullRenderItem->Geo = m_Geometries["skullGeo"].get();
-	skullRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
-	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
-	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
-	// 업데이트가 필요하기 때문에 app에서 따로 변수를 가진다.
-	m_SkullRenderItem = skullRenderItem.get();
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
-
-	// 반사되는 친구는 World를 따로 가지는게 맞다. 그래서 아이템도 별개다.
-	std::unique_ptr<RenderItem> reflectedSkullRenderItem = std::make_unique<RenderItem>();
-	*reflectedSkullRenderItem = *skullRenderItem;
-	reflectedSkullRenderItem->ObjCBIndex = 3;
-	m_ReflectedSkullRenderItem = reflectedSkullRenderItem.get();
-	m_RenderItemLayer[(int)RenderLayer::Reflected].push_back(reflectedSkullRenderItem.get());
-
-	// 그림자도 마찬가지
-	std::unique_ptr<RenderItem> shadowedSkullRenderItem = std::make_unique<RenderItem>();
-	*shadowedSkullRenderItem = *skullRenderItem;
-	shadowedSkullRenderItem->ObjCBIndex = 4;
-	shadowedSkullRenderItem->Mat = m_Materials["shadowMat"].get();
-	m_ShadowedSkullRenderItem = shadowedSkullRenderItem.get();
-	m_RenderItemLayer[(int)RenderLayer::Shadow].push_back(shadowedSkullRenderItem.get());
-
-	std::unique_ptr<RenderItem> mirrorRenderItem = std::make_unique<RenderItem>();
-	mirrorRenderItem->WorldMat = MathHelper::Identity4x4();
-	mirrorRenderItem->TexTransform = MathHelper::Identity4x4();
-	mirrorRenderItem->ObjCBIndex = 5;
-	mirrorRenderItem->Mat = m_Materials["icemirrorMat"].get();
-	mirrorRenderItem->Geo = m_Geometries["roomGeo"].get();
-	mirrorRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	mirrorRenderItem->IndexCount = mirrorRenderItem->Geo->DrawArgs["mirror"].IndexCount;
-	mirrorRenderItem->StartIndexLocation = mirrorRenderItem->Geo->DrawArgs["mirror"].StartIndexLocation;
-	mirrorRenderItem->BaseVertexLocation = mirrorRenderItem->Geo->DrawArgs["mirror"].BaseVertexLocation;
-
-	m_RenderItemLayer[(int)RenderLayer::Mirrors].push_back(mirrorRenderItem.get());
-	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(mirrorRenderItem.get());
-
-	m_AllRenderItems.push_back(std::move(floorRenderitem));
-	m_AllRenderItems.push_back(std::move(wallsRenderItem));
-	m_AllRenderItems.push_back(std::move(skullRenderItem));
-	m_AllRenderItems.push_back(std::move(reflectedSkullRenderItem));
-	m_AllRenderItems.push_back(std::move(shadowedSkullRenderItem));
-	m_AllRenderItems.push_back(std::move(mirrorRenderItem));
 }
 
 void GeoShaderApp::BuildPSOs()
@@ -1752,11 +1251,7 @@ void GeoShaderApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
 	UINT passCBCount = 1;
-#if WAVE
 	waveVerCount = m_Waves->VertexCount();
-#elif SKULL
-	passCBCount = 2;
-#endif
 	// 반사상 용 PassCB가 하나 추가 된다.
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
