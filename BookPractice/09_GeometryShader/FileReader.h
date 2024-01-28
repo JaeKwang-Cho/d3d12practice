@@ -8,7 +8,7 @@ using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 using namespace std;
 
-namespace Prac3
+namespace Dorasima
 {
 	XMFLOAT2 VertexToApproxSphericalRadian(const XMFLOAT3& _ver)
 	{

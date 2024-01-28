@@ -109,14 +109,14 @@ private:
 	void BuildShadersAndInputLayout();
 
 	// Wave 용이다.
-	void LoadWaveTextures();
-	void BuildWaveDescriptorHeaps();
+	void LoadTextures();
+	void BuildDescriptorHeaps();
 	void BuildLandGeometry();
 	void BuildFenceGeometry();
 	void BuildWavesGeometryBuffers();
 	void BuildTreeSpritesGeometry();
-	void BuildWaveMaterials();
-	void BuildWaveRenderItems();
+	void BuildMaterials();
+	void BuildRenderItems();
 
 	void BuildPSOs();
 	void BuildFrameResources();
@@ -233,9 +233,9 @@ bool GeoShaderApp::Initialize()
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
 
 	BuildShadersAndInputLayout();
-	LoadWaveTextures();
+	LoadTextures();
 	BuildRootSignature();
-	BuildWaveDescriptorHeaps();
+	BuildDescriptorHeaps();
 	// 지형을 만들고
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
@@ -244,9 +244,9 @@ bool GeoShaderApp::Initialize()
 
 	BuildTreeSpritesGeometry();
 	// 지형과 파도에 맞는 머테리얼을 만든다.
-	BuildWaveMaterials();
+	BuildMaterials();
 	// 아이템 화를 시킨다.
-	BuildWaveRenderItems();
+	BuildRenderItems();
 
 	// 이제 FrameResource를 만들고
 	BuildFrameResources();
@@ -790,15 +790,27 @@ void GeoShaderApp::BuildShadersAndInputLayout()
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\09_GeometryShader.hlsl", defines, "PS", "ps_5_1");
 	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\09_GeometryShader.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
+	// GS도 비슷하게 인트로를 정해주고 컴파일을 하면 된다.
+	m_Shaders["treeSpriteVS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["treeSpriteGS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", nullptr, "GS", "gs_5_1");
+	m_Shaders["treeSpritePS"] = d3dUtil::CompileShader(L"Shaders\\TreeSprite.hlsl", alphaTestDefines, "PS", "ps_5_1");
+
+
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) *2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
+	// Sprite는 layout을 따로 가진다.
+	m_TreeSpriteInputLayout =
+	{
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{"SIZE", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+	};
 }
 
-void GeoShaderApp::LoadWaveTextures()
+void GeoShaderApp::LoadTextures()
 {
 	std::unique_ptr<Texture> grassTex = std::make_unique<Texture>();
 	grassTex->Name = "grassTex";
@@ -822,9 +834,6 @@ void GeoShaderApp::LoadWaveTextures()
 		waterTex->UploadHeap
 	));
 
-#if PRAC7
-	LoadFenceAnimation();
-#else
 	std::unique_ptr<Texture> fenceTex = std::make_unique<Texture>();
 	fenceTex->Name = "fenceTex";
 	fenceTex->Filename = L"../Textures/WireFence.dds";
@@ -836,35 +845,28 @@ void GeoShaderApp::LoadWaveTextures()
 		fenceTex->UploadHeap
 	));
 
-	m_Textures[fenceTex->Name] = std::move(fenceTex);
-#endif
-
-#if PRAC8 || PRAC9
-	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
-	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
-	white1x1Tex->Name = "white1x1Tex";
-	white1x1Tex->Filename = L"../Textures/white1x1.dds";
+	std::unique_ptr<Texture> treeArrayTex = std::make_unique<Texture>();
+	treeArrayTex->Name = "treeArrayTex";
+	treeArrayTex->Filename = L"../Textures/treeArray2.dds";
 	ThrowIfFailed(CreateDDSTextureFromFile12(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		white1x1Tex->Filename.c_str(),
-		white1x1Tex->Resource,
-		white1x1Tex->UploadHeap
+		treeArrayTex->Filename.c_str(),
+		treeArrayTex->Resource,
+		treeArrayTex->UploadHeap
 	));
 
-	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
-#endif
-
+	m_Textures[fenceTex->Name] = std::move(fenceTex);
 	m_Textures[grassTex->Name] = std::move(grassTex);
 	m_Textures[waterTex->Name] = std::move(waterTex);
-	
+	m_Textures[treeArrayTex->Name] = std::move(treeArrayTex);
 }
 
-void GeoShaderApp::BuildWaveDescriptorHeaps()
+void GeoShaderApp::BuildDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 3;
+	srvHeapDesc.NumDescriptors = 4;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
@@ -876,6 +878,7 @@ void GeoShaderApp::BuildWaveDescriptorHeaps()
 	ID3D12Resource* grassTex = m_Textures["grassTex"].get()->Resource.Get();
 	ID3D12Resource* waterTex = m_Textures["waterTex"].get()->Resource.Get();
 	ID3D12Resource* fenceTex = m_Textures["fenceTex"].get()->Resource.Get();
+	ID3D12Resource* treeArrayTex = m_Textures["treeArrayTex"].get()->Resource.Get();
 
 	// view를 만들어주고
 	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
@@ -896,6 +899,17 @@ void GeoShaderApp::BuildWaveDescriptorHeaps()
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = fenceTex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(fenceTex, &srcDesc, viewHandle);
+
+	// Texture2DArray는 Desc가 다르다.
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+	srcDesc.Format = treeArrayTex->GetDesc().Format;
+	srcDesc.Texture2DArray.MostDetailedMip = 0;
+	srcDesc.Texture2DArray.MipLevels = -1;
+	srcDesc.Texture2DArray.FirstArraySlice = 0;
+	srcDesc.Texture2DArray.ArraySize = treeArrayTex->GetDesc().DepthOrArraySize;
+	m_d3dDevice->CreateShaderResourceView(treeArrayTex, &srcDesc, viewHandle);
+
 }
 
 void GeoShaderApp::BuildLandGeometry()
@@ -1093,6 +1107,72 @@ void GeoShaderApp::BuildWavesGeometryBuffers()
 
 void GeoShaderApp::BuildTreeSpritesGeometry()
 {
+	// 각종 계산은 GPU에서 해주기 때문에
+	// 이렇게 로컬하게 구조체를 정의해줘도 된다.
+	struct TreeSpriteVertex
+	{
+		XMFLOAT3 Pos;
+		XMFLOAT2 Size;
+	};
+
+	static const int treeCount = 16;
+	std::array<TreeSpriteVertex, 16> vertices;
+	for (UINT i = 0; i < treeCount; i++)
+	{
+		// 랜덤으로 트리의 위치를 정하고
+		float x = MathHelper::RandF(-45.f, 45.f);
+		float z = MathHelper::RandF(-45.f, 45.f);
+		float y = GetHillsHeight(x, z);
+		// 살짝 띄운다.
+		y += 8.f;
+		
+		vertices[i].Pos = XMFLOAT3(x, y, z);
+		vertices[i].Size = XMFLOAT2(20.f, 20.f);
+	}
+	
+	// 어처피 quad는 shader에서 만들어줄 것이기 때문에 주르륵 넘긴다.
+	std::array<std::uint16_t, 16> indices = { 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 };
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(TreeSpriteVertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "treeSpritesGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(), 
+		vertices.data(),
+		vbByteSize, 
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(), 
+		ibByteSize, geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(TreeSpriteVertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["points"] = submesh;
+
+	m_Geometries["treeSpritesGeo"] = std::move(geo);
 }
 
 void GeoShaderApp::BuildPSOs()
@@ -1124,6 +1204,8 @@ void GeoShaderApp::BuildPSOs()
 	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
+
 	// #2 반투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
 	// 이전 예제랑 똑같이 해준다.
@@ -1141,6 +1223,8 @@ void GeoShaderApp::BuildPSOs()
 
 	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
 
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
+
 	// #3 Stencil 마킹하는 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPSODesc = opaquePSODesc;
 
@@ -1155,6 +1239,8 @@ void GeoShaderApp::BuildPSOs()
 	mirrorDSS.StencilEnable = true; // 스텐실 테스트를 켜주고
 	mirrorDSS.StencilReadMask = 0xff;
 	mirrorDSS.StencilWriteMask = 0xff; // 마스크도 켜준다
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
 
 	// 깊이 판정을 실패 했을 때는, 스텐실을 쓰지 않는다.
 	// 그 이외 조건이 없으니, 스탠실을 항상 작성한다.
@@ -1201,6 +1287,8 @@ void GeoShaderApp::BuildPSOs()
 	drawReflectionsPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
 	drawReflectionsPSODesc.RasterizerState.FrontCounterClockwise = true;
 
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
+
 	// #5 그림자를 그리는 PSO
 	// 얘는 Transparent한 친구다. 아예 시커멓지는 않지 않은가?
 
@@ -1228,6 +1316,8 @@ void GeoShaderApp::BuildPSOs()
 
 	shadowPSODesc.DepthStencilState = shadowDSS;
 
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowPSODesc, IID_PPV_ARGS(&m_PSOs["shadow"])));
+
 	// #6 알파 자르기 PSO
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
@@ -1237,14 +1327,35 @@ void GeoShaderApp::BuildPSOs()
 		m_Shaders["alphaTestedPS"]->GetBufferSize()
 	};
 	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowPSODesc, IID_PPV_ARGS(&m_PSOs["shadow"])));
+
+	// #7 Tree Sprite 전용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC treeSpritePSODesc = opaquePSODesc;
+	treeSpritePSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["treeSpriteVS"]->GetBufferPointer()),
+		m_Shaders["treeSpriteVS"]->GetBufferSize()
+	};
+	treeSpritePSODesc.GS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["treeSpriteGS"]->GetBufferPointer()),
+		m_Shaders["treeSpriteGS"]->GetBufferSize()
+	};
+	treeSpritePSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["treeSpritePS"]->GetBufferPointer()),
+		m_Shaders["treeSpritePS"]->GetBufferSize()
+	};
+	treeSpritePSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT; // 점으로 넘겨준다.
+	treeSpritePSODesc.InputLayout = { m_TreeSpriteInputLayout.data(), (UINT)m_TreeSpriteInputLayout.size() };
+	treeSpritePSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
+	// alpha를 coverage로 사용하는 기법인데... 뭔소린지 모르겠다.
+	// https://learn.microsoft.com/ko-kr/windows/win32/direct3d11/d3d10-graphics-programming-guide-blend-state#alpha-to-coverage
+	treeSpritePSODesc.BlendState.AlphaToCoverageEnable = false;
+	
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&treeSpritePSODesc, IID_PPV_ARGS(&m_PSOs["treeSprites"])));
 }
 
 void GeoShaderApp::BuildFrameResources()
@@ -1265,7 +1376,7 @@ void GeoShaderApp::BuildFrameResources()
 	}
 }
 
-void GeoShaderApp::BuildWaveMaterials()
+void GeoShaderApp::BuildMaterials()
 {
 	// 일단 land에 씌울 grass Mat을 만든다.
 	std::unique_ptr<Material> grass = std::make_unique<Material>();
@@ -1282,7 +1393,7 @@ void GeoShaderApp::BuildWaveMaterials()
 	water->MatCBIndex = 1;
 	water->DiffuseSrvHeapIndex = 1;
 	water->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 0.5f);
-	water->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	water->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	water->Roughness = 0.f;
 
 	std::unique_ptr<Material> fence = std::make_unique<Material>();
@@ -1290,15 +1401,24 @@ void GeoShaderApp::BuildWaveMaterials()
 	fence->MatCBIndex = 2;
 	fence->DiffuseSrvHeapIndex = 2;
 	fence->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
-	fence->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	fence->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
 	fence->Roughness = 0.25f;
+
+	std::unique_ptr<Material> treeSprites = std::make_unique<Material>();
+	treeSprites->Name = "treeSprites";
+	treeSprites->MatCBIndex = 3;
+	treeSprites->DiffuseSrvHeapIndex = 3;
+	treeSprites->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+	treeSprites->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	treeSprites->Roughness = 0.125;
 
 	m_Materials["grass"] = std::move(grass);
 	m_Materials["water"] = std::move(water);
 	m_Materials["fence"] = std::move(fence);
+	m_Materials["treeSprites"] = std::move(treeSprites);
 }
 
-void GeoShaderApp::BuildWaveRenderItems()
+void GeoShaderApp::BuildRenderItems()
 {
 	// 파도를 아이템화 시키기
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
@@ -1338,17 +1458,29 @@ void GeoShaderApp::BuildWaveRenderItems()
 	fenceRenderItem->StartIndexLocation = fenceRenderItem->Geo->DrawArgs["fence"].StartIndexLocation;
 	fenceRenderItem->BaseVertexLocation = fenceRenderItem->Geo->DrawArgs["fence"].BaseVertexLocation;
 
+	std::unique_ptr<RenderItem> treeSpritesRenderItem = std::make_unique<RenderItem>();
+	treeSpritesRenderItem->WorldMat = MathHelper::Identity4x4();
+	treeSpritesRenderItem->ObjCBIndex = 3;
+	treeSpritesRenderItem->Mat = m_Materials["treeSprites"].get();
+	treeSpritesRenderItem->Geo = m_Geometries["treeSpritesGeo"].get();
+	treeSpritesRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_POINTLIST;
+	treeSpritesRenderItem->IndexCount = treeSpritesRenderItem->Geo->DrawArgs["points"].IndexCount;
+	treeSpritesRenderItem->StartIndexLocation = treeSpritesRenderItem->Geo->DrawArgs["points"].StartIndexLocation;
+	treeSpritesRenderItem->BaseVertexLocation = treeSpritesRenderItem->Geo->DrawArgs["points"].BaseVertexLocation;
+
 	// 파도는 반투명한 친구이다.
 	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
 	// 얘는 불투명한 친구
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 	// Fence는 알파 자르기를 하는 Render Item이다.
 	m_RenderItemLayer[(int)RenderLayer::AlphaTested].push_back(fenceRenderItem.get());
-
+	// Tree는 다른 VS, GS, PS를 가진다.
+	m_RenderItemLayer[(int)RenderLayer::AlphaTestedSprites].push_back(treeSpritesRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(wavesRenderItem));
 	m_AllRenderItems.push_back(std::move(gridRenderItem));
 	m_AllRenderItems.push_back(std::move(fenceRenderItem));
+	m_AllRenderItems.push_back(std::move(treeSpritesRenderItem));
 }
 
 void GeoShaderApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems)

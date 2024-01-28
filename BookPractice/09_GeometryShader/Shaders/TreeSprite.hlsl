@@ -133,6 +133,7 @@ void GS(
 {
     // Sprite 를 카메라에 y-axis align 시킬 수 있도록 계산을 한다.
 
+    // local 좌표축을 구한다.
     float3 up = float3(0.0f, 1.0f, 0.0f);
     float3 look = gEyePosW - gin[0].CenterW;
     look.y = 0.0f; // xz-평면에 사영시킨다.
@@ -143,6 +144,7 @@ void GS(
     float halfWidth = 0.5f * gin[0].SizeW.x;
     float halfHeight = 0.5f * gin[0].SizeW.y;
 	
+    // local 좌표 축과, 크기 값을 이용해서, Billboard각 꼭짓점의  world 위치를 구한다.
     float4 v[4];
     v[0] = float4(gin[0].CenterW + halfWidth * right - halfHeight * up, 1.0f);
     v[1] = float4(gin[0].CenterW + halfWidth * right + halfHeight * up, 1.0f);
@@ -182,7 +184,7 @@ float4 PS(GeoOut pin) : SV_Target
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
-    clip(diffuseAlbedo.a - 0.1f);
+    //clip(diffuseAlbedo.a - 0.1f);
 #endif
     
 // 일단 정규화를 한다.
