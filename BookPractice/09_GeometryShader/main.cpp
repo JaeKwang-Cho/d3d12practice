@@ -12,9 +12,9 @@
 #include "FileReader.h"
 #include <iomanip>
 
-#define WAVE (0)
+#define WAVE (1)
 #define PRAC1 (0 && !WAVE)
-#define PRAC2 (1 && !WAVE && !PRAC1)
+#define PRAC2 (0 && !WAVE && !PRAC1)
 
 const int g_NumFrameResources = 3;
 
