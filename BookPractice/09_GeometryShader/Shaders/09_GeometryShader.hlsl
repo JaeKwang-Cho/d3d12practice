@@ -39,6 +39,7 @@ SamplerState gSamAnisotropicClamp : register(s9);
 cbuffer cbPerObject : register(b0)
 {
     float4x4 gWorld;
+    float4x4 gInvWorldTranspose;
     float4x4 gTexTransform;
 };
 

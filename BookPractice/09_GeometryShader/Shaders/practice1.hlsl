@@ -21,7 +21,7 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-Texture2DArray gTreeMapArray: register(t0);
+Texture2D gDiffuseMap : register(t0);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -89,18 +89,16 @@ cbuffer cbMaterial : register(b2)
 };
 
  
-// 입력으로 Pos, Size를 받는다.
+// 입력으로 Pos를 받는다.
 struct VertexIn
 {
     float3 PosW : POSITION;
-    float2 SizeW : SIZE;
 };
 
-// 출력으로는 world Centher pos와 world size를 뱉는다.
+// 출력으로는 world Centher pos를 뱉는다.
 struct VertexOut
 {
     float3 CenterW : POSITION;
-    float2 SizeW : SIZE;
 };
 
 // 지오메트리 쉐이더의 출력 구조체이다.
@@ -110,7 +108,7 @@ struct GeoOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
-    uint PrimID : SV_PrimitiveID; // 어떤 primitive인지 명시하는 맴버가 있다.
+    uint PrimID : SV_PrimitiveID; 
 };
 
 VertexOut VS(VertexIn vin)
@@ -119,69 +117,61 @@ VertexOut VS(VertexIn vin)
     
     // VS에서는 아무것도 안한다.
     vout.CenterW = vin.PosW;
-    vout.SizeW = vin.SizeW;
     
     return vout;
 }
 
-// Geometry Shader로 생성 되는 점의 최대 개수를 4개로 설정한다.
-[maxvertexcount(4)]
+// Geometry Shader로 생성 되는 점의 최대 개수를 10개로 설정한다.
+[maxvertexcount(10)]
 void GS(
-    point VertexOut gin[1], // 배열 크기를 1로 설정해서 점으로 입력받고
-    uint primID : SV_PrimitiveID, 
+    line VertexOut gin[2], // 배열 크기를 2로 설정해서 선으로 입력받고
+    uint primID : SV_PrimitiveID,
     inout TriangleStream<GeoOut> triStream // 삼각형띠로 출력을 한다.
         )
 {
-    // Sprite 를 카메라에 y-axis align 시킬 수 있도록 계산을 한다.
-
-    // local 좌표축을 구한다.
-    float3 up = float3(0.0f, 1.0f, 0.0f);
-    float3 look = gEyePosW - gin[0].CenterW;
-    look.y = 0.0f; // xz-평면에 사영시킨다.
-    look = normalize(look);
-    float3 right = cross(up, look);
-
-	// 생성된 Vertex를 world로 표현한다.
-    float halfWidth = 0.5f * gin[0].SizeW.x;
-    float halfHeight = 0.5f * gin[0].SizeW.y;
-	
-    // local 좌표 축과, 크기 값을 이용해서, Billboard각 꼭짓점의  world 위치를 구한다.
-    float4 v[4];
-    v[0] = float4(gin[0].CenterW + halfWidth * right - halfHeight * up, 1.0f);
-    v[1] = float4(gin[0].CenterW + halfWidth * right + halfHeight * up, 1.0f);
-    v[2] = float4(gin[0].CenterW - halfWidth * right - halfHeight * up, 1.0f);
-    v[3] = float4(gin[0].CenterW - halfWidth * right + halfHeight * up, 1.0f);
-
-	// 이제 triangle strip으로서 출력해준다.
-	
-    float2 texC[4] =
-    {
-        float2(0.0f, 1.0f),
-		float2(0.0f, 0.0f),
-		float2(1.0f, 1.0f),
-		float2(1.0f, 0.0f)
-    };
-	
-    GeoOut gout;
+    float currY = -5.f; // 아래에서 부터 올라온다.
+    float texCstep = 0.2f; // 그냥 임시 texcoords
+    
+    GeoOut gout1;
+    GeoOut gout2;
+    
 	[unroll]
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 5; i++)
     {
-        gout.PosH = mul(v[i], gViewProj);
-        gout.PosW = v[i].xyz;
-        gout.NormalW = look;
-        gout.TexC = texC[i];
-        gout.PrimID = primID;
+        float4 v1;
+        v1.xyz = gin[0].CenterW;
+        v1.y = currY;
+        v1.w = 1.f;
+        
+        gout1.PosH = mul(v1, gViewProj);
+        gout1.PosW = v1.xyz;
+        gout1.NormalW = gin[0].CenterW;
+        gout1.TexC = float2(0.f, texCstep * i);
+        gout1.PrimID = primID;
+        
+        float4 v2;
+        v2.xyz = gin[1].CenterW;
+        v2.y = currY;
+        v2.w = 1.f;
+        
+        gout2.PosH = mul(v2, gViewProj);
+        gout2.PosW = v2.xyz;
+        gout2.NormalW = gin[1].CenterW;
+        gout2.TexC = float2(1.f, texCstep * i);
+        gout2.PrimID = primID;
 		
-        triStream.Append(gout);
+        // app에서 xz 평면에서 rad가 증가하도록 넣어줘서 이렇게 반대로 해야 제대로 cull이 된다.
+        triStream.Append(gout2);
+        triStream.Append(gout1);
+        
+        currY += 2.f;
     }
 }
 
 float4 PS(GeoOut pin) : SV_Target
 {
-    // w 성분도 이용해서 Texture2DArray에서  Sample을 뽑아온다.
-    float3 uvw = float3(pin.TexC, pin.PrimID % 2);
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
-    float4 diffuseAlbedo = gTreeMapArray.Sample(gSamAnisotropicWrap, uvw) * gDiffuseAlbedo;
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.

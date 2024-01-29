@@ -12,7 +12,9 @@
 #include "FileReader.h"
 #include <iomanip>
 
-#define WAVE (1)
+#define WAVE (0)
+#define PRAC1 (0 && !WAVE)
+#define PRAC2 (1 && !WAVE && !PRAC1)
 
 const int g_NumFrameResources = 3;
 
@@ -118,6 +120,10 @@ private:
 	void BuildMaterials();
 	void BuildRenderItems();
 
+	// Practice
+	void Practice1();
+	void Practice2();
+
 	void BuildPSOs();
 	void BuildFrameResources();
 
@@ -157,6 +163,9 @@ private:
 	// Sprite Layout은 다르기 때문에 따로 가지고 있는다.
 	std::vector<D3D12_INPUT_ELEMENT_DESC> m_TreeSpriteInputLayout;
 
+	// practice 1
+	std::vector<D3D12_INPUT_ELEMENT_DESC> m_PracticeInputLayout;
+
 	//  App 단에서 RenderItem 포인터를 가지고 있는다
 	RenderItem* m_WavesRenderItem = nullptr;
 
@@ -178,7 +187,11 @@ private:
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
+#if !WAVE
+	float m_Radius = 10.f;
+#else
 	float m_Radius = 50.f;
+#endif
 
 	POINT m_LastMousePos = {};
 };
@@ -229,6 +242,11 @@ bool GeoShaderApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
+#if PRAC1
+	Practice1();
+#elif PRAC2
+	Practice2();
+#else
 	// 얘는 좀 복잡해서 따로 클래스로 만들었다.
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
 
@@ -252,6 +270,7 @@ bool GeoShaderApp::Initialize()
 	BuildFrameResources();
 	// 이제 PSO를 만들어서, 돌리면서 렌더링할 준비를 한다.
 	BuildPSOs();
+#endif
 
 	// 초기화 요청이 들어간 Command List를 Queue에 등록한다.
 	ThrowIfFailed(m_CommandList->Close());
@@ -358,7 +377,7 @@ void GeoShaderApp::Draw(const GameTimer& _gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 	// ==== 그리기 ======
-
+	// 
 	// 현재 PSO에 View Heap을 세팅해준다.
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
@@ -369,6 +388,14 @@ void GeoShaderApp::Draw(const GameTimer& _gt)
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
 
+#if PRAC1
+	m_CommandList->SetPipelineState(m_PSOs["prac1PSO"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+#elif PRAC2
+
+	m_CommandList->SetPipelineState(m_PSOs["prac2PSO"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+#else
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
@@ -383,6 +410,7 @@ void GeoShaderApp::Draw(const GameTimer& _gt)
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+#endif
 
 	// =============================
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
@@ -456,6 +484,13 @@ void GeoShaderApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 		// 반지름은 3 ~ 15 구간을 유지한다.
 		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 150.f);
+
+
+		UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
+		for (auto e : m_RenderItemLayer[(int)RenderLayer::Practice])
+		{
+			e->NumFrameDirty = g_NumFrameResources;
+		}
 	}
 
 	m_LastMousePos.x = _x;
@@ -464,6 +499,7 @@ void GeoShaderApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 void GeoShaderApp::OnKeyboardInput(const GameTimer _gt)
 {
+
 }
 
 void GeoShaderApp::UpdateCamera(const GameTimer& _gt)
@@ -496,7 +532,39 @@ void GeoShaderApp::UpdateObjectCBs(const GameTimer& _gt)
 
 			ObjectConstants objConstants;
 			XMStoreFloat4x4(&objConstants.WorldMat, XMMatrixTranspose(worldMat));
+			XMVECTOR DetworldMat = XMMatrixDeterminant(worldMat);
+			XMMATRIX InvworldMat = XMMatrixInverse(&DetworldMat, worldMat);
+			XMStoreFloat4x4(&objConstants.InvWorldMat, InvworldMat);
 			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
+
+			XMVECTOR subVecfromEye = XMVectorSet(
+				objConstants.WorldMat._41 - m_EyePos.x,
+				objConstants.WorldMat._42 - m_EyePos.y, 
+				objConstants.WorldMat._43 - m_EyePos.z, 
+				0.f);
+
+			float distFromEye = XMVector3Length(subVecfromEye).m128_f32[0];
+
+			if (distFromEye < 15)
+			{
+				objConstants.Detail = 2;
+				// 등차 수열합
+				//objConstants.NumOfGeneratedVertices = (UINT)((exp2(2) + 1) * (exp2(1) +1));
+				//objConstants.IndexOffset = (UINT)((exp2(2)));
+			}
+			else if (distFromEye < 30)
+			{
+				objConstants.Detail = 1;
+				//objConstants.NumOfGeneratedVertices = 6;
+				//objConstants.IndexOffset = 2;
+			}
+			else
+			{
+				objConstants.Detail = 0;
+				//objConstants.NumOfGeneratedVertices = 3;
+				//objConstants.IndexOffset = 1;
+			}
+
 			// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
 			
 			// CB에 넣어주고
@@ -603,6 +671,7 @@ void GeoShaderApp::UpdateReflectedPassCB(const GameTimer& _gt)
 
 void GeoShaderApp::UpdateWaves(const GameTimer& _gt)
 {
+#if WAVE
 	// 파도는 매 프레임 바꿔줘서 올려야하니까
 	// dynamic vertex buffer 에 올려줘야 한다.
 
@@ -644,6 +713,7 @@ void GeoShaderApp::UpdateWaves(const GameTimer& _gt)
 	}
 	// 그리고 그걸 Buffer에 업데이트 해준다.
 	m_WavesRenderItem->Geo->VertexBufferGPU = currWaveVB->Resource();
+#endif
 }
 
 void GeoShaderApp::AnimateMaterials(const GameTimer& _gt)
@@ -856,6 +926,20 @@ void GeoShaderApp::LoadTextures()
 		treeArrayTex->UploadHeap
 	));
 
+	// 텍스쳐를 사용하지 않을 때 쓰는 친구다. (연습문제 용)
+	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
+	white1x1Tex->Name = "white1x1Tex";
+	white1x1Tex->Filename = L"../Textures/white1x1.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		white1x1Tex->Filename.c_str(),
+		white1x1Tex->Resource,
+		white1x1Tex->UploadHeap
+	));
+
+	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
+
 	m_Textures[fenceTex->Name] = std::move(fenceTex);
 	m_Textures[grassTex->Name] = std::move(grassTex);
 	m_Textures[waterTex->Name] = std::move(waterTex);
@@ -866,7 +950,7 @@ void GeoShaderApp::BuildDescriptorHeaps()
 {
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 4;
+	srvHeapDesc.NumDescriptors = 5;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
@@ -879,6 +963,7 @@ void GeoShaderApp::BuildDescriptorHeaps()
 	ID3D12Resource* waterTex = m_Textures["waterTex"].get()->Resource.Get();
 	ID3D12Resource* fenceTex = m_Textures["fenceTex"].get()->Resource.Get();
 	ID3D12Resource* treeArrayTex = m_Textures["treeArrayTex"].get()->Resource.Get();
+	ID3D12Resource* whiteTex = m_Textures["white1x1Tex"].get()->Resource.Get();
 
 	// view를 만들어주고
 	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
@@ -902,13 +987,18 @@ void GeoShaderApp::BuildDescriptorHeaps()
 
 	// Texture2DArray는 Desc가 다르다.
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
-	srcDesc.Format = treeArrayTex->GetDesc().Format;
-	srcDesc.Texture2DArray.MostDetailedMip = 0;
-	srcDesc.Texture2DArray.MipLevels = -1;
-	srcDesc.Texture2DArray.FirstArraySlice = 0;
-	srcDesc.Texture2DArray.ArraySize = treeArrayTex->GetDesc().DepthOrArraySize;
-	m_d3dDevice->CreateShaderResourceView(treeArrayTex, &srcDesc, viewHandle);
+	D3D12_SHADER_RESOURCE_VIEW_DESC arrSrcDesc = srcDesc;
+	arrSrcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+	arrSrcDesc.Format = treeArrayTex->GetDesc().Format;
+	arrSrcDesc.Texture2DArray.MostDetailedMip = 0;
+	arrSrcDesc.Texture2DArray.MipLevels = -1;
+	arrSrcDesc.Texture2DArray.FirstArraySlice = 0;
+	arrSrcDesc.Texture2DArray.ArraySize = treeArrayTex->GetDesc().DepthOrArraySize;
+	m_d3dDevice->CreateShaderResourceView(treeArrayTex, &arrSrcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = whiteTex->GetDesc().Format;
+	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
 
 }
 
@@ -1175,6 +1265,272 @@ void GeoShaderApp::BuildTreeSpritesGeometry()
 	m_Geometries["treeSpritesGeo"] = std::move(geo);
 }
 
+void GeoShaderApp::Practice1()
+{
+	// GS도 비슷하게 인트로를 정해주고 컴파일을 하면 된다.
+	m_Shaders["practice1VS"] = d3dUtil::CompileShader(L"Shaders\\practice1.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["practice1GS"] = d3dUtil::CompileShader(L"Shaders\\practice1.hlsl", nullptr, "GS", "gs_5_1");
+	m_Shaders["practice1PS"] = d3dUtil::CompileShader(L"Shaders\\practice1.hlsl", nullptr, "PS", "ps_5_1");
+
+	m_PracticeInputLayout =
+	{
+		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+	};
+
+	LoadTextures();
+	BuildRootSignature();
+	BuildDescriptorHeaps();
+
+	struct Practice1Vertex
+	{
+		XMFLOAT3 Pos;
+	};
+
+	static const int PizzaSlices = 16;
+	std::array<Practice1Vertex, 16> vertices;
+	const float sliceRadian = XM_2PI / (PizzaSlices - 1);
+
+	for (UINT i = 0; i < PizzaSlices; i++)
+	{
+		float currRad = sliceRadian * i;
+		float x = cosf(currRad);
+		float z = sinf(currRad);
+		vertices[i].Pos = XMFLOAT3(x, 0.f, z);
+	}
+
+	// 어처피 quad는 shader에서 만들어줄 것이기 때문에 주르륵 넘긴다.
+	std::array<std::uint16_t, 30> indices = { 0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15 };
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Practice1Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "practice1Geo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize, geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Practice1Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["points"] = submesh;
+
+	m_Geometries["practice1Geo"] = std::move(geo);
+
+	BuildMaterials();
+
+	std::unique_ptr<RenderItem> prac1RenderItem = std::make_unique<RenderItem>();
+	prac1RenderItem->WorldMat = MathHelper::Identity4x4();
+	prac1RenderItem->ObjCBIndex = 0;
+	prac1RenderItem->Mat = m_Materials["practiceMat"].get();
+	prac1RenderItem->Geo = m_Geometries["practice1Geo"].get();
+	prac1RenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
+	prac1RenderItem->IndexCount = prac1RenderItem->Geo->DrawArgs["points"].IndexCount;
+	prac1RenderItem->StartIndexLocation = prac1RenderItem->Geo->DrawArgs["points"].StartIndexLocation;
+	prac1RenderItem->BaseVertexLocation = prac1RenderItem->Geo->DrawArgs["points"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(prac1RenderItem.get());
+
+	m_AllRenderItems.push_back(std::move(prac1RenderItem));
+
+	BuildFrameResources();
+
+	// practice 1 전용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC prac1PSODesc;
+	ZeroMemory(&prac1PSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	prac1PSODesc.pRootSignature = m_RootSignature.Get();
+	prac1PSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice1VS"]->GetBufferPointer()),
+		m_Shaders["practice1VS"]->GetBufferSize()
+	};
+	prac1PSODesc.GS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice1GS"]->GetBufferPointer()),
+		m_Shaders["practice1GS"]->GetBufferSize()
+	};
+	prac1PSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice1PS"]->GetBufferPointer()),
+		m_Shaders["practice1PS"]->GetBufferSize()
+	};
+	prac1PSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	//prac1PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	prac1PSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	prac1PSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	prac1PSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	prac1PSODesc.SampleMask = UINT_MAX;
+	prac1PSODesc.NumRenderTargets = 1;
+	prac1PSODesc.RTVFormats[0] = m_BackBufferFormat;
+	prac1PSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
+	prac1PSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
+	prac1PSODesc.DSVFormat = m_DepthStencilFormat;
+
+	prac1PSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE; // 점으로 넘겨준다.
+	prac1PSODesc.InputLayout = { m_PracticeInputLayout.data(), (UINT)m_PracticeInputLayout.size() };
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&prac1PSODesc, IID_PPV_ARGS(&m_PSOs["prac1PSO"])));
+}
+
+void GeoShaderApp::Practice2()
+{
+	// GS도 비슷하게 인트로를 정해주고 컴파일을 하면 된다.
+	m_Shaders["practice2VS"] = d3dUtil::CompileShader(L"Shaders\\practice2.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["practice2GS"] = d3dUtil::CompileShader(L"Shaders\\practice2.hlsl", nullptr, "GS", "gs_5_1");
+	m_Shaders["practice2PS"] = d3dUtil::CompileShader(L"Shaders\\practice2.hlsl", nullptr, "PS", "ps_5_1");
+
+	m_PracticeInputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+
+	LoadTextures();
+	BuildRootSignature();
+	BuildDescriptorHeaps();
+
+	// 일단 제너레이터로 박스를 만들고
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData geoSphere = geoGen.CreateGeosphere(1.f, 0);
+	// 속성도 뽑아 먹고
+	SubmeshGeometry geoSphereSubmesh;
+	geoSphereSubmesh.IndexCount = (UINT)geoSphere.Indices32.size();
+	geoSphereSubmesh.StartIndexLocation = 0;
+	geoSphereSubmesh.BaseVertexLocation = 0;
+	// 데이터도 뽑아 먹는다.
+	std::vector<Vertex> vertices(geoSphere.Vertices.size());
+
+	for (size_t i = 0; i < geoSphere.Vertices.size(); i++)
+	{
+		vertices[i].Pos = geoSphere.Vertices[i].Position;
+		vertices[i].Normal = geoSphere.Vertices[i].Normal;
+		vertices[i].TexC = geoSphere.Vertices[i].TexC;
+	}
+
+	std::vector<std::uint16_t> indices = geoSphere.GetIndices16();
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "practice2Geo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize, geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["points"] = submesh;
+
+	m_Geometries["practice2Geo"] = std::move(geo);
+
+	BuildMaterials();
+
+	std::unique_ptr<RenderItem> prac2RenderItem = std::make_unique<RenderItem>();
+	prac2RenderItem->WorldMat = MathHelper::Identity4x4();
+	prac2RenderItem->ObjCBIndex = 0;
+	prac2RenderItem->Mat = m_Materials["practiceMat"].get();
+	prac2RenderItem->Geo = m_Geometries["practice2Geo"].get();
+	prac2RenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	prac2RenderItem->IndexCount = prac2RenderItem->Geo->DrawArgs["points"].IndexCount;
+	prac2RenderItem->StartIndexLocation = prac2RenderItem->Geo->DrawArgs["points"].StartIndexLocation;
+	prac2RenderItem->BaseVertexLocation = prac2RenderItem->Geo->DrawArgs["points"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(prac2RenderItem.get());
+
+	m_AllRenderItems.push_back(std::move(prac2RenderItem));
+
+	BuildFrameResources();
+
+	// practice 2 전용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC prac2PSODesc;
+	ZeroMemory(&prac2PSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	prac2PSODesc.pRootSignature = m_RootSignature.Get();
+	prac2PSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice2VS"]->GetBufferPointer()),
+		m_Shaders["practice2VS"]->GetBufferSize()
+	};
+	prac2PSODesc.GS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice2GS"]->GetBufferPointer()),
+		m_Shaders["practice2GS"]->GetBufferSize()
+	};
+	prac2PSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["practice2PS"]->GetBufferPointer()),
+		m_Shaders["practice2PS"]->GetBufferSize()
+	};
+	prac2PSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	prac2PSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	prac2PSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	prac2PSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	prac2PSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	prac2PSODesc.SampleMask = UINT_MAX;
+	prac2PSODesc.NumRenderTargets = 1;
+	prac2PSODesc.RTVFormats[0] = m_BackBufferFormat;
+	prac2PSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
+	prac2PSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
+	prac2PSODesc.DSVFormat = m_DepthStencilFormat;
+
+	prac2PSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	prac2PSODesc.InputLayout = { m_PracticeInputLayout.data(), (UINT)m_PracticeInputLayout.size() };
+
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&prac2PSODesc, IID_PPV_ARGS(&m_PSOs["prac2PSO"])));
+}
+
 void GeoShaderApp::BuildPSOs()
 {
 	// #1 불투명 PSO
@@ -1362,7 +1718,12 @@ void GeoShaderApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
 	UINT passCBCount = 1;
+#if !WAVE
+	waveVerCount = 0;
+#else
 	waveVerCount = m_Waves->VertexCount();
+#endif
+	
 	// 반사상 용 PassCB가 하나 추가 된다.
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1411,6 +1772,16 @@ void GeoShaderApp::BuildMaterials()
 	treeSprites->DiffuseAlbedo = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
 	treeSprites->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
 	treeSprites->Roughness = 0.125;
+
+	std::unique_ptr<Material> practiceMat = std::make_unique<Material>();
+	practiceMat->Name = "practice1Mat";
+	practiceMat->MatCBIndex = 4;
+	practiceMat->DiffuseSrvHeapIndex = 4;
+	practiceMat->DiffuseAlbedo = XMFLOAT4(5.f, 4.f, 0.7f, 1.f);
+	practiceMat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	practiceMat->Roughness = 0.125;
+
+	m_Materials["practiceMat"] = std::move(practiceMat);
 
 	m_Materials["grass"] = std::move(grass);
 	m_Materials["water"] = std::move(water);

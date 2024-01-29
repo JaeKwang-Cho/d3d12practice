@@ -10,7 +10,9 @@ using Microsoft::WRL::ComPtr;
 struct ObjectConstants 
 {
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+	UINT Detail = 0;
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
@@ -26,7 +28,7 @@ struct PassConstants {
 	XMFLOAT4X4 InvVPMat = MathHelper::Identity4x4();
 
 	XMFLOAT3 EyePosW = { 0.f, 0.f, 0.f };
-	float cbPerObjectPad1 = 0.f;
+	float cbPerPassPad1 = 0.f;
 	XMFLOAT2 RenderTargetSize = { 0.f, 0.f };
 	XMFLOAT2 InvRenderTargetSize = { 0.f, 0.f };
 
@@ -43,7 +45,7 @@ struct PassConstants {
 
 	float FogStart = 5.f;
 	float FogRange = 150.f;
-	DirectX::XMFLOAT2 cbPerObjectPad2 = { 0.f, 0.f };
+	DirectX::XMFLOAT2 cbPerPassPad2 = { 0.f, 0.f };
 
 	// 조명 정보를 넣어준다.
 	// 순서는 Directional -> Point -> Spot 순이고

@@ -84,5 +84,11 @@
     <None Include="Shaders\TreeSprite.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\practice1.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\practice2.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
