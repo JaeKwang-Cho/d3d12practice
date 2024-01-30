@@ -21,7 +21,7 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-Texture2DArray gTreeMapArray: register(t0);
+Texture2DArray gTreeMapArray : register(t0);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -113,12 +113,13 @@ struct GeoOut
     uint PrimID : SV_PrimitiveID; // 어떤 primitive인지 명시하는 맴버가 있다.
 };
 
-VertexOut VS(VertexIn vin)
+VertexOut VS(VertexIn vin, uint vertID : SV_VertexID)
 {
     VertexOut vout;
     
-    // VS에서는 아무것도 안한다.
     vout.CenterW = vin.PosW;
+    // vout.SizeW = float2(2 + vertID, 2 + vertID);
+    
     vout.SizeW = vin.SizeW;
     
     return vout;
@@ -128,7 +129,7 @@ VertexOut VS(VertexIn vin)
 [maxvertexcount(4)]
 void GS(
     point VertexOut gin[1], // 배열 크기를 1로 설정해서 점으로 입력받고
-    uint primID : SV_PrimitiveID, 
+    uint primID : SV_PrimitiveID,
     inout TriangleStream<GeoOut> triStream // 삼각형띠로 출력을 한다.
         )
 {
@@ -179,7 +180,7 @@ void GS(
 float4 PS(GeoOut pin) : SV_Target
 {
     // w 성분도 이용해서 Texture2DArray에서  Sample을 뽑아온다.
-    float3 uvw = float3(pin.TexC, pin.PrimID % 3);
+    float3 uvw = float3(pin.TexC, pin.PrimID);
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
     float4 diffuseAlbedo = gTreeMapArray.Sample(gSamAnisotropicWrap, uvw) * gDiffuseAlbedo;
     

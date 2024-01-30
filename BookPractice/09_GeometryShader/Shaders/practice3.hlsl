@@ -21,7 +21,7 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-Texture2DArray gTreeMapArray: register(t0);
+Texture2D gDiffuseMap : register(t0);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -41,6 +41,8 @@ cbuffer cbPerObject : register(b0)
     float4x4 gWorld;
     float4x4 gInvWorldTranspose;
     float4x4 gTexTransform;
+    uint gDetail;
+    float3 cbPerObjectPad1;
 };
 
 // 프레임 마다 달라지는 Constant Buffer
@@ -54,7 +56,7 @@ cbuffer cbPass : register(b1)
     float4x4 gInvViewProj;
     
     float3 gEyePosW;
-    float cbPerObjectPad1;
+    float cbPerPassPad1;
     
     float2 gRenderTargetSize;
     float2 gInvRenderTargetSize;
@@ -71,7 +73,7 @@ cbuffer cbPass : register(b1)
     
     float gFogStart;
     float gFogRange;
-    float2 cbPerObjectPad2;
+    float2 cbPerPassPad2;
 
     // Indices [0, NUM_DIR_LIGHTS) are directional lights;
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
@@ -89,18 +91,20 @@ cbuffer cbMaterial : register(b2)
 };
 
  
-// 입력으로 Pos, Size를 받는다.
+// 입력으로 Pos를 받는다.
 struct VertexIn
 {
-    float3 PosW : POSITION;
-    float2 SizeW : SIZE;
+    float3 PosL : POSITION;
+    float3 NormalL : NORMAL;
+    float2 TexC : TEXCOORD;
 };
 
-// 출력으로는 world Centher pos와 world size를 뱉는다.
+// 출력으로는 world Centher pos를 뱉는다.
 struct VertexOut
 {
-    float3 CenterW : POSITION;
-    float2 SizeW : SIZE;
+    float3 PosL : POSITION;
+    float3 NormalL : NORMAL;
+    float2 TexC : TEXCOORD;
 };
 
 // 지오메트리 쉐이더의 출력 구조체이다.
@@ -110,7 +114,7 @@ struct GeoOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
-    uint PrimID : SV_PrimitiveID; // 어떤 primitive인지 명시하는 맴버가 있다.
+    uint PrimID : SV_PrimitiveID;
 };
 
 VertexOut VS(VertexIn vin)
@@ -118,70 +122,53 @@ VertexOut VS(VertexIn vin)
     VertexOut vout;
     
     // VS에서는 아무것도 안한다.
-    vout.CenterW = vin.PosW;
-    vout.SizeW = vin.SizeW;
+    vout = vin;
     
     return vout;
 }
 
-// Geometry Shader로 생성 되는 점의 최대 개수를 4개로 설정한다.
-[maxvertexcount(4)]
+
+// Geometry Shader로 생성 되는 점의 최대 개수를 3개로 설정한다.
+[maxvertexcount(3)]
 void GS(
-    point VertexOut gin[1], // 배열 크기를 1로 설정해서 점으로 입력받고
-    uint primID : SV_PrimitiveID, 
+    triangle VertexOut gin[3], // 배열 크기를 3로 설정해서 삼각형으로 입력받고
+    uint primID : SV_PrimitiveID,
     inout TriangleStream<GeoOut> triStream // 삼각형띠로 출력을 한다.
         )
 {
-    // Sprite 를 카메라에 y-axis align 시킬 수 있도록 계산을 한다.
-
-    // local 좌표축을 구한다.
-    float3 up = float3(0.0f, 1.0f, 0.0f);
-    float3 look = gEyePosW - gin[0].CenterW;
-    look.y = 0.0f; // xz-평면에 사영시킨다.
-    look = normalize(look);
-    float3 right = cross(up, look);
-
-	// 생성된 Vertex를 world로 표현한다.
-    float halfWidth = 0.5f * gin[0].SizeW.x;
-    float halfHeight = 0.5f * gin[0].SizeW.y;
-	
-    // local 좌표 축과, 크기 값을 이용해서, Billboard각 꼭짓점의  world 위치를 구한다.
-    float4 v[4];
-    v[0] = float4(gin[0].CenterW + halfWidth * right - halfHeight * up, 1.0f);
-    v[1] = float4(gin[0].CenterW + halfWidth * right + halfHeight * up, 1.0f);
-    v[2] = float4(gin[0].CenterW - halfWidth * right - halfHeight * up, 1.0f);
-    v[3] = float4(gin[0].CenterW - halfWidth * right + halfHeight * up, 1.0f);
-
-	// 이제 triangle strip으로서 출력해준다.
-	
-    float2 texC[4] =
+    GeoOut gout[3];
+    // 월드 공간
+    gout[0].PosW = mul(float4(gin[0].PosL, 1.f), gWorld).xyz;
+    gout[1].PosW = mul(float4(gin[1].PosL, 1.f), gWorld).xyz;
+    gout[2].PosW = mul(float4(gin[2].PosL, 1.f), gWorld).xyz;
+    
+    float3 vec0 = gout[1].PosW - gout[0].PosW;
+    float3 vec1 = gout[2].PosW - gout[0].PosW;
+    float3 triNorm = cross(vec0, vec1);
+    triNorm = normalize(triNorm);
+    
+    [unroll]
+    for (int i = 0; i < 3; i++)
     {
-        float2(0.0f, 1.0f),
-		float2(0.0f, 0.0f),
-		float2(1.0f, 1.0f),
-		float2(1.0f, 0.0f)
-    };
-	
-    GeoOut gout;
-	[unroll]
-    for (int i = 0; i < 4; ++i)
+        gout[i].PosW += triNorm * gTotalTime * primID * 0.1f;
+        gout[i].NormalW = mul(gin[i].NormalL, (float3x3) gInvWorldTranspose);
+        // 호모 공간
+        gout[i].PosH = mul(float4(gout[i].PosW, 1.f), gViewProj);
+        // 택스쳐
+        gout[i].TexC = gin[i].TexC;
+
+    }
+    [unroll]
+    for (int j = 0; j < 3; j++)
     {
-        gout.PosH = mul(v[i], gViewProj);
-        gout.PosW = v[i].xyz;
-        gout.NormalW = look;
-        gout.TexC = texC[i];
-        gout.PrimID = primID;
-		
-        triStream.Append(gout);
+        triStream.Append(gout[j]);
     }
 }
 
 float4 PS(GeoOut pin) : SV_Target
 {
-    // w 성분도 이용해서 Texture2DArray에서  Sample을 뽑아온다.
-    float3 uvw = float3(pin.TexC, pin.PrimID % 3);
     // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
-    float4 diffuseAlbedo = gTreeMapArray.Sample(gSamAnisotropicWrap, uvw) * gDiffuseAlbedo;
+    float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.

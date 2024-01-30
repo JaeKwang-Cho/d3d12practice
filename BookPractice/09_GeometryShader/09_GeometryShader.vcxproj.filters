@@ -90,5 +90,17 @@
     <None Include="Shaders\practice2.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\practice3.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\practice4.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\practice5.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\practice6N7.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
