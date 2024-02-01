@@ -26,6 +26,7 @@
     <ClCompile Include="..\Common\GameTimer.cpp" />
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
+    <ClCompile Include="BlurFilter.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Waves.cpp" />
@@ -40,6 +41,7 @@
     <ClInclude Include="..\Common\GeometryGenerator.h" />
     <ClInclude Include="..\Common\MathHelper.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
+    <ClInclude Include="BlurFilter.h" />
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="Waves.h" />
@@ -49,6 +51,11 @@
       <FileType>Document</FileType>
     </None>
     <None Include="Shaders\LightingUtil.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Blur.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>
