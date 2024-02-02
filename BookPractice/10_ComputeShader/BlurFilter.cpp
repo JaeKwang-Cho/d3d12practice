@@ -60,37 +60,37 @@ void BlurFilter::Execute(ID3D12GraphicsCommandList* _cmdList, ID3D12RootSignatur
 	_cmdList->SetComputeRoot32BitConstants(0, (UINT)weights.size(), weights.data(), 1);
 
 	// 일단 blur 하기 전에 그려진 백 버퍼 텍스쳐를 가져올 준비를 하고
-	D3D12_RESOURCE_BARRIER inputBarrier_RT_COPYS = CD3DX12_RESOURCE_BARRIER::Transition(
+	D3D12_RESOURCE_BARRIER inputBarrier_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(
 		_input, 
 		D3D12_RESOURCE_STATE_RENDER_TARGET,
 		D3D12_RESOURCE_STATE_COPY_SOURCE
 	);
-	_cmdList->ResourceBarrier(1, &inputBarrier_RT_COPYS);
+	_cmdList->ResourceBarrier(1, &inputBarrier_RT_SRC);
 	// 백 버퍼 텍스쳐를 맴버 텍스쳐에 붙여넣을 준비를 하고
-	D3D12_RESOURCE_BARRIER blur0Barrier_COMM_COPYD = CD3DX12_RESOURCE_BARRIER::Transition(
+	D3D12_RESOURCE_BARRIER blur0Barrier_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_BlurMap0.Get(),
 		D3D12_RESOURCE_STATE_COMMON,
 		D3D12_RESOURCE_STATE_COPY_DEST
 	);
-	_cmdList->ResourceBarrier(1, &blur0Barrier_COMM_COPYD);
+	_cmdList->ResourceBarrier(1, &blur0Barrier_COMM_DEST);
 	// #1 첫번째 텍스쳐에 복사한다.
 	_cmdList->CopyResource(m_BlurMap0.Get(), _input);
 
 	// 이제 srv와 uav를 이용해서 blur를 먹일 차례다
 	// D3D12_RESOURCE_STATE_GENERIC_READ 는 업로드 힙에 사용할 수 있는 상태로 일단 만드는 것이다.
-	D3D12_RESOURCE_BARRIER blur0Barrier_COPYD_GREAD = CD3DX12_RESOURCE_BARRIER::Transition(
+	D3D12_RESOURCE_BARRIER blur0Barrier_DEST_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_BlurMap0.Get(),
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_GENERIC_READ
 	);
-	_cmdList->ResourceBarrier(1, &blur0Barrier_COPYD_GREAD);
+	_cmdList->ResourceBarrier(1, &blur0Barrier_DEST_READ);
 	// CS의 출력으로 사용이 가능하도록 UAV 상태로 만든 것이다.
-	D3D12_RESOURCE_BARRIER blur1Barrier_COMM_UODER= CD3DX12_RESOURCE_BARRIER::Transition(
+	D3D12_RESOURCE_BARRIER blur1Barrier_COMM_UA= CD3DX12_RESOURCE_BARRIER::Transition(
 		m_BlurMap1.Get(),
 		D3D12_RESOURCE_STATE_COMMON,
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 	);
-	_cmdList->ResourceBarrier(1, &blur1Barrier_COMM_UODER);
+	_cmdList->ResourceBarrier(1, &blur1Barrier_COMM_UA);
 
 	// 블러 여러번 먹일 수록 더 흐려질 것이다.
 	for (int i = 0; i < _blurCount; i++)
@@ -110,19 +110,19 @@ void BlurFilter::Execute(ID3D12GraphicsCommandList* _cmdList, ID3D12RootSignatur
 		_cmdList->Dispatch(numGroupsX, m_Height, 1);
 
 		// 입력을 하던 첫번째 텍스쳐의 업로드 힙(GENERIC_READ)에서 사용하던 상태(srv)를, UNORDERED_ACCESS 상태(uav)로 바꾼다.
-		D3D12_RESOURCE_BARRIER blur0_GREAD_UODER = CD3DX12_RESOURCE_BARRIER::Transition(
+		D3D12_RESOURCE_BARRIER blur0_READ_UA = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_BlurMap0.Get(),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 		);
-		_cmdList->ResourceBarrier(1, &blur0_GREAD_UODER);
+		_cmdList->ResourceBarrier(1, &blur0_READ_UA);
 		// CS의 출력(uav)을 받던 두번째 택스쳐를 이제 업로드 힙(GENERIC_READ) 상태로(srv)로 바꾼다.
-		D3D12_RESOURCE_BARRIER blur1_UODER_GREAD = CD3DX12_RESOURCE_BARRIER::Transition(
+		D3D12_RESOURCE_BARRIER blur1_UA_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_BlurMap1.Get(),
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			D3D12_RESOURCE_STATE_GENERIC_READ
 		);
-		_cmdList->ResourceBarrier(1, &blur1_UODER_GREAD);
+		_cmdList->ResourceBarrier(1, &blur1_UA_READ);
 
 		// #3 이제 수직 블러를 먹인다.
 		// PSO를 세팅하고
@@ -130,27 +130,35 @@ void BlurFilter::Execute(ID3D12GraphicsCommandList* _cmdList, ID3D12RootSignatur
 		// Srv와 Uav를 세팅한다.
 		// 1번 srv에서 가져와서 CS를 거쳐서 0번 uav에 출력하는 것이다.
 		_cmdList->SetComputeRootDescriptorTable(1, m_Blur1GpuSrv);
-		_cmdList->SetComputeRootDescriptorTable(1, m_Blur0GpuUav);
+		_cmdList->SetComputeRootDescriptorTable(2, m_Blur0GpuUav);
 
 		// 수직 블러를 먹일 스레드 개수를 정해서, 스레드 그룹을 생성한다.
 		UINT numGroupY = (UINT)ceilf(m_Height / 256.f);
 		_cmdList->Dispatch(m_Width, numGroupY, 1);
 
 		// 이제 0번 텍스쳐를 Uav 상태에서, GENERIC_READ 상태로 바꾼다.
-		D3D12_RESOURCE_BARRIER blur0_UODER_GREAD = CD3DX12_RESOURCE_BARRIER::Transition(
+		D3D12_RESOURCE_BARRIER blur0_UA_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_BlurMap0.Get(),
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 			D3D12_RESOURCE_STATE_GENERIC_READ
 		);
-		_cmdList->ResourceBarrier(1, &blur0_UODER_GREAD);
+		_cmdList->ResourceBarrier(1, &blur0_UA_READ);
 		// 블러를 여러번 먹일 때를 대비해서, 1번은 미리 UAV로 만들어 놓ㄴ는다.
-		D3D12_RESOURCE_BARRIER blur1_GREAD_UODER = CD3DX12_RESOURCE_BARRIER::Transition(
+		D3D12_RESOURCE_BARRIER blur1_READ_UA = CD3DX12_RESOURCE_BARRIER::Transition(
 			m_BlurMap1.Get(),
 			D3D12_RESOURCE_STATE_GENERIC_READ,
 			D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 		);
-		_cmdList->ResourceBarrier(1, &blur1_GREAD_UODER);
+		_cmdList->ResourceBarrier(1, &blur1_READ_UA);
 	}
+
+	// 다음 루프를 위해 COMMON 상태로 만든다.
+	D3D12_RESOURCE_BARRIER blur1_UA_COMM = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_BlurMap1.Get(),
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		D3D12_RESOURCE_STATE_COMMON
+	);
+	_cmdList->ResourceBarrier(1, &blur1_UA_COMM);
 }
 
 std::vector<float> BlurFilter::CalcGaussWeights(float _sigma)
@@ -208,7 +216,7 @@ void BlurFilter::BuildDescriptors()
 	m_d3dDevice->CreateShaderResourceView(m_BlurMap0.Get(), &srvDesc, m_Blur0CpuSrv);
 	m_d3dDevice->CreateUnorderedAccessView(m_BlurMap0.Get(), nullptr, &uavDesc, m_Blur0CpuUav);
 	// 카운터 오프셋의 의미는... 힙을 점프하는데 쓰이는 리소스를..뜻하는 걸까?
-	m_d3dDevice->CreateShaderResourceView(m_BlurMap1.Get(), &srvDesc, m_Blur0CpuSrv);
+	m_d3dDevice->CreateShaderResourceView(m_BlurMap1.Get(), &srvDesc, m_Blur1CpuSrv);
 	m_d3dDevice->CreateUnorderedAccessView(m_BlurMap1.Get(), nullptr, &uavDesc, m_Blur1CpuUav);
 }
 
@@ -240,6 +248,7 @@ void BlurFilter::BuildResources()
 		nullptr,
 		IID_PPV_ARGS(&m_BlurMap0)
 	));
+	m_BlurMap0->SetName(L"m_BlurMap0");
 
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 		&heapDefaultProps,
@@ -249,4 +258,5 @@ void BlurFilter::BuildResources()
 		nullptr,
 		IID_PPV_ARGS(&m_BlurMap1)
 	));
+	m_BlurMap1->SetName(L"m_BlurMap1");
 }

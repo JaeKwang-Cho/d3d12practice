@@ -10,6 +10,7 @@
 #include <DirectXColors.h>
 #include "Waves.h"
 #include "FileReader.h"
+#include "BlurFilter.h"
 #include <iomanip>
 
 #define WAVE (1)
@@ -87,7 +88,6 @@ private:
 	virtual void OnMouseUp(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseMove(WPARAM _btnState, int _x, int _y) override;
 
-	// 키보드에서 조명의 위치를 바꿀 것이다.
 	void OnKeyboardInput(const GameTimer _gt);
 
 	// ==== Update ====
@@ -95,17 +95,12 @@ private:
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
-	void UpdateReflectedPassCB(const GameTimer& _gt);
-
 	void UpdateWaves(const GameTimer& _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 
-	// 연습 문제
-	void BuildSamplerHeap();
-
 	// ==== Init ====
 	void BuildRootSignature();
-	// 다시 Descriptor Heap을 사용한다. 테이플을 사용하기 때문에
+	void BuildPostProcessRootSignature();
 	void BuildShadersAndInputLayout();
 
 	// Wave 용이다.
@@ -121,7 +116,6 @@ private:
 	void BuildFrameResources();
 
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
-	void DrawComplexityQuad(ID3D12GraphicsCommandList* _cmdList, int _StencilRef);
 
 	// 지형의 높이와 노멀을 계산하는 함수다.
 	float GetHillsHeight(float _x, float _z) const;
@@ -135,9 +129,11 @@ private:
 	FrameResource* m_CurrFrameResource = nullptr;
 	int m_CurrFrameResourceIndex = 0;
 
-	// 이제 Descriptor Heap 도 사용한다.
+	// Compute Shader용 PSO가 따로 필요하다.
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
-	ComPtr<ID3D12DescriptorHeap> m_SrvDescriptorHeap = nullptr;
+	ComPtr<ID3D12RootSignature> m_PostProcessRootSignature = nullptr;
+	// Uav도 함께 쓰는 heap이므로 이름을 바꿔준다.
+	ComPtr<ID3D12DescriptorHeap> m_CbvSrvUavDescriptorHeap = nullptr;
 
 	// 테스트용 Sampler Heap이다.
 	ComPtr<ID3D12DescriptorHeap> m_SamplerHeap = nullptr;
@@ -164,10 +160,11 @@ private:
 	std::vector<RenderItem*> m_RenderItemLayer[(int)RenderLayer::Count];
 	// 파도의 높이를 업데이트 해주는 클래스 인스턴스다.
 	std::unique_ptr<Waves> m_Waves;
+	// 후처리로 Blur를 먹여주는 클래스 인스턴스이다.
+	std::unique_ptr<BlurFilter> m_BlurFilter;
 
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
-	PassConstants m_ReflectedPassCB;
 
 	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
@@ -230,12 +227,19 @@ bool ComputeShaderApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
-	// 얘는 좀 복잡해서 따로 클래스로 만들었다.
+	// 이렇게 복잡한 기능은 따로 빼는 연습을 좀 해야할것 같다.
 	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
+	m_BlurFilter = std::make_unique<BlurFilter>(
+		m_d3dDevice.Get(),
+		m_ClientWidth,
+		m_ClientHeight,
+		DXGI_FORMAT_R8G8B8A8_UNORM
+	);
 
 	BuildShadersAndInputLayout();
 	LoadTextures();
 	BuildRootSignature();
+	BuildPostProcessRootSignature();
 	BuildDescriptorHeaps();
 	// 지형을 만들고
 	BuildLandGeometry();
@@ -270,6 +274,12 @@ void ComputeShaderApp::OnResize()
 	// Projection Mat은 윈도우 종횡비에 영향을 받는다.
 	XMMATRIX projMat = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, GetAspectRatio(), 0.01f, 1000.f);
 	XMStoreFloat4x4(&m_ProjMat, projMat);
+
+	// Blur를 먹일때 클래스 내부 텍스쳐 크기가 일치해야 한다.
+	if (m_BlurFilter != nullptr)
+	{
+		m_BlurFilter->OnResize(m_ClientWidth, m_ClientHeight);
+	}
 }
 
 void ComputeShaderApp::Update(const GameTimer& _gt)
@@ -359,7 +369,7 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	// ==== 그리기 ======
 	// 
 	// 현재 PSO에 View Heap을 세팅해준다.
-	ID3D12DescriptorHeap* descriptorHeaps[] = { m_SrvDescriptorHeap.Get() };
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
@@ -379,11 +389,39 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
 
+	// ================ 후처리 =================
+	m_BlurFilter->Execute(
+		m_CommandList.Get(),
+		m_PostProcessRootSignature.Get(),
+		m_PSOs["horzBlur"].Get(),
+		m_PSOs["vertBlur"].Get(),
+		GetCurrentBackBuffer(),
+		4
+	);
+
+	// 0번 텍스쳐를 백버퍼에 복사할 준비를 한다.
+	D3D12_RESOURCE_BARRIER backBuff_SRC_DEST = CD3DX12_RESOURCE_BARRIER::Transition(
+		GetCurrentBackBuffer(),
+		D3D12_RESOURCE_STATE_COPY_SOURCE,
+		D3D12_RESOURCE_STATE_COPY_DEST
+	);
+	m_CommandList->ResourceBarrier(1, &backBuff_SRC_DEST);
+	m_CommandList->CopyResource(GetCurrentBackBuffer(), m_BlurFilter->Output());
+
+	// 다음 루프를 위해서 COMMON 상태로 바꾼다.
+	D3D12_RESOURCE_BARRIER blur0_READ_COMM = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_BlurFilter->Output(),
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		D3D12_RESOURCE_STATE_COMMON
+	);
+	m_CommandList->ResourceBarrier(1, &blur0_READ_COMM);
 	// =============================
+	
+
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
 		GetCurrentBackBuffer(),
-		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
 
@@ -580,27 +618,6 @@ void ComputeShaderApp::UpdateMainPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void ComputeShaderApp::UpdateReflectedPassCB(const GameTimer& _gt)
-{
-	// 거울에 그려줄 친구가 쓰는 PassCB이다.
-	m_ReflectedPassCB = m_MainPassCB;
-
-	XMVECTOR mirrorPlane = XMVectorSet(0.f, 0.f, 1.f, 0.f);
-	XMMATRIX R = XMMatrixReflect(mirrorPlane);
-
-	// 반사된 조명을 구한다.
-	for (int i = 0; i < 3; i++)
-	{
-		// Directional Light이기 때문에 direction만 바꿔준다.
-		XMVECTOR lightDir = XMLoadFloat3(&m_MainPassCB.Lights[i].Direction);
-		XMVECTOR reflectedLightDir = XMVector3TransformNormal(lightDir, R);
-		XMStoreFloat3(&m_ReflectedPassCB.Lights[i].Direction, reflectedLightDir);
-	}
-	// 얘는 Buffer index 1번에 저장한다.
-	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
-	currPassCB->CopyData(1, m_ReflectedPassCB);
-}
-
 void ComputeShaderApp::UpdateWaves(const GameTimer& _gt)
 {
 #if WAVE
@@ -676,50 +693,6 @@ void ComputeShaderApp::AnimateMaterials(const GameTimer& _gt)
 #endif
 }
 
-void ComputeShaderApp::BuildSamplerHeap()
-{
-	// 샘플러 뷰 힙을 만든다.
-	D3D12_DESCRIPTOR_HEAP_DESC descHeapSampler = {};
-	descHeapSampler.NumDescriptors = 3;
-	descHeapSampler.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
-	descHeapSampler.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&descHeapSampler, IID_PPV_ARGS(&m_SamplerHeap)));
-
-	// 샘플러를 만든다.
-	UINT samplerIncrement = m_d3dDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
-	CD3DX12_CPU_DESCRIPTOR_HANDLE samHeapHandle(m_SamplerHeap->GetCPUDescriptorHandleForHeapStart());
-	
-	// s10
-	D3D12_SAMPLER_DESC pointWrapLOD3 = {};
-	pointWrapLOD3.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-	pointWrapLOD3.AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	pointWrapLOD3.AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	pointWrapLOD3.AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
-	pointWrapLOD3.MinLOD = 3;
-	pointWrapLOD3.MaxLOD = D3D12_FLOAT32_MAX;
-	pointWrapLOD3.MipLODBias = 0.f;
-	pointWrapLOD3.MaxAnisotropy = 8;
-	pointWrapLOD3.ComparisonFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	m_d3dDevice->CreateSampler(&pointWrapLOD3, samHeapHandle);
-
-	// s11
-	D3D12_SAMPLER_DESC linearWrapLOD3 = pointWrapLOD3;
-	linearWrapLOD3.Filter = D3D12_FILTER_MIN_MAG_MIP_LINEAR;
-
-	samHeapHandle.Offset(1, samplerIncrement);
-	m_d3dDevice->CreateSampler(&linearWrapLOD3, samHeapHandle);
-
-	// s12
-	D3D12_SAMPLER_DESC anisotropicWrapLOD3 = linearWrapLOD3;
-	anisotropicWrapLOD3.Filter = D3D12_FILTER_ANISOTROPIC;
-
-	samHeapHandle.Offset(1, samplerIncrement);
-	m_d3dDevice->CreateSampler(&anisotropicWrapLOD3, samHeapHandle);
-
-}
-
 void ComputeShaderApp::BuildRootSignature()
 {	
 	// Table도 쓸거고, Constant도 쓸거다.
@@ -773,6 +746,53 @@ void ComputeShaderApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
+void ComputeShaderApp::BuildPostProcessRootSignature()
+{
+	// 후처리 용 Root Signature이다.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
+
+	CD3DX12_DESCRIPTOR_RANGE srvTable;
+	srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable;
+	uavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	// 자주 사용하는 애가 앞에 있으면 성능향상이 된다고 한다.
+	slotRootParameter[0].InitAsConstants(12, 0);
+	slotRootParameter[1].InitAsDescriptorTable(1, &srvTable);
+	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		3,
+		slotRootParameter,
+		0,
+		nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+	);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(
+		&rootSigDesc,
+		D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(),
+		errorBlob.GetAddressOf()
+	);
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(m_d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(m_PostProcessRootSignature.GetAddressOf())
+	));
+}
+
 void ComputeShaderApp::BuildShadersAndInputLayout()
 {
 	const D3D_SHADER_MACRO defines[] =
@@ -792,6 +812,9 @@ void ComputeShaderApp::BuildShadersAndInputLayout()
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", defines, "PS", "ps_5_1");
 	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
+	// CS도 비슷하게 컴파일 해 놓는다.
+	m_Shaders["horzBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "HorzBlurCS", "cs_5_1");
+	m_Shaders["vertBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "VertBlurCS", "cs_5_1");
 
 	m_InputLayout =
 	{
@@ -857,15 +880,18 @@ void ComputeShaderApp::LoadTextures()
 
 void ComputeShaderApp::BuildDescriptorHeaps()
 {
+ 	const int textureDescriptorCount = 4;
+	const int blurDescriptorCount = 4;
+
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 4;
+	srvHeapDesc.NumDescriptors = textureDescriptorCount + blurDescriptorCount;
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SrvDescriptorHeap)));
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_CbvSrvUavDescriptorHeap)));
 
 	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_SrvDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 텍스쳐 리소스를 얻은 다음
 	ID3D12Resource* grassTex = m_Textures["grassTex"].get()->Resource.Get();
@@ -896,6 +922,21 @@ void ComputeShaderApp::BuildDescriptorHeaps()
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = whiteTex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
+
+	// BlurFilter 클래스에서 view를 생성한다.
+	m_BlurFilter->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(
+		m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+		textureDescriptorCount,
+		m_CbvSrvUavDescriptorSize
+	),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(
+		m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(),
+		textureDescriptorCount,
+		m_CbvSrvUavDescriptorSize
+	),
+		m_CbvSrvUavDescriptorSize
+	);
 
 }
 
@@ -1094,7 +1135,7 @@ void ComputeShaderApp::BuildWavesGeometryBuffers()
 
 void ComputeShaderApp::BuildPSOs()
 {
-	// #1 불투명 PSO
+	// 불투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
 
 	ZeroMemory(&opaquePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
@@ -1124,7 +1165,7 @@ void ComputeShaderApp::BuildPSOs()
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
-	// #2 반투명 PSO
+	// 반투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
 	// 이전 예제랑 똑같이 해준다.
 	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
@@ -1143,100 +1184,7 @@ void ComputeShaderApp::BuildPSOs()
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
 
-	// #3 Stencil 마킹하는 PSO
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC markMirrorsPSODesc = opaquePSODesc;
-
-	// 얘는 RenderTargetWriteMask를 0으로 해줘서 RGBA를 기록하지 않는다.
-	CD3DX12_BLEND_DESC mirrorBlendState(D3D12_DEFAULT);
-	mirrorBlendState.RenderTarget[0].RenderTargetWriteMask = 0; 
-	// Stencil의 Depth도 기록하지 않는다.
-	D3D12_DEPTH_STENCIL_DESC mirrorDSS;
-	mirrorDSS.DepthEnable = true; // depth 판정을 하는데
-	mirrorDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO; // 기록은 하지 않는다.
-	mirrorDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	mirrorDSS.StencilEnable = true; // 스텐실 테스트를 켜주고
-	mirrorDSS.StencilReadMask = 0xff;
-	mirrorDSS.StencilWriteMask = 0xff; // 마스크도 켜준다
-
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&markMirrorsPSODesc, IID_PPV_ARGS(&m_PSOs["markStencilMirrors"])));
-
-	// 깊이 판정을 실패 했을 때는, 스텐실을 쓰지 않는다.
-	// 그 이외 조건이 없으니, 스탠실을 항상 작성한다.
-	mirrorDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_REPLACE;
-	mirrorDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	mirrorDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	mirrorDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	// PSO desc에 넣어주고 만든다.
-	markMirrorsPSODesc.BlendState = mirrorBlendState;
-	markMirrorsPSODesc.DepthStencilState = mirrorDSS;
-
-	// #4 스텐실 값을 판정해서 반사된 skull을 그릴 PSO
-
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawReflectionsPSODesc = opaquePSODesc;
-
-	D3D12_DEPTH_STENCIL_DESC reflectionsDSS;
-	reflectionsDSS.DepthEnable = true;
-	reflectionsDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	reflectionsDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	reflectionsDSS.StencilEnable = true;
-	reflectionsDSS.StencilReadMask = 0xff;
-	reflectionsDSS.StencilWriteMask = 0xff;
-
-	// 스텐실 판정이 1값일 때, 통과한 것으로 본다.
-	reflectionsDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
-	//reflectionsDDS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	reflectionsDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	reflectionsDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	// 라스터라이저 상태를 바꿔줘서, 반대로 삼각형이 그려지게 만들어서 앞뒤를 바꾼다.
-	drawReflectionsPSODesc.DepthStencilState = reflectionsDSS;
-	drawReflectionsPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
-	drawReflectionsPSODesc.RasterizerState.FrontCounterClockwise = true;
-
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawReflectionsPSODesc, IID_PPV_ARGS(&m_PSOs["drawStencilReflections"])));
-
-	// #5 그림자를 그리는 PSO
-	// 얘는 Transparent한 친구다. 아예 시커멓지는 않지 않은가?
-
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowPSODesc = transparentPSODesc;
-	D3D12_DEPTH_STENCIL_DESC shadowDSS;
-
-	shadowDSS.DepthEnable = true;
-	shadowDSS.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL;
-	shadowDSS.DepthFunc = D3D12_COMPARISON_FUNC_LESS;
-	shadowDSS.StencilEnable = true;
-	shadowDSS.StencilReadMask = 0xff;
-	shadowDSS.StencilWriteMask = 0xff;
-
-	// Stencil 판정을 통과하면 1을 늘려서, 그림자 여러번 그리는 걸 방지한다.
-	shadowDSS.FrontFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.FrontFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_INCR;
-	//shadowDSS.FrontFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.FrontFace.StencilFunc = D3D12_COMPARISON_FUNC_EQUAL;
-
-	shadowDSS.BackFace.StencilFailOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.BackFace.StencilDepthFailOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.BackFace.StencilPassOp = D3D12_STENCIL_OP_KEEP;
-	shadowDSS.BackFace.StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS;
-
-	shadowPSODesc.DepthStencilState = shadowDSS;
-
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowPSODesc, IID_PPV_ARGS(&m_PSOs["shadow"])));
-
-	// #6 알파 자르기 PSO
+	// 알파 자르기 PSO
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
 	alphaTestPSODesc.PS =
@@ -1247,6 +1195,29 @@ void ComputeShaderApp::BuildPSOs()
 	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
+	
+	// 후처리용 horizental blur PSO
+	// Compute PSO를 사용한다.
+	D3D12_COMPUTE_PIPELINE_STATE_DESC horzBlurPSO = {};
+	horzBlurPSO.pRootSignature = m_PostProcessRootSignature.Get();
+	horzBlurPSO.CS = {
+		reinterpret_cast<BYTE*>(m_Shaders["horzBlurCS"]->GetBufferPointer()),
+		m_Shaders["horzBlurCS"]->GetBufferSize()
+	};
+	horzBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&horzBlurPSO, IID_PPV_ARGS(&m_PSOs["horzBlur"])
+	));
+
+	// 후처리용 vertical blur PSO
+	D3D12_COMPUTE_PIPELINE_STATE_DESC vertBlurPSO = {};
+	vertBlurPSO.pRootSignature = m_PostProcessRootSignature.Get();
+	vertBlurPSO.CS = {
+		reinterpret_cast<BYTE*>(m_Shaders["vertBlurCS"]->GetBufferPointer()),
+		m_Shaders["vertBlurCS"]->GetBufferSize()
+	};
+	vertBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vertBlurPSO, IID_PPV_ARGS(&m_PSOs["vertBlur"])
+	));
 }
 
 void ComputeShaderApp::BuildFrameResources()
@@ -1393,7 +1364,7 @@ void ComputeShaderApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, cons
 		{
 			_cmdList->IASetPrimitiveTopology(_Type);
 		}
-		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_SrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 		tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
 
 		// Object Constant와
@@ -1410,42 +1381,6 @@ void ComputeShaderApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, cons
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
-}
-
-void ComputeShaderApp::DrawComplexityQuad(ID3D12GraphicsCommandList* _cmdList, int _StencilRef)
-{
-	// 이제 Material도 물체마다 업데이트 해줘야 한다.
-	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
-	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
-
-	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
-	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
-
-	RenderItem* ri = m_RenderItemLayer[(int)RenderLayer::Practice][_StencilRef];
-
-	// 일단 Vertex, Index를 IA에 세팅해주고
-	D3D12_VERTEX_BUFFER_VIEW VBView = ri->Geo->VertexBufferView();
-	_cmdList->IASetVertexBuffers(0, 1, &VBView);
-	D3D12_INDEX_BUFFER_VIEW IBView = ri->Geo->IndexBufferView();
-	_cmdList->IASetIndexBuffer(&IBView);
-	_cmdList->IASetPrimitiveTopology(ri->PrimitiveType);
-
-	CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_SrvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
-
-	// Object Constant와
-	D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
-	objCBAddress += ri->ObjCBIndex * objCBByteSize;
-	// Material Constant를
-	D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress();
-	matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
-
-	// PSO에 연결해준다.
-	_cmdList->SetGraphicsRootDescriptorTable(0, tex);
-	_cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
-	_cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
-
-	_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 }
 
 float ComputeShaderApp::GetHillsHeight(float _x, float _z) const

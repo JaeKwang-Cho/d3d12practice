@@ -18,8 +18,7 @@ public:
 	BlurFilter(const BlurFilter& _rhs) = delete;
 	BlurFilter& operator=(const BlurFilter& _rhs) = delete;
 
-	// 이상하게 소멸자를 없앤다.
-	~BlurFilter() = delete;
+	~BlurFilter() = default;
 
 	// 블러먹인 결과(0번째 맴버 텍스쳐)를 내보내는 함수
 	ID3D12Resource* Output();
