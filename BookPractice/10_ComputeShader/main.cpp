@@ -14,6 +14,7 @@
 #include <iomanip>
 
 #define WAVE (1)
+#define PRAC_VECTOR (1)
 
 const int g_NumFrameResources = 3;
 
@@ -124,6 +125,9 @@ private:
 	// 정적 샘플러 구조체를 미리 만드는 함수이다.
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> GetStaticSamplers();
 
+	// VectorPractice ( prac 1 ~ 3)
+	void VectorPractice();
+
 private:
 	std::vector<std::unique_ptr<FrameResource>> m_FrameResources;
 	FrameResource* m_CurrFrameResource = nullptr;
@@ -222,6 +226,10 @@ bool ComputeShaderApp::Initialize()
 {
 	if (!D3DApp::Initialize())
 		return false;
+
+#if PRAC_VECTOR
+	VectorPractice();
+#endif
 
 	// 각종 렌더링 자원이나 속성들을 정의할때도
 	// Command List를 사용한다.
@@ -1497,4 +1505,177 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ComputeShaderApp::GetStaticSam
 		pointWrap, pointClamp, pointMirror, pointBorder,
 		linearWrap, linearClamp, linearMirror, linearBorder,
 		anisotropicWrap, anisotropicClamp };
+}
+
+void ComputeShaderApp::VectorPractice()
+{
+	// 구조체
+	struct VectorPrac_t
+	{
+		XMFLOAT3 vec;
+		VectorPrac_t(float _x, float _y, float _z)
+			:vec(_x, _y, _z)
+		{}
+	};
+
+	// 변수
+	Microsoft::WRL::ComPtr<ID3DBlob> vectorPracticeCS;
+	ComPtr<ID3D12RootSignature> vectorPracticeRootSignature;
+	ComPtr<ID3D12PipelineState> vectorPracticePSO;
+
+	ComPtr<ID3D12Resource> vectorInputDataBuffer;
+	ComPtr<ID3D12Resource> vectorOutputDataBuffer;
+
+	// 데이터
+	std::array<VectorPrac_t, 64> vectors = {
+		VectorPrac_t(2.623f, 3.384f, 6.022f),
+		VectorPrac_t(2.610f, 3.472f, 6.630f),
+		VectorPrac_t(2.353f, 3.090f, 6.551f),
+		VectorPrac_t(2.407f, 3.187f, 6.025f),
+		VectorPrac_t(2.056f, 3.502f, 6.381f),
+		VectorPrac_t(2.224f, 3.964f, 4.705f),
+		VectorPrac_t(2.589f, 3.426f, 4.703f),
+		VectorPrac_t(2.757f, 3.193f, 4.935f),
+		VectorPrac_t(2.502f, 3.244f, 4.231f),
+		VectorPrac_t(2.376f, 3.143f, 4.474f),
+		VectorPrac_t(5.128f, 3.570f, 4.188f),
+		VectorPrac_t(5.292f, 3.855f, 4.475f),
+		VectorPrac_t(5.219f, 3.330f, 4.373f),
+		VectorPrac_t(5.253f, 3.494f, 4.990f),
+		VectorPrac_t(5.177f, 3.124f, 4.672f),
+		VectorPrac_t(5.243f, 3.399f, 4.464f),
+		VectorPrac_t(5.374f, 3.153f, 4.291f),
+		VectorPrac_t(5.509f, 3.742f, 4.253f),
+		VectorPrac_t(5.493f, 3.316f, 4.134f),
+		VectorPrac_t(5.608f, 3.916f, 4.185f),
+		VectorPrac_t(5.469f, 3.514f, 4.680f),
+		VectorPrac_t(5.182f, 3.804f, 4.320f),
+		VectorPrac_t(5.636f, 3.361f, 4.402f),
+		VectorPrac_t(5.843f, 3.425f, 4.164f),
+		VectorPrac_t(5.520f, 3.292f, 4.334f),
+		VectorPrac_t(5.798f, 3.824f, 4.337f),
+		VectorPrac_t(5.208f, 3.587f, 4.402f),
+		VectorPrac_t(5.568f, 3.710f, 4.102f),
+		VectorPrac_t(5.619f, 3.663f, 4.585f),
+		VectorPrac_t(5.169f, 3.485f, 4.480f),
+		VectorPrac_t(5.620f, 3.535f, 4.114f),
+		VectorPrac_t(5.538f, 3.191f, 4.609f),
+		VectorPrac_t(5.452f, 3.347f, 4.318f),
+		VectorPrac_t(5.341f, 3.208f, 4.388f),
+		VectorPrac_t(5.555f, 3.148f, 4.273f),
+		VectorPrac_t(2.401f, 3.549f, 4.215f),
+		VectorPrac_t(2.428f, 3.697f, 4.074f),
+		VectorPrac_t(2.114f, 7.556f, 4.111f),
+		VectorPrac_t(2.122f, 7.247f, 4.484f),
+		VectorPrac_t(2.428f, 7.335f, 4.543f),
+		VectorPrac_t(2.442f, 7.224f, 4.457f),
+		VectorPrac_t(2.548f, 7.712f, 4.078f),
+		VectorPrac_t(2.260f, 7.321f, 4.186f),
+		VectorPrac_t(2.411f, 7.366f, 4.337f),
+		VectorPrac_t(2.153f, 7.370f, 4.153f),
+		VectorPrac_t(2.370f, 7.539f, 4.138f),
+		VectorPrac_t(2.167f, 7.312f, 4.155f),
+		VectorPrac_t(2.318f, 7.204f, 4.238f),
+		VectorPrac_t(2.264f, 3.203f, 4.382f),
+		VectorPrac_t(2.105f, 3.326f, 4.266f),
+		VectorPrac_t(2.260f, 3.103f, 4.123f),
+		VectorPrac_t(2.349f, 3.270f, 4.319f),
+		VectorPrac_t(2.267f, 3.305f, 8.101f),
+		VectorPrac_t(2.166f, 3.095f, 8.320f),
+		VectorPrac_t(2.155f, 3.108f, 8.108f),
+		VectorPrac_t(2.084f, 3.202f, 8.076f),
+		VectorPrac_t(2.305f, 3.106f, 8.204f),
+		VectorPrac_t(2.081f, 3.184f, 8.083f),
+		VectorPrac_t(2.148f, 3.299f, 8.114f),
+		VectorPrac_t(2.098f, 3.109f, 8.090f),
+		VectorPrac_t(2.198f, 3.062f, 8.066f),
+		VectorPrac_t(2.201f, 3.150f, 9.014f),
+		VectorPrac_t(2.091f, 3.155f, 9.067f),
+		VectorPrac_t(2.029f, 3.143f, 9.069f)
+	};
+	UINT64 byteSize = vectors.size() * sizeof(VectorPrac_t);
+
+	// 입력 Srv
+	d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vectors.data(),
+		byteSize,
+		vectorInputDataBuffer
+	);
+	// 출력 Uav
+	D3D12_HEAP_PROPERTIES heapDefaultProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_RESOURCE_DESC vectorOutputResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(
+		byteSize,
+		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
+	);
+
+	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
+		&heapDefaultProps,
+		D3D12_HEAP_FLAG_NONE,
+		&vectorOutputResourceDesc,
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+		nullptr,
+		IID_PPV_ARGS(&vectorOutputDataBuffer)
+	));
+
+	// 쉐이더 컴파일
+	vectorPracticeCS = d3dUtil::CompileShader(L"Shaders\\VectorPractice.hlsl", nullptr, "VectorPractice", "cs_5_1");
+
+	// 루트 시그니처
+	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
+
+	slotRootParameter[0].InitAsShaderResourceView(0);
+	slotRootParameter[0].InitAsUnorderedAccessView(1);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		2,
+		slotRootParameter,
+		0,
+		nullptr,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+	);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(
+		&rootSigDesc,
+		D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(),
+		errorBlob.GetAddressOf()
+	);
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(m_d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(vectorPracticeRootSignature.GetAddressOf())
+	));
+
+	// PSO 생성
+	D3D12_COMPUTE_PIPELINE_STATE_DESC vectorPracticePSODesc = {};
+	vectorPracticePSODesc.pRootSignature = vectorPracticeRootSignature.Get();
+	vectorPracticePSODesc.CS = {
+		reinterpret_cast<BYTE*>(vectorPracticeCS->GetBufferPointer()),
+		vectorPracticeCS->GetBufferSize()
+	};
+	vectorPracticePSODesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vectorPracticePSODesc, IID_PPV_ARGS(&vectorPracticePSO)
+	));
+
+	// PSO 세팅
+	m_CommandList->SetPipelineState(vectorPracticePSO.Get());
+
+	// Srv, Uav 세팅
+	m_CommandList->SetComputeRootConstantBufferView(0, vectorInputDataBuffer->GetGPUVirtualAddress());
+	m_CommandList->SetComputeRootConstantBufferView(1, vectorOutputDataBuffer->GetGPUVirtualAddress());
+
+	// 수직 블러를 먹일 스레드 개수를 정해서, 스레드 그룹을 생성한다.
+	m_CommandList->Dispatch(1, 1, 1);
 }
