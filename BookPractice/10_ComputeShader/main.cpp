@@ -1216,8 +1216,7 @@ void ComputeShaderApp::BuildPSOs()
 		m_Shaders["horzBlurCS"]->GetBufferSize()
 	};
 	horzBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&horzBlurPSO, IID_PPV_ARGS(&m_PSOs["horzBlur"])
-	));
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&horzBlurPSO, IID_PPV_ARGS(&m_PSOs["horzBlur"])));
 
 	// 후처리용 vertical blur PSO
 	D3D12_COMPUTE_PIPELINE_STATE_DESC vertBlurPSO = {};
@@ -1227,8 +1226,7 @@ void ComputeShaderApp::BuildPSOs()
 		m_Shaders["vertBlurCS"]->GetBufferSize()
 	};
 	vertBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vertBlurPSO, IID_PPV_ARGS(&m_PSOs["vertBlur"])
-	));
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vertBlurPSO, IID_PPV_ARGS(&m_PSOs["vertBlur"])));
 }
 
 void ComputeShaderApp::BuildFrameResources()
@@ -1701,8 +1699,7 @@ void ComputeShaderApp::VectorPractice()
 		vectorPracticeCS->GetBufferSize()
 	};
 	vectorPracticePSODesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vectorPracticePSODesc, IID_PPV_ARGS(&vectorPracticePSO)
-	));
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vectorPracticePSODesc, IID_PPV_ARGS(&vectorPracticePSO)));
 	
 	// PSO 세팅
 	m_CommandList->SetPipelineState(vectorPracticePSO.Get());
@@ -1792,12 +1789,11 @@ void ComputeShaderApp::VectorPractice_ConsumeAppend()
 
 	ComPtr<ID3D12Resource> vectorInputDataBuffer;
 	ComPtr<ID3D12Resource> vectorInputDataBuffer_Upload;
-	ComPtr<ID3D12Resource> vectorInputDataBuffer_UA;
 
 	ComPtr<ID3D12Resource> vectorOutputDataBuffer;
 	ComPtr<ID3D12Resource> vectorReadDataBuffer;
 
-	ComPtr<ID3D12DescriptorHeap> vectorCbvSrvUavDescriptorHeap;
+	//ComPtr<ID3D12DescriptorHeap> vectorCbvSrvUavDescriptorHeap;
 
 	VectorLen_t* vectorResults = nullptr;
 	VectorPrac_t* vectorTest = nullptr;
@@ -1871,117 +1867,73 @@ void ComputeShaderApp::VectorPractice_ConsumeAppend()
 	};
 	UINT64 byteSize = vectors.size() * sizeof(VectorPrac_t);
 
-	// 복사용 버퍼 만들고
-	vectorInputDataBuffer = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		vectors.data(),
-		byteSize,
-		vectorInputDataBuffer_Upload
-	);
-	vectorInputDataBuffer->SetName(L"vectorInput");
-
 	D3D12_HEAP_PROPERTIES heapDefaultProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	D3D12_RESOURCE_DESC vectorUaResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(
-		byteSize,
-		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-	);
+	D3D12_RESOURCE_DESC vectorUaResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize,D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	D3D12_HEAP_PROPERTIES heapReadbackProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
+	D3D12_RESOURCE_DESC vectorResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
 
-	// 입력 UA 버퍼
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 		&heapDefaultProps,
 		D3D12_HEAP_FLAG_NONE,
 		&vectorUaResourceDesc,
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 		nullptr,
-		IID_PPV_ARGS(&vectorInputDataBuffer_UA)
-	));
+		IID_PPV_ARGS(&vectorInputDataBuffer)));
 
-	D3D12_RESOURCE_BARRIER inUaVector_UA_DEST = CD3DX12_RESOURCE_BARRIER::Transition(
-		vectorInputDataBuffer_UA.Get(),
+	D3D12_HEAP_PROPERTIES heapUploadProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
+		&heapUploadProps,
+		D3D12_HEAP_FLAG_NONE,
+		&vectorResourceDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(vectorInputDataBuffer_Upload.GetAddressOf())));
+
+	D3D12_SUBRESOURCE_DATA subResourceData = {};
+	subResourceData.pData = vectors.data();
+	subResourceData.RowPitch = byteSize;
+	subResourceData.SlicePitch = byteSize;
+
+	D3D12_RESOURCE_BARRIER inVector_UA_DEST = CD3DX12_RESOURCE_BARRIER::Transition(
+		vectorInputDataBuffer.Get(),
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 		D3D12_RESOURCE_STATE_COPY_DEST
 	);
-	m_CommandList->ResourceBarrier(1, &inUaVector_UA_DEST);
+	m_CommandList->ResourceBarrier(1, &inVector_UA_DEST);
 
-	m_CommandList->CopyResource(vectorInputDataBuffer_UA.Get(), vectorInputDataBuffer.Get());
+	UpdateSubresources(m_CommandList.Get(), vectorInputDataBuffer.Get(), vectorInputDataBuffer_Upload.Get(), 0, 0, 1, &subResourceData);
 
-	D3D12_RESOURCE_BARRIER inUaVector_DEST_UA = CD3DX12_RESOURCE_BARRIER::Transition(
-		vectorInputDataBuffer_UA.Get(),
+	D3D12_RESOURCE_BARRIER inVector_DEST_UA = CD3DX12_RESOURCE_BARRIER::Transition(
+		vectorInputDataBuffer.Get(),
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 	);
-	m_CommandList->ResourceBarrier(1, &inUaVector_DEST_UA);
 
-	// 출력 Ua 버퍼
-	byteSize = vectors.size() * sizeof(VectorLen_t);
-
-	vectorUaResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(
-		byteSize,
-		D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS
-	);
-
+	// Create the buffer that will be a UAV.
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 		&heapDefaultProps,
 		D3D12_HEAP_FLAG_NONE,
 		&vectorUaResourceDesc,
 		D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
 		nullptr,
-		IID_PPV_ARGS(&vectorOutputDataBuffer)
-	));
-	vectorOutputDataBuffer->SetName(L"vectorOutput");
-
-	D3D12_HEAP_PROPERTIES heapReadbackProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
-	D3D12_RESOURCE_DESC vectorReadResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(byteSize);
+		IID_PPV_ARGS(&vectorOutputDataBuffer)));
 
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 		&heapReadbackProps,
 		D3D12_HEAP_FLAG_NONE,
-		&vectorReadResourceDesc,
+		&vectorResourceDesc,
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		nullptr,
 		IID_PPV_ARGS(&vectorReadDataBuffer)));
-
-	vectorReadDataBuffer->SetName(L"vectorReadback");
-
 	// 쉐이더 컴파일
 	vectorPracticeCS = d3dUtil::CompileShader(L"Shaders\\VectorPractice_ConsumeAppend.hlsl",
 											  nullptr, "VectorPractice", "cs_5_1");
-	// Descriptor Heap 만들기
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 2;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&vectorCbvSrvUavDescriptorHeap)));
-
-	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(vectorCbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
-
-	// Uav를 만들어주는데 뭐 어떡하라는거냐... counter Resource는 또 뭐고 ㅅㅂ
-	D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
-	uavDesc.Format = DXGI_FORMAT_R32_TYPELESS;
-	uavDesc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-	uavDesc.Buffer.FirstElement = 0;
-	uavDesc.Buffer.NumElements = 64;
-	uavDesc.Buffer.CounterOffsetInBytes = 0;
-	uavDesc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
-
-	m_d3dDevice->CreateUnorderedAccessView(vectorInputDataBuffer_UA.Get(), nullptr, &uavDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	m_d3dDevice->CreateUnorderedAccessView(vectorOutputDataBuffer.Get(), nullptr, &uavDesc, viewHandle);
 
 	// 루트 시그니처
 	CD3DX12_ROOT_PARAMETER slotRootParameter[2];
 
-	CD3DX12_DESCRIPTOR_RANGE inUavTable;
-	inUavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
-
-	CD3DX12_DESCRIPTOR_RANGE outUavTable;
-	outUavTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
-
-	slotRootParameter[0].InitAsDescriptorTable(1, &inUavTable);
-	slotRootParameter[1].InitAsDescriptorTable(1, &outUavTable);
+	slotRootParameter[0].InitAsUnorderedAccessView(0);
+	slotRootParameter[1].InitAsUnorderedAccessView(1);
 
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
 		2,
@@ -2021,8 +1973,8 @@ void ComputeShaderApp::VectorPractice_ConsumeAppend()
 		vectorPracticeCS->GetBufferSize()
 	};
 	vectorPracticePSODesc.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vectorPracticePSODesc, IID_PPV_ARGS(&vectorPracticePSO)
-	));
+
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vectorPracticePSODesc, IID_PPV_ARGS(&vectorPracticePSO)));
 
 	// PSO 세팅
 	m_CommandList->SetPipelineState(vectorPracticePSO.Get());
@@ -2031,15 +1983,18 @@ void ComputeShaderApp::VectorPractice_ConsumeAppend()
 	m_CommandList->SetComputeRootSignature(vectorPracticeRootSignature.Get());
 
 	// Descriptor Heap 세팅
-	ID3D12DescriptorHeap* descriptorHeaps[] = { vectorCbvSrvUavDescriptorHeap.Get() };
-	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+	//ID3D12DescriptorHeap* descriptorHeaps[] = { vectorCbvSrvUavDescriptorHeap.Get() };
+	//m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 
 	// Uav 세팅
-	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuInputHandle(vectorCbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	//CD3DX12_GPU_DESCRIPTOR_HANDLE gpuInputHandle(vectorCbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
-	m_CommandList->SetComputeRootDescriptorTable(0, gpuInputHandle);
-	gpuInputHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	m_CommandList->SetComputeRootDescriptorTable(1, gpuInputHandle);
+	//m_CommandList->SetComputeRootDescriptorTable(0, gpuInputHandle);
+	//gpuInputHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	//m_CommandList->SetComputeRootDescriptorTable(1, gpuInputHandle);
+
+	m_CommandList->SetComputeRootUnorderedAccessView(0, vectorInputDataBuffer->GetGPUVirtualAddress());
+	m_CommandList->SetComputeRootUnorderedAccessView(1, vectorOutputDataBuffer->GetGPUVirtualAddress());
 
 	// 스레드 그룹 생성
 	m_CommandList->Dispatch(1, 1, 1);
@@ -2054,12 +2009,12 @@ void ComputeShaderApp::VectorPractice_ConsumeAppend()
 
 	m_CommandList->CopyResource(vectorReadDataBuffer.Get(), vectorOutputDataBuffer.Get());
 
-	D3D12_RESOURCE_BARRIER outVectorBarrier_SRC_COMM = CD3DX12_RESOURCE_BARRIER::Transition(
+	D3D12_RESOURCE_BARRIER outVectorBarrier_SRC_UA = CD3DX12_RESOURCE_BARRIER::Transition(
 		vectorOutputDataBuffer.Get(),
 		D3D12_RESOURCE_STATE_COPY_SOURCE,
-		D3D12_RESOURCE_STATE_COMMON
+		D3D12_RESOURCE_STATE_UNORDERED_ACCESS
 	);
-	m_CommandList->ResourceBarrier(1, &outVectorBarrier_SRC_COMM);
+	m_CommandList->ResourceBarrier(1, &outVectorBarrier_SRC_UA);
 
 	// Command Queue 등록
 	ThrowIfFailed(m_CommandList->Close());
