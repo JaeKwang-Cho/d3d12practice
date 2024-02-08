@@ -66,14 +66,14 @@ void HorzBlurCS(int3 groupThreadID : SV_GroupThreadID, int3 dispatchThreadID : S
     // 오른쪽이다.
     if (groupThreadID.x >= N - gBlurRadius)
     {
-        int x = min(dispatchThreadID.x + gBlurRadius, gInput.Length.x - 1);
+        int x = min(dispatchThreadID.x + gBlurRadius, inputXLen - 1);
         // 그러면 해당 텍스쳐 구역, 맨 오른쪽에 있는 픽셀값으로 넣어버린다.
         gCache[groupThreadID.x + 2 * gBlurRadius] = gInput[int2(x, dispatchThreadID.y)];
     }
     
     // 나머지는 그냥 자기꺼 넣는다.
     uint2 inputXYLen = { inputXLen, inputYLen };
-    gCache[groupThreadID.x + gBlurRadius] = gInput[min(dispatchThreadID.xy, gInput.Length.xy - 1)];
+    gCache[groupThreadID.x + gBlurRadius] = gInput[min(dispatchThreadID.xy, inputXYLen - 1)];
     
     // 모든 스레드가 공유메모리를 채우기까지 기다리고,
     GroupMemoryBarrierWithGroupSync();
@@ -123,14 +123,14 @@ void VertBlurCS(int3 groupThreadID : SV_GroupThreadID, int3 dispatchThreadID : S
     // 아래쪽이다.
     if (groupThreadID.y >= N - gBlurRadius)
     {
-        int y = min(dispatchThreadID.y + gBlurRadius, gInput.Length.y - 1);
+        int y = min(dispatchThreadID.y + gBlurRadius, inputYLen - 1);
         // 그러면 해당 텍스쳐 구역, 맨 아래쪽에 있는 픽셀값으로 넣어버린다.
         gCache[groupThreadID.y + 2 * gBlurRadius] = gInput[int2(dispatchThreadID.x, y)];
     }
     
     // 나머지는 그냥 자기꺼 넣는다.
     uint2 inputXYLen = { inputXLen, inputYLen };
-    gCache[groupThreadID.y + gBlurRadius] = gInput[min(dispatchThreadID.xy, gInput.Length.xy - 1)];
+    gCache[groupThreadID.y + gBlurRadius] = gInput[min(dispatchThreadID.xy, inputXYLen - 1)];
     
     // 모든 스레드가 공유메모리를 채우기까지 기다리고,
     GroupMemoryBarrierWithGroupSync();

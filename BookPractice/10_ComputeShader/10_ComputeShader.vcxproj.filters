@@ -86,10 +86,11 @@
     <None Include="Shaders\LightingUtil.hlsl">
       <Filter>Shader</Filter>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Shaders\VectorPractice.hlsl">
+    <None Include="Shaders\VectorPractice.hlsl">
       <Filter>Shader</Filter>
-    </FxCompile>
+    </None>
+    <None Include="Shaders\VectorPractice_ConsumeAppend.hlsl">
+      <Filter>Shader</Filter>
+    </None>
   </ItemGroup>
 </Project>
