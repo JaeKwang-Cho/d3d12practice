@@ -42,6 +42,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="BlurFilter.cpp" />
+    <ClCompile Include="Waves_CS.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h">
@@ -75,6 +76,7 @@
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="BlurFilter.h" />
+    <ClInclude Include="Waves_CS.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\10_ComputeShader.hlsl">
@@ -90,6 +92,9 @@
       <Filter>Shader</Filter>
     </None>
     <None Include="Shaders\VectorPractice_ConsumeAppend.hlsl">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="Shaders\waves.hlsl">
       <Filter>Shader</Filter>
     </None>
   </ItemGroup>

@@ -30,6 +30,7 @@
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Waves.cpp" />
+    <ClCompile Include="Waves_CS.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h" />
@@ -45,6 +46,7 @@
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="Waves.h" />
+    <ClInclude Include="Waves_CS.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\10_ComputeShader.hlsl">
@@ -66,6 +68,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\VectorPractice_ConsumeAppend.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\waves.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

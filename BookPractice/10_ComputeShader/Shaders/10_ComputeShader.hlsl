@@ -22,6 +22,7 @@
 #include "LightingUtil.hlsl"
 
 Texture2D gDiffuseMap : register(t0);
+Texture2D gDisplacementMap : register(t1);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -41,6 +42,11 @@ cbuffer cbPerObject : register(b0)
     float4x4 gWorld;
     float4x4 gInvWorldTranspose;
     float4x4 gTexTransform;
+#ifdef DISPLACEMENT_MAP
+    float2 gDisplacementMapTexelSize;
+    float gGridSpatialStep;
+    float cbPerObjectPad1;
+#endif       
 };
 
 // 프레임 마다 달라지는 Constant Buffer
@@ -54,7 +60,7 @@ cbuffer cbPass : register(b1)
     float4x4 gInvViewProj;
     
     float3 gEyePosW;
-    float cbPerObjectPad1;
+    float cbPerPassad1;
     
     float2 gRenderTargetSize;
     float2 gInvRenderTargetSize;
@@ -71,7 +77,7 @@ cbuffer cbPass : register(b1)
     
     float gFogStart;
     float gFogRange;
-    float2 cbPerObjectPad2;
+    float2 cbPerPassPad2;
 
     // Indices [0, NUM_DIR_LIGHTS) are directional lights;
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
@@ -109,6 +115,20 @@ struct VertexOut
 VertexOut VS(VertexIn vin)
 {
     VertexOut vout = (VertexOut) 0.0f;
+    
+#ifdef DISPLACEMENT_MAP
+    // 월드로 변형하지 않은 값을 가져와서 작업한다. (당연한 소리)
+    vin.PosL.y += gDisplacementMap.SampleLevel(gSamLinearWrap, vin.TexC, 1.f).r;
+    
+    // 노멀은 유한 차분으로 구한다.
+    float du = gDisplacementMapTexelSize.x;
+    float dv = gDisplacementMapTexelSize.y;
+    float l = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC - float2(du, 0.f), 0.f).r;
+    float r = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC + float2(du, 0.f), 0.f).r;
+    float t = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC - float2(0.f, dv), 0.f).r;
+    float b = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC + float2(0.f, dv), 0.f).r;
+    vin.NormalL = normalize(float3(-r + l, 2.f * gGridSpatialStep, b - t));
+#endif
 	
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
@@ -116,7 +136,8 @@ VertexOut VS(VertexIn vin)
 
     // Uniform Scaling 이라고 가정하고 계산한다.
     // (그렇지 않으면, 역전치 행렬을 사용해야 한다.)
-    vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
+    //vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
+    vout.NormalW = mul(vin.NormalL, (float3x3) gInvWorldTranspose);
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
 
@@ -164,9 +185,9 @@ float4 PS(VertexOut pin) : SV_Target
     
 #ifdef FOG
     // 카메라에서 거리가 멀 수록
-    float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+    //float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
     // fog의 색으로 채워진다.
-    litColor = lerp(litColor, gFogColor, fogAmount);
+    //litColor = lerp(litColor, gFogColor, fogAmount);
 #endif
 
     // diffuse albedo에서 alpha값을 가져온다.

@@ -43,12 +43,14 @@ Waves::Waves(int _numRows, int _numCols, float _dx, float _dt, float _speed, flo
 	float halfWidth = (_numRows - 1) * _dx * 0.5f;
 	float halfDepth = (_numCols - 1) * _dx * 0.5f;
 	
+	float z;
+	float x;
 	for (int i = 0; i < _numRows; i++)
 	{
-		float z = halfDepth - i * _dx;
+		z = halfDepth - i * _dx;
 		for (int j = 0; j < _numCols; j++)
 		{
-			float x = - halfWidth + j * _dx;
+			x = - halfWidth + j * _dx;
 
 			m_PreSolution[i * _numCols + j] = XMFLOAT3(x, 0.f, z);
 			m_CurrSolution[i * _numCols + j] = XMFLOAT3(x, 0.f, z);
@@ -56,7 +58,7 @@ Waves::Waves(int _numRows, int _numCols, float _dx, float _dt, float _speed, flo
 			m_TangentX[i * _numCols + j] = XMFLOAT3(1.f, 0.f, 0.f);
 		}
 	}
-	int i = 0;
+	int k = 0;
 }
 
 Waves::~Waves()

@@ -9,12 +9,15 @@
 #include "FrameResource.h"
 #include <DirectXColors.h>
 #include "Waves.h"
+#include "Waves_CS.h"
+
 #include "FileReader.h"
 #include "BlurFilter.h"
 #include <iomanip>
 
-#define WAVE (1)
-#define PRAC_VECTOR (1)
+#define WAVE (1 && !WAVE_CS)
+#define BLUR (0)
+#define PRAC_VECTOR (0)
 
 const int g_NumFrameResources = 3;
 
@@ -29,6 +32,11 @@ struct RenderItem
 
 	// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+
+#if WAVE_CS
+	XMFLOAT2 DisplacementMapTexelSize = { 1.f, 1.f };
+	float GridSpatialStep = 1.f;
+#endif 
 
 	// 물체의 상태가 변해서 CB를 업데이트 해야 할 때
 	// Dirty flag를 켜서 새로 업데이트를 한다. (디자인 패턴 관련)
@@ -99,6 +107,11 @@ private:
 	void UpdateWaves(const GameTimer& _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 
+	// Gpu Wave Practice
+	void UpdateWavesGPU(const GameTimer& _gt);
+	void BuildWavesCSRootSignature();
+	void BuildWavesCSGeometry();
+
 	// ==== Init ====
 	void BuildRootSignature();
 	void BuildPostProcessRootSignature();
@@ -137,6 +150,9 @@ private:
 	// Compute Shader용 PSO가 따로 필요하다.
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
 	ComPtr<ID3D12RootSignature> m_PostProcessRootSignature = nullptr;
+	// GPU Wave practice
+	ComPtr<ID3D12RootSignature> m_WaveCSRootSignature = nullptr;
+
 	// Uav도 함께 쓰는 heap이므로 이름을 바꿔준다.
 	ComPtr<ID3D12DescriptorHeap> m_CbvSrvUavDescriptorHeap = nullptr;
 
@@ -163,8 +179,10 @@ private:
 
 	// 이건 나중에 공부한다.
 	std::vector<RenderItem*> m_RenderItemLayer[(int)RenderLayer::Count];
-	// 파도의 높이를 업데이트 해주는 클래스 인스턴스다.
+	// 파도 vertex 정보를 업데이트 해주는 클래스 인스턴스다.
 	std::unique_ptr<Waves> m_Waves;
+	// 얘는 GPU로 파도 업데이트를 해주는 친구이다.
+	std::unique_ptr<Waves_CS> m_WavesCS;
 	// 후처리로 Blur를 먹여주는 클래스 인스턴스이다.
 	std::unique_ptr<BlurFilter> m_BlurFilter;
 
@@ -177,7 +195,7 @@ private:
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
-#if !WAVE
+#if !WAVE && !WAVE_CS
 	float m_Radius = 10.f;
 #else
 	float m_Radius = 50.f;
@@ -231,7 +249,7 @@ bool ComputeShaderApp::Initialize()
 
 #if PRAC_VECTOR
 	//VectorPractice();
-	VectorPractice_ConsumeAppend();
+	//VectorPractice_ConsumeAppend();
 #endif
 
 	// 각종 렌더링 자원이나 속성들을 정의할때도
@@ -239,23 +257,42 @@ bool ComputeShaderApp::Initialize()
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
 	// 이렇게 복잡한 기능은 따로 빼는 연습을 좀 해야할것 같다.
-	m_Waves = std::make_unique<Waves>(128, 128, 1.f, 0.03f, 4.f, 0.2f);
+#if WAVE_CS
+	m_WavesCS = std::make_unique<Waves_CS>(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		256, 256, 0.25f, 0.03f, 2.f, 0.2f
+	);
+#else
+	m_Waves = std::make_unique<Waves>(512, 512, 0.25f, 0.03f, 2.f, 0.2f);
+#endif
+
+#if BLUR
 	m_BlurFilter = std::make_unique<BlurFilter>(
 		m_d3dDevice.Get(),
 		m_ClientWidth,
 		m_ClientHeight,
 		DXGI_FORMAT_R8G8B8A8_UNORM
 	);
+#endif
 
 	BuildShadersAndInputLayout();
 	LoadTextures();
 	BuildRootSignature();
+#if WAVE_CS
+	BuildWavesCSRootSignature();
+#else
 	BuildPostProcessRootSignature();
+#endif
 	BuildDescriptorHeaps();
 	// 지형을 만들고
 	BuildLandGeometry();
 	// 그 버퍼를 만들고
+#if WAVE_CS
+	BuildWavesCSGeometry();
+#else
 	BuildWavesGeometryBuffers();
+#endif
 	BuildFenceGeometry();
 	// 지형과 파도에 맞는 머테리얼을 만든다.
 	BuildMaterials();
@@ -327,7 +364,9 @@ void ComputeShaderApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 
 	// 파도를 업데이트 해준다.
+#if WAVE
 	UpdateWaves(_gt);
+#endif
 }
 
 void ComputeShaderApp::Draw(const GameTimer& _gt)
@@ -342,7 +381,17 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 
 	// PSO별로 등록하면서, Allocator와 함께, Command List를 초기화 한다.
 	ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque"].Get()));
-	
+
+#if WAVE_CS
+	// 현재 PSO에 View Heap을 세팅해준다.
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
+	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+	UpdateWavesGPU(_gt);
+
+	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
+#endif
+
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
 	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
@@ -378,16 +427,22 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 	// ==== 그리기 ======
-	// 
+#if WAVE
 	// 현재 PSO에 View Heap을 세팅해준다.
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+#endif
+	
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
 	// 현재 Frame Constant Buffer를 세팅해준다..
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
+
+#if WAVE_CS
+	m_CommandList->SetGraphicsRootDescriptorTable(4, m_WavesCS->GetDisplacementMap());
+#endif
 
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
@@ -400,7 +455,20 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
 
+#if WAVE_CS
+	// 이제 반투명한 애들을 출력해준다.
+	m_CommandList->SetPipelineState(m_PSOs["wavesRender"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+
+	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
+	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
+		GetCurrentBackBuffer(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_PRESENT
+	);
+#elif BLUR
 	// ================ 후처리 =================
+
 	m_BlurFilter->Execute(
 		m_CommandList.Get(),
 		m_PostProcessRootSignature.Get(),
@@ -427,7 +495,6 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	);
 	m_CommandList->ResourceBarrier(1, &blur0_READ_COMM);
 	// =============================
-	
 
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -435,9 +502,15 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
-
+#else
+	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
+		GetCurrentBackBuffer(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_PRESENT
+	);
+#endif
 	m_CommandList->ResourceBarrier(
-		1, 
+		1,
 		&bufferBarrier_PRESENT
 	);
 
@@ -499,7 +572,7 @@ void ComputeShaderApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 		m_Radius += dx - dy;
 
 		// 반지름은 3 ~ 15 구간을 유지한다.
-		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 150.f);
+		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 1500.f);
 	}
 
 	m_LastMousePos.x = _x;
@@ -544,9 +617,13 @@ void ComputeShaderApp::UpdateObjectCBs(const GameTimer& _gt)
 			XMVECTOR DetworldMat = XMMatrixDeterminant(worldMat);
 			XMMATRIX InvworldMat = XMMatrixInverse(&DetworldMat, worldMat);
 			XMStoreFloat4x4(&objConstants.InvWorldMat, InvworldMat);
-			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
 
 			// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
+			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
+#if WAVE_CS
+			objConstants.DisplacementMapTexelSize = e->DisplacementMapTexelSize;
+			objConstants.GridSpatialStep = e->GridSpatialStep;
+#endif
 			
 			// CB에 넣어주고
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
@@ -678,7 +755,7 @@ void ComputeShaderApp::UpdateWaves(const GameTimer& _gt)
 
 void ComputeShaderApp::AnimateMaterials(const GameTimer& _gt)
 {
-#if WAVE
+#if WAVE || WAVE_CS
 	Material* waterMat = m_Materials["water"].get();
 
 	// 3행 0열에 있는걸 가져온다.
@@ -704,17 +781,149 @@ void ComputeShaderApp::AnimateMaterials(const GameTimer& _gt)
 #endif
 }
 
+void ComputeShaderApp::UpdateWavesGPU(const GameTimer& _gt)
+{
+	static float t_base = 0.f;
+	if ((m_Timer.GetTotalTime() - t_base) >= 0.25f)
+	{
+		t_base += 0.25f;
+
+		int i = MathHelper::Rand(4, m_WavesCS->GetNumRows() - 5);
+		int j = MathHelper::Rand(4, m_WavesCS->GetNumCols() - 5);
+
+		float r = MathHelper::RandF(1.f, 2.f);
+
+		m_WavesCS->Disturb(m_CommandList.Get(), m_WaveCSRootSignature.Get(), m_PSOs["wavesDisturb"].Get(), (UINT)i, (UINT)j, r);
+	}
+	m_WavesCS->Update(_gt, m_CommandList.Get(), m_WaveCSRootSignature.Get(), m_PSOs["wavesUpdate"].Get());
+}
+
+void ComputeShaderApp::BuildWavesCSRootSignature()
+{
+	// CS에서 사용할 Constant와 UAV 텍스쳐를 위한 Root Signature 이다.
+	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable0;
+	uavTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable1;
+	uavTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 1);
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable2;
+	uavTable2.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 2);
+
+	slotRootParameter[0].InitAsConstants(6, 0);
+	slotRootParameter[1].InitAsDescriptorTable(1, &uavTable0);
+	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable1);
+	slotRootParameter[3].InitAsDescriptorTable(1, &uavTable2);
+
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		4, 
+		slotRootParameter, 
+		0, nullptr, 
+		D3D12_ROOT_SIGNATURE_FLAG_NONE);
+
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(
+		&rootSigDesc,
+		D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(),
+		errorBlob.GetAddressOf()
+	);
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(m_d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(m_WaveCSRootSignature.GetAddressOf())
+	));
+}
+
+void ComputeShaderApp::BuildWavesCSGeometry()
+{
+	GeometryGenerator geoGen;
+	GeometryGenerator::MeshData grid = geoGen.CreateGrid(160.f, 160.f, m_WavesCS->GetNumRows(), m_WavesCS->GetNumCols());
+
+	std::vector<Vertex> vertices(grid.Vertices.size());
+	for (size_t i = 0; i < grid.Vertices.size(); i++)
+	{
+		vertices[i].Pos = grid.Vertices[i].Position;
+		vertices[i].Normal = grid.Vertices[i].Normal;
+		vertices[i].TexC = grid.Vertices[i].TexC;
+	}
+
+	std::vector<std::uint32_t> indices = grid.Indices32;
+
+	UINT vbByteSize = m_WavesCS->GetVertexCount() * sizeof(Vertex);
+	UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
+
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "WaterGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry submesh;
+	submesh.IndexCount = (UINT)indices.size();
+	submesh.StartIndexLocation = 0;
+	submesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["grid"] = submesh;
+
+	m_Geometries["WaterGeo"] = std::move(geo);
+}
+
 void ComputeShaderApp::BuildRootSignature()
 {	
 	// Table도 쓸거고, Constant도 쓸거다.
+#if WAVE_CS
+	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+	UINT numOfParameter = 5;
+
+	CD3DX12_DESCRIPTOR_RANGE displacementMapTable;
+	displacementMapTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+	slotRootParameter[4].InitAsDescriptorTable(1, &displacementMapTable, D3D12_SHADER_VISIBILITY_ALL);
+#else
 	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
-	UINT numOfParameter = 4; 
+	UINT numOfParameter = 4;
+#endif
 
 	// Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
 
 	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 - texture 정보
-	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_ALL);
 	// Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[1].InitAsConstantBufferView(0); // b0 - PerObject
 	slotRootParameter[2].InitAsConstantBufferView(1); // b1 - PassConstants
@@ -727,7 +936,7 @@ void ComputeShaderApp::BuildRootSignature()
 
 	// IA에서 값이 들어가도록 설정한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
-		numOfParameter, // table 1개, constant view 3개 (+ Sampler 1개)
+		numOfParameter, 
 		slotRootParameter,
 		(UINT)staticSamplers.size(), // 드디어 여길 채워넣게 되었다.
 		staticSamplers.data(), // 보아하니 구조체만 넣어주면 되는 듯 보인다.
@@ -819,13 +1028,25 @@ void ComputeShaderApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO waveDefines[] =
+	{
+		"DISPLACEMENT_MAP", "1",
+		NULL, NULL
+	};
+
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", defines, "PS", "ps_5_1");
 	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
+#if WAVE_CS
+	m_Shaders["wavesVS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", waveDefines, "VS", "vs_5_1");
+	m_Shaders["wavesUpdateCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "UpdateWavesCS", "cs_5_1");
+	m_Shaders["wavesDisturbCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "DisturbWavesCS", "cs_5_1");
+#elif BLUR
 	// CS도 비슷하게 컴파일 해 놓는다.
 	m_Shaders["horzBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "HorzBlurCS", "cs_5_1");
 	m_Shaders["vertBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "VertBlurCS", "cs_5_1");
+#endif
 
 	m_InputLayout =
 	{
@@ -896,7 +1117,11 @@ void ComputeShaderApp::BuildDescriptorHeaps()
 
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+#if WAVE_CS
+	srvHeapDesc.NumDescriptors = textureDescriptorCount + m_WavesCS->GetDescriptorCount();
+#else
 	srvHeapDesc.NumDescriptors = textureDescriptorCount + blurDescriptorCount;
+#endif
 	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_CbvSrvUavDescriptorHeap)));
@@ -934,6 +1159,15 @@ void ComputeShaderApp::BuildDescriptorHeaps()
 	srcDesc.Format = whiteTex->GetDesc().Format;
 	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
 
+#if WAVE_CS
+	m_WavesCS->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), textureDescriptorCount, m_CbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), textureDescriptorCount, m_CbvSrvUavDescriptorSize),
+		m_CbvSrvUavDescriptorSize
+	);
+#endif
+
+#if BLUR
 	// BlurFilter 클래스에서 view를 생성한다.
 	m_BlurFilter->BuildDescriptors(
 		CD3DX12_CPU_DESCRIPTOR_HANDLE(
@@ -948,7 +1182,7 @@ void ComputeShaderApp::BuildDescriptorHeaps()
 	),
 		m_CbvSrvUavDescriptorSize
 	);
-
+#endif
 }
 
 void ComputeShaderApp::BuildLandGeometry()
@@ -1081,9 +1315,9 @@ void ComputeShaderApp::BuildWavesGeometryBuffers()
 	// Wave 의 Vertex 정보는 Waves 클래스에서 만들었지만
 	// index는 아직 안 만들었다.
 	// 이제 만들어야 한다.
-	std::vector<std::uint16_t> indices(3 * m_Waves->TriangleCount());
+	std::vector<std::uint32_t> indices(3 * m_Waves->TriangleCount());
 	// 16 비트 숫자보다 크면 안된다.
-	assert(m_Waves->VertexCount() < 0x0000ffff);
+	assert(m_Waves->VertexCount() < 0x000fffff);
 
 	// 이전에 봤던 공식처럼 quad를 만든다.
 	int Row = m_Waves->RowCount();
@@ -1107,7 +1341,7 @@ void ComputeShaderApp::BuildWavesGeometryBuffers()
 
 	// 이제 버퍼를 만들어 준다.
 	UINT vbByteSize = m_Waves->VertexCount() * sizeof(Vertex);
-	UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+	UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
 
 	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
 	geo->Name = "WaterGeo";
@@ -1131,7 +1365,7 @@ void ComputeShaderApp::BuildWavesGeometryBuffers()
 	// Geometry 속성 정보를 넣어준다.
 	geo->VertexByteStride = sizeof(Vertex);
 	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
 	geo->IndexBufferByteSize = ibByteSize;
 
 	SubmeshGeometry submesh;
@@ -1206,7 +1440,37 @@ void ComputeShaderApp::BuildPSOs()
 	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
-	
+#if WAVE_CS
+	// CS 값을 받는 Wave용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC wavesRenderPSO = transparentPSODesc;
+	wavesRenderPSO.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["wavesVS"]->GetBufferPointer()),
+		m_Shaders["wavesVS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&wavesRenderPSO, IID_PPV_ARGS(&m_PSOs["wavesRender"])));
+
+	// Wave 방정식을 처리하는 CS용 PSO
+	D3D12_COMPUTE_PIPELINE_STATE_DESC waveDisturbPSO = {};
+	waveDisturbPSO.pRootSignature = m_WaveCSRootSignature.Get();
+	waveDisturbPSO.CS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["wavesDisturbCS"]->GetBufferPointer()),
+		m_Shaders["wavesDisturbCS"]->GetBufferSize()
+	};
+	waveDisturbPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&waveDisturbPSO, IID_PPV_ARGS(&m_PSOs["wavesDisturb"])));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC waveUpdatePSO = waveDisturbPSO;
+	waveUpdatePSO.CS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["wavesUpdateCS"]->GetBufferPointer()),
+		m_Shaders["wavesUpdateCS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&waveUpdatePSO, IID_PPV_ARGS(&m_PSOs["wavesUpdate"])));
+
+#elif BLUR
+
 	// 후처리용 horizental blur PSO
 	// Compute PSO를 사용한다.
 	D3D12_COMPUTE_PIPELINE_STATE_DESC horzBlurPSO = {};
@@ -1227,16 +1491,19 @@ void ComputeShaderApp::BuildPSOs()
 	};
 	vertBlurPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
 	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&vertBlurPSO, IID_PPV_ARGS(&m_PSOs["vertBlur"])));
+#endif
 }
 
 void ComputeShaderApp::BuildFrameResources()
 {
 	UINT waveVerCount = 0;
 	UINT passCBCount = 1;
-#if !WAVE
-	waveVerCount = 0;
-#else
+#if WAVE_CS
+	waveVerCount = m_WavesCS->GetVertexCount();
+#elif WAVE
 	waveVerCount = m_Waves->VertexCount();
+#else
+	waveVerCount = 0;
 #endif
 	
 	// 반사상 용 PassCB가 하나 추가 된다.
@@ -1301,6 +1568,11 @@ void ComputeShaderApp::BuildRenderItems()
 	std::unique_ptr<RenderItem> wavesRenderItem = std::make_unique<RenderItem>();
 	wavesRenderItem->WorldMat = MathHelper::Identity4x4();
 	XMStoreFloat4x4(&wavesRenderItem->TexTransform, XMMatrixScaling(5.0f, 5.0f, 1.0f));
+#if WAVE_CS
+	wavesRenderItem->DisplacementMapTexelSize.x = 1.0f / m_WavesCS->GetNumCols();
+	wavesRenderItem->DisplacementMapTexelSize.y = 1.0f / m_WavesCS->GetNumRows();
+	wavesRenderItem->GridSpatialStep = m_WavesCS->GetSpatialStep();
+#endif
 	wavesRenderItem->ObjCBIndex = 0;
 	// 아이템에 Mat을 추가시켜준다.
 	wavesRenderItem->Mat = m_Materials["water"].get();
@@ -1336,7 +1608,11 @@ void ComputeShaderApp::BuildRenderItems()
 	fenceRenderItem->BaseVertexLocation = fenceRenderItem->Geo->DrawArgs["fence"].BaseVertexLocation;
 
 	// 파도는 반투명한 친구이다.
+#if WAVE_CS
+	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(wavesRenderItem.get());
+#elif WAVE
 	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
+#endif
 	// 얘는 불투명한 친구
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRenderItem.get());
 	// Fence는 알파 자르기를 하는 Render Item이다.

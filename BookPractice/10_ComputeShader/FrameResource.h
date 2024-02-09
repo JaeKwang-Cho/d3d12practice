@@ -3,6 +3,8 @@
 #include "../Common/UploadBuffer.h"
 #include "../Common/MathHelper.h"
 
+#define WAVE_CS (1)
+
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
@@ -12,7 +14,12 @@ struct ObjectConstants
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
-	UINT Detail = 0;
+#if WAVE_CS
+	// 일단 다 1로 한다.
+	XMFLOAT2 DisplacementMapTexelSize = { 1.f, 1.f };
+	float GridSpatialStep = 1.f;
+	float pad;
+#endif
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
