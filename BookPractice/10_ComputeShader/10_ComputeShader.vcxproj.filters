@@ -43,6 +43,8 @@
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="BlurFilter.cpp" />
     <ClCompile Include="Waves_CS.cpp" />
+    <ClCompile Include="RenderTarget.cpp" />
+    <ClCompile Include="SobelFilter.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h">
@@ -77,6 +79,8 @@
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="BlurFilter.h" />
     <ClInclude Include="Waves_CS.h" />
+    <ClInclude Include="RenderTarget.h" />
+    <ClInclude Include="SobelFilter.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\10_ComputeShader.hlsl">
@@ -97,6 +101,14 @@
     <None Include="Shaders\waves.hlsl">
       <Filter>Shader</Filter>
     </None>
-    <None Include="Shaders\Bilateral_Blur.hlsl" />
+    <None Include="Shaders\SobelFilter.hlsl">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="Shaders\Bilateral_Blur.hlsl">
+      <Filter>Shader</Filter>
+    </None>
+    <None Include="Shaders\Composite.hlsl">
+      <Filter>Shader</Filter>
+    </None>
   </ItemGroup>
 </Project>

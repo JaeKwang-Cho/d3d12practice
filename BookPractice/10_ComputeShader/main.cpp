@@ -10,14 +10,17 @@
 #include <DirectXColors.h>
 #include "Waves.h"
 #include "Waves_CS.h"
+#include "SobelFilter.h"
+#include "RenderTarget.h"
 
 #include "FileReader.h"
 #include "BlurFilter.h"
 #include <iomanip>
 
 #define WAVE (1 && !WAVE_CS)
-#define BLUR (1)
-#define BIBLUR (1)
+#define BLUR (0)
+#define BIBLUR (0)
+#define SOBEL (1)
 #define PRAC_VECTOR (0)
 
 const int g_NumFrameResources = 3;
@@ -74,6 +77,7 @@ enum class RenderLayer : int
 	AlphaTested,
 	AlphaTestedSprites,
 	Shadow,
+	GpuWaves,
 	Practice,
 	Count
 };
@@ -112,6 +116,9 @@ private:
 	void UpdateWavesGPU(const GameTimer& _gt);
 	void BuildWavesCSRootSignature();
 	void BuildWavesCSGeometry();
+
+	// Sobel Practice
+	virtual void CreateRtvAndDsvDescriptorHeaps() override;
 
 	// ==== Init ====
 	void BuildRootSignature();
@@ -186,6 +193,11 @@ private:
 	std::unique_ptr<Waves_CS> m_WavesCS;
 	// 후처리로 Blur를 먹여주는 클래스 인스턴스이다.
 	std::unique_ptr<BlurFilter> m_BlurFilter;
+
+	// Sobel 필터를 적용 시킬때 사용 한다.
+	std::unique_ptr<RenderTarget> m_OffscreenRT = nullptr;
+
+	std::unique_ptr<SobelFilter> m_SobelFilter = nullptr;
 
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
@@ -277,13 +289,25 @@ bool ComputeShaderApp::Initialize()
 	);
 #endif
 
+#if SOBEL
+	m_SobelFilter = std::make_unique<SobelFilter>(
+		m_d3dDevice.Get(),
+		m_ClientWidth, m_ClientHeight,
+		m_BackBufferFormat);
+
+	m_OffscreenRT = std::make_unique<RenderTarget>(
+		m_d3dDevice.Get(),
+		m_ClientWidth, m_ClientHeight,
+		m_BackBufferFormat);
+#endif 	 
+
 	BuildShadersAndInputLayout();
 	LoadTextures();
 	BuildRootSignature();
 #if WAVE_CS
 	BuildWavesCSRootSignature();
 #endif
-#if BLUR
+#if BLUR || SOBEL
 	BuildPostProcessRootSignature();
 #endif
 	BuildDescriptorHeaps();
@@ -326,10 +350,24 @@ void ComputeShaderApp::OnResize()
 	XMStoreFloat4x4(&m_ProjMat, projMat);
 
 	// Blur를 먹일때 클래스 내부 텍스쳐 크기가 일치해야 한다.
+#if BLUR
 	if (m_BlurFilter != nullptr)
 	{
 		m_BlurFilter->OnResize(m_ClientWidth, m_ClientHeight);
 	}
+#endif
+
+#if SOBEL
+	if (m_SobelFilter != nullptr)
+	{
+		m_SobelFilter->OnResize(m_ClientWidth, m_ClientHeight);
+	}
+
+	if (m_OffscreenRT != nullptr)
+	{
+		m_OffscreenRT->OnResize(m_ClientWidth, m_ClientHeight);
+	}
+#endif
 }
 
 void ComputeShaderApp::Update(const GameTimer& _gt)
@@ -398,6 +436,28 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
 	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
 
+#if SOBEL
+	// 그림을 그릴 resource인 back buffer의 Resource Barrier의 Usage를 D3D12_RESOURCE_STATE_RENDER_TARGET으로 바꾼다.
+	D3D12_RESOURCE_BARRIER bufferBarrier_RENDER_TARGET = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_OffscreenRT->GetResource(),
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		D3D12_RESOURCE_STATE_RENDER_TARGET
+	);
+
+	m_CommandList->ResourceBarrier(
+		1,
+		&bufferBarrier_RENDER_TARGET);
+
+	// 백 버퍼와 깊이 버퍼를 초기화 한다.
+	m_CommandList->ClearRenderTargetView(
+		m_OffscreenRT->GetRtvHandle(),
+		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
+		0,
+		nullptr);
+
+	// Rendering 할 백 버퍼와, 깊이 버퍼의 핸들을 OM 단계에 세팅을 해준다.
+	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferHandle = m_OffscreenRT->GetRtvHandle();
+#else
 	// 그림을 그릴 resource인 back buffer의 Resource Barrier의 Usage를 D3D12_RESOURCE_STATE_RENDER_TARGET으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_RENDER_TARGET = CD3DX12_RESOURCE_BARRIER::Transition(
 		GetCurrentBackBuffer(),
@@ -411,10 +471,16 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 
 	// 백 버퍼와 깊이 버퍼를 초기화 한다.
 	m_CommandList->ClearRenderTargetView(
-		GetCurrentBackBufferView(), 
+		GetCurrentBackBufferView(),
 		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
-		0, 
+		0,
 		nullptr);
+
+	// Rendering 할 백 버퍼와, 깊이 버퍼의 핸들을 OM 단계에 세팅을 해준다.
+	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferHandle = GetCurrentBackBufferView();
+#endif
+
+	
 	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
 	m_CommandList->ClearDepthStencilView(
 		GetDepthStencilView(), 
@@ -424,8 +490,7 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 		0, 
 		nullptr);
 
-	// Rendering 할 백 버퍼와, 깊이 버퍼의 핸들을 OM 단계에 세팅을 해준다.
-	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferHandle = GetCurrentBackBufferView();
+
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 	// ==== 그리기 ======
@@ -460,18 +525,54 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 #if WAVE_CS
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["wavesRender"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::GpuWaves]);
 #endif
 
-#if !BLUR
-	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
+#if SOBEL
+	// offscreen 텍스쳐를 입력으로 바꾼다.
+	D3D12_RESOURCE_BARRIER offscreenRT_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_OffscreenRT->GetResource(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET,
+		D3D12_RESOURCE_STATE_GENERIC_READ
+	);
+
+	m_CommandList->ResourceBarrier(1, &offscreenRT_RT_READ);
+	// 소벨 필터에 offscreen을 입력으로 넣는다.
+	m_SobelFilter->Execute(m_CommandList.Get(), m_PostProcessRootSignature.Get(), m_PSOs["sobel"].Get(), m_OffscreenRT->GetSrvHandle());
+
+	// offscreen 결과와 Sobel 값을 조합하는 PSO로
+	// 백 버퍼에 그린다.
+	D3D12_RESOURCE_BARRIER bufferBarrier_RT = CD3DX12_RESOURCE_BARRIER::Transition(
+		GetCurrentBackBuffer(),
+		D3D12_RESOURCE_STATE_PRESENT,
+		D3D12_RESOURCE_STATE_RENDER_TARGET
+	);
+	m_CommandList->ResourceBarrier(1, &bufferBarrier_RT);
+
+	BackBufferHandle = GetCurrentBackBufferView();
+	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
+
+	m_CommandList->SetGraphicsRootSignature(m_PostProcessRootSignature.Get());
+	m_CommandList->SetPipelineState(m_PSOs["composite"].Get());
+	m_CommandList->SetGraphicsRootDescriptorTable(0, m_OffscreenRT->GetSrvHandle());
+	m_CommandList->SetGraphicsRootDescriptorTable(1, m_SobelFilter->OutputSrv());
+
+	// 냅다 Texture를 화면에 그려버리는 로직이다.
+	m_CommandList->IASetVertexBuffers(0, 1, nullptr);
+	m_CommandList->IASetIndexBuffer(nullptr);
+	m_CommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	m_CommandList->DrawInstanced(6, 1, 0, 0);
+
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
 		GetCurrentBackBuffer(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
+	m_CommandList->ResourceBarrier(1, &bufferBarrier_PRESENT);
+#endif
 
-#elif BLUR
+#if BLUR
 	// ================ 후처리 =================
 	m_BlurFilter->Execute(
 		m_CommandList.Get(),
@@ -506,17 +607,21 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 		D3D12_RESOURCE_STATE_COPY_DEST,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
-#else
+	m_CommandList->ResourceBarrier(
+		1,
+		&bufferBarrier_PRESENT
+	);
+#elif !SOBEL
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
 		GetCurrentBackBuffer(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
-#endif
 	m_CommandList->ResourceBarrier(
 		1,
 		&bufferBarrier_PRESENT
 	);
+#endif
 
 	// Command List의 기록을 마치고
 	ThrowIfFailed(m_CommandList->Close());
@@ -975,6 +1080,7 @@ void ComputeShaderApp::BuildPostProcessRootSignature()
 	// 후처리 용 Root Signature이다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[3];
 
+#if BLUR
 	CD3DX12_DESCRIPTOR_RANGE srvTable;
 	srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
@@ -986,11 +1092,27 @@ void ComputeShaderApp::BuildPostProcessRootSignature()
 	slotRootParameter[1].InitAsDescriptorTable(1, &srvTable);
 	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable);
 
+#elif SOBEL
+	CD3DX12_DESCRIPTOR_RANGE srvTable0; // 원래 모습
+	srvTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
+
+	CD3DX12_DESCRIPTOR_RANGE srvTable1; // 소벨 필터
+	srvTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 1);
+
+	CD3DX12_DESCRIPTOR_RANGE uavTable0; // 최종 결과
+	uavTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0);
+
+	slotRootParameter[0].InitAsDescriptorTable(1, &srvTable0);
+	slotRootParameter[1].InitAsDescriptorTable(1, &srvTable1);
+	slotRootParameter[2].InitAsDescriptorTable(1, &uavTable0);
+#endif
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> staticSamplers = GetStaticSamplers();
+
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
 		3,
 		slotRootParameter,
-		0,
-		nullptr,
+		(UINT)staticSamplers.size(),
+		staticSamplers.data(),
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
 	);
 
@@ -1046,6 +1168,12 @@ void ComputeShaderApp::BuildShadersAndInputLayout()
 	m_Shaders["wavesVS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", waveDefines, "VS", "vs_5_1");
 	m_Shaders["wavesUpdateCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "UpdateWavesCS", "cs_5_1");
 	m_Shaders["wavesDisturbCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "DisturbWavesCS", "cs_5_1");
+#endif
+
+#if WAVE_CS && SOBEL
+	m_Shaders["compositeVS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "VS", "vs_5_0");
+	m_Shaders["compositePS"] = d3dUtil::CompileShader(L"Shaders\\Composite.hlsl", nullptr, "PS", "ps_5_0");
+	m_Shaders["sobelCS"] = d3dUtil::CompileShader(L"Shaders\\SobelFilter.hlsl", nullptr, "SobelCS", "cs_5_0");
 #endif
 
 #if BIBLUR
@@ -1119,15 +1247,44 @@ void ComputeShaderApp::LoadTextures()
 	m_Textures[waterTex->Name] = std::move(waterTex);
 }
 
+void ComputeShaderApp::CreateRtvAndDsvDescriptorHeaps()
+{
+	// offscreen 용 render target view heap 자리를 하나 더 만든다.
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 1;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	rtvHeapDesc.NodeMask = 0;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&rtvHeapDesc, IID_PPV_ARGS(m_RtvHeap.GetAddressOf())));
+
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+	dsvHeapDesc.NumDescriptors = 1;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	dsvHeapDesc.NodeMask = 0;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&dsvHeapDesc, IID_PPV_ARGS(m_DsvHeap.GetAddressOf())));
+}
+
 void ComputeShaderApp::BuildDescriptorHeaps()
 {
  	const int textureDescriptorCount = 4;
 	const int blurDescriptorCount = 4;
+#if WAVE_CS
+	const int waveDescriptorCount = m_WavesCS->GetDescriptorCount();
+#endif
+#if SOBEL
+	const int sobelDescriptorCount = m_SobelFilter->GetDescriptorCount();
+	const int offscreenDescriptorCount = 1;
+#endif
 
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-#if WAVE_CS
-	srvHeapDesc.NumDescriptors = textureDescriptorCount + m_WavesCS->GetDescriptorCount();
+#if WAVE_CS && !SOBEL
+	srvHeapDesc.NumDescriptors = textureDescriptorCount + waveDescriptorCount;
+#elif WAVE_CS && SOBEL
+	srvHeapDesc.NumDescriptors = textureDescriptorCount + waveDescriptorCount + sobelDescriptorCount + offscreenDescriptorCount;
 #else
 	srvHeapDesc.NumDescriptors = textureDescriptorCount + blurDescriptorCount;
 #endif
@@ -1174,6 +1331,18 @@ void ComputeShaderApp::BuildDescriptorHeaps()
 		CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), textureDescriptorCount, m_CbvSrvUavDescriptorSize),
 		m_CbvSrvUavDescriptorSize
 	);
+#endif
+
+#if WAVE_CS && SOBEL
+	m_SobelFilter->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), textureDescriptorCount + waveDescriptorCount, m_CbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), textureDescriptorCount + waveDescriptorCount, m_CbvSrvUavDescriptorSize),
+		m_CbvSrvUavDescriptorSize);
+
+	m_OffscreenRT->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), textureDescriptorCount + waveDescriptorCount + sobelDescriptorCount, m_CbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), textureDescriptorCount + waveDescriptorCount + sobelDescriptorCount, m_CbvSrvUavDescriptorSize),
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(m_RtvHeap->GetCPUDescriptorHandleForHeapStart(), SwapChainBufferCount, m_RtvDescriptorSize));
 #endif
 
 #if BLUR
@@ -1478,6 +1647,40 @@ void ComputeShaderApp::BuildPSOs()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&waveUpdatePSO, IID_PPV_ARGS(&m_PSOs["wavesUpdate"])));
 #endif
+
+#if WAVE_CS && SOBEL
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC compositePSO = opaquePSODesc;
+	compositePSO.pRootSignature = m_PostProcessRootSignature.Get();
+	// 왜 깊이는 끄는지 모르겠다.
+	compositePSO.DepthStencilState.DepthEnable = false;
+	compositePSO.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	compositePSO.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS;
+	std::vector<D3D12_INPUT_ELEMENT_DESC> emptyLayout= {};
+	compositePSO.InputLayout = { emptyLayout.data(), (UINT)emptyLayout.size() };
+	
+	compositePSO.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["compositeVS"]->GetBufferPointer()),
+		m_Shaders["compositeVS"]->GetBufferSize()
+	};
+	compositePSO.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["compositePS"]->GetBufferPointer()),
+		m_Shaders["compositePS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&compositePSO, IID_PPV_ARGS(&m_PSOs["composite"])));
+
+	D3D12_COMPUTE_PIPELINE_STATE_DESC sobelPSO = {};
+	sobelPSO.pRootSignature = m_PostProcessRootSignature.Get();
+	sobelPSO.CS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["sobelCS"]->GetBufferPointer()),
+		m_Shaders["sobelCS"]->GetBufferSize()
+	};
+	sobelPSO.Flags = D3D12_PIPELINE_STATE_FLAG_NONE;
+	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&sobelPSO, IID_PPV_ARGS(&m_PSOs["sobel"])));
+#endif
+
 #if BLUR
 
 	// 후처리용 horizental blur PSO
@@ -1618,7 +1821,7 @@ void ComputeShaderApp::BuildRenderItems()
 
 	// 파도는 반투명한 친구이다.
 #if WAVE_CS
-	m_RenderItemLayer[(int)RenderLayer::Practice].push_back(wavesRenderItem.get());
+	m_RenderItemLayer[(int)RenderLayer::GpuWaves].push_back(wavesRenderItem.get());
 #elif WAVE
 	m_RenderItemLayer[(int)RenderLayer::Transparent].push_back(wavesRenderItem.get());
 #endif
