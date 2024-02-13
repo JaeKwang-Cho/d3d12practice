@@ -97,5 +97,6 @@
     <None Include="Shaders\waves.hlsl">
       <Filter>Shader</Filter>
     </None>
+    <None Include="Shaders\Bilateral_Blur.hlsl" />
   </ItemGroup>
 </Project>

@@ -185,9 +185,9 @@ float4 PS(VertexOut pin) : SV_Target
     
 #ifdef FOG
     // 카메라에서 거리가 멀 수록
-    //float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
+    float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
     // fog의 색으로 채워진다.
-    //litColor = lerp(litColor, gFogColor, fogAmount);
+    litColor = lerp(litColor, gFogColor, fogAmount);
 #endif
 
     // diffuse albedo에서 alpha값을 가져온다.

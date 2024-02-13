@@ -16,7 +16,8 @@
 #include <iomanip>
 
 #define WAVE (1 && !WAVE_CS)
-#define BLUR (0)
+#define BLUR (1)
+#define BIBLUR (1)
 #define PRAC_VECTOR (0)
 
 const int g_NumFrameResources = 3;
@@ -281,7 +282,8 @@ bool ComputeShaderApp::Initialize()
 	BuildRootSignature();
 #if WAVE_CS
 	BuildWavesCSRootSignature();
-#else
+#endif
+#if BLUR
 	BuildPostProcessRootSignature();
 #endif
 	BuildDescriptorHeaps();
@@ -459,16 +461,18 @@ void ComputeShaderApp::Draw(const GameTimer& _gt)
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["wavesRender"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Practice]);
+#endif
 
+#if !BLUR
 	// 그림을 그릴 back buffer의 Resource Barrier의 Usage 를 D3D12_RESOURCE_STATE_PRESENT으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(
 		GetCurrentBackBuffer(),
 		D3D12_RESOURCE_STATE_RENDER_TARGET,
 		D3D12_RESOURCE_STATE_PRESENT
 	);
+
 #elif BLUR
 	// ================ 후처리 =================
-
 	m_BlurFilter->Execute(
 		m_CommandList.Get(),
 		m_PostProcessRootSignature.Get(),
@@ -572,7 +576,7 @@ void ComputeShaderApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 		m_Radius += dx - dy;
 
 		// 반지름은 3 ~ 15 구간을 유지한다.
-		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 1500.f);
+		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 150.f);
 	}
 
 	m_LastMousePos.x = _x;
@@ -1042,6 +1046,11 @@ void ComputeShaderApp::BuildShadersAndInputLayout()
 	m_Shaders["wavesVS"] = d3dUtil::CompileShader(L"Shaders\\10_ComputeShader.hlsl", waveDefines, "VS", "vs_5_1");
 	m_Shaders["wavesUpdateCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "UpdateWavesCS", "cs_5_1");
 	m_Shaders["wavesDisturbCS"] = d3dUtil::CompileShader(L"Shaders\\waves.hlsl", nullptr, "DisturbWavesCS", "cs_5_1");
+#endif
+
+#if BIBLUR
+	m_Shaders["horzBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Bilateral_Blur.hlsl", nullptr, "HorzBlurCS", "cs_5_1");
+	m_Shaders["vertBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Bilateral_Blur.hlsl", nullptr, "VertBlurCS", "cs_5_1");
 #elif BLUR
 	// CS도 비슷하게 컴파일 해 놓는다.
 	m_Shaders["horzBlurCS"] = d3dUtil::CompileShader(L"Shaders\\Blur.hlsl", nullptr, "HorzBlurCS", "cs_5_1");
@@ -1468,8 +1477,8 @@ void ComputeShaderApp::BuildPSOs()
 		m_Shaders["wavesUpdateCS"]->GetBufferSize()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateComputePipelineState(&waveUpdatePSO, IID_PPV_ARGS(&m_PSOs["wavesUpdate"])));
-
-#elif BLUR
+#endif
+#if BLUR
 
 	// 후처리용 horizental blur PSO
 	// Compute PSO를 사용한다.
