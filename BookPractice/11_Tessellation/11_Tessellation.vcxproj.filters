@@ -72,15 +72,16 @@
     <ClInclude Include="Waves_CS.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\waves.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\10_ComputeShader.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\waves.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Tessellation.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

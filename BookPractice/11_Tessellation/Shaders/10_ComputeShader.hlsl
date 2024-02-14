@@ -42,11 +42,6 @@ cbuffer cbPerObject : register(b0)
     float4x4 gWorld;
     float4x4 gInvWorldTranspose;
     float4x4 gTexTransform;
-#ifdef DISPLACEMENT_MAP
-    float2 gDisplacementMapTexelSize;
-    float gGridSpatialStep;
-    float cbPerObjectPad1;
-#endif       
 };
 
 // 프레임 마다 달라지는 Constant Buffer
@@ -115,20 +110,6 @@ struct VertexOut
 VertexOut VS(VertexIn vin)
 {
     VertexOut vout = (VertexOut) 0.0f;
-    
-#ifdef DISPLACEMENT_MAP
-    // 월드로 변형하지 않은 값을 가져와서 작업한다. (당연한 소리)
-    vin.PosL.y += gDisplacementMap.SampleLevel(gSamLinearWrap, vin.TexC, 1.f).r;
-    
-    // 노멀은 유한 차분으로 구한다.
-    float du = gDisplacementMapTexelSize.x;
-    float dv = gDisplacementMapTexelSize.y;
-    float l = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC - float2(du, 0.f), 0.f).r;
-    float r = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC + float2(du, 0.f), 0.f).r;
-    float t = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC - float2(0.f, dv), 0.f).r;
-    float b = gDisplacementMap.SampleLevel(gSamPointClamp, vin.TexC + float2(0.f, dv), 0.f).r;
-    vin.NormalL = normalize(float3(-r + l, 2.f * gGridSpatialStep, b - t));
-#endif
 	
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);

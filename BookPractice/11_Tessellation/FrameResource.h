@@ -13,10 +13,6 @@ struct ObjectConstants
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
-	// 일단 다 1로 한다.
-	XMFLOAT2 DisplacementMapTexelSize = { 1.f, 1.f };
-	float GridSpatialStep = 1.f;
-	float pad;
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
