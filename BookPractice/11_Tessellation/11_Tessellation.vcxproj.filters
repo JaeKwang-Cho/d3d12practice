@@ -1,0 +1,87 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Commons">
+      <UniqueIdentifier>{8941ebe7-7815-443b-b68b-a0bb2c1f4e46}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\소스 파일">
+      <UniqueIdentifier>{5750783a-4886-4796-946c-fe2f447138c2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\헤더 파일">
+      <UniqueIdentifier>{0baacf59-7146-4975-badd-79576096eefa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{ff02a6dc-9c98-42a4-8531-41932beeffba}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Common\Camera.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dApp.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dUtil.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GameTimer.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GeometryGenerator.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Waves_CS.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Common\Camera.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dApp.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dUtil.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dx12.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\DDSTextureLoader.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GameTimer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GeometryGenerator.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\MathHelper.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UploadBuffer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="Waves_CS.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\waves.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\10_ComputeShader.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+</Project>
