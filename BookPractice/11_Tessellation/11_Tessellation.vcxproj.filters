@@ -87,5 +87,6 @@
     <None Include="Shaders\BezierTessellation.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Tessellation_factor.hlsl" />
   </ItemGroup>
 </Project>

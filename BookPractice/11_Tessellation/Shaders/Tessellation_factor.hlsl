@@ -91,56 +91,26 @@ VertexOut VS(VertexIn _vin)
 
 struct PatchTess
 {
-#if PRAC1 || PRAC2
-    float EdgeTess[3] : SV_TessFactor;
-    float InsideTess[1] : SV_InsideTessFactor;
-#else
     float EdgeTess[4] : SV_TessFactor;
     float InsideTess[2] : SV_InsideTessFactor;
-#endif
 };
 
 PatchTess ConstantHS(
-#if PRAC1 || PRAC2
-        InputPatch<VertexOut, 3> patch, 
-#else
         InputPatch<VertexOut, 4> patch,
-#endif
         uint patchID : SV_PrimitiveID)
 {
     PatchTess pt;
     
-#if PRAC1 || PRAC2
-    // patch의 월드 중점을 구한다.
-    float3 centerL = 0.3334f * (patch[0].PosL + patch[1].PosL + patch[2].PosL);
-#else
-    // patch의 월드 중점을 구한다.
-    float3 centerL = 0.25f * (patch[0].PosL + patch[1].PosL + patch[2].PosL + patch[3].PosL);
-#endif
-    
-
-    float3 centerW = mul(float4(centerL, 1.f), gWorld).xyz;
-    // 카메라와 거리를 구한다.
-    float d = distance(centerW, gEyePosW);
-    
-    // 카메라와의 거리에 따라서 테셀레이션 정도를 구한다.
-    // 최대 64번 테셀레이션 한다. (거리 80이 제일 많이 할 때)
-    const float d0 = 20.f;
-    const float d1 = 100.f;
-    
-    float tess = 64.f * saturate((d1 - d) / (d1 - d0));
+    float tess = 2;
     
     // 다 똑같이 테셀레이트 한다.
     pt.EdgeTess[0] = tess;
     pt.EdgeTess[1] = tess;
     pt.EdgeTess[2] = tess;
+    pt.EdgeTess[3] = tess;
 	
     pt.InsideTess[0] = tess;
-    
-#if !PRAC1 && !PRAC2
-    pt.EdgeTess[3] = tess;
     pt.InsideTess[1] = tess;
-#endif
 	
     return pt;
 }
@@ -150,23 +120,14 @@ struct HullOut
 {
     float3 PosL : POSITION;
 };
-#if PRAC1 || PRAC2
-[domain("tri")]
-[outputcontrolpoints(3)] // 패치에 대해 헐쉐이더를 적용할 제어점 개수
-#else
 [domain("quad")] // tri, quad, isoline
 [outputcontrolpoints(4)] // 패치에 대해 헐쉐이더를 적용할 제어점 개수
-#endif    
 [partitioning("integer")] // tess factor가 정수일 때만 작동
 [outputtopology("triangle_cw")] // 시계 방향
 [patchconstantfunc("ConstantHS")] // 테셀레이션 계수를 받을 CHS 이름
 [maxtessfactor(64.f)] // 최대 테셀레이션 양
 HullOut HS(
-#if PRAC1 || PRAC2
-        InputPatch<VertexOut, 3> p, 
-#else
         InputPatch<VertexOut, 4> p,
-#endif
         uint i : SV_OutputControlPointID, uint patchId : SV_PrimitiveID)
 {
     // 일단 아무것도 안하고 넘긴다.
@@ -186,42 +147,20 @@ struct DomainOut
 
 // 헐 쉐이더에서 생성된 모든 정점마다 실행이 된다.
 // 여기서 호모공간으로 변환하고 픽셀 쉐이더로 넘기는 것이다.
-#if PRAC1 || PRAC2
-[domain("tri")]
-#else
 [domain("quad")]
-#endif
 DomainOut DS(
                 PatchTess patchTess,
-#if PRAC1 || PRAC2
-                float3 uvw : SV_DomainLocation, // tri는 무게중심 좌표
-                const OutputPatch<HullOut, 3> quad
-#else
                 float2 uv : SV_DomainLocation, // quad는 이중선형 보간
                 const OutputPatch<HullOut, 4> quad
-#endif
             )
 {
     DomainOut dout;
-    
-#if PRAC1 || PRAC2
-    // 무게중심 좌표
-    float3 p = (quad[0].PosL * uvw.x + quad[1].PosL * uvw.y + quad[2].PosL * uvw.z);
-#else
+
     // 이중선형보간
     float3 v1 = lerp(quad[0].PosL, quad[1].PosL, uv.x);
     float3 v2 = lerp(quad[2].PosL, quad[3].PosL, uv.x);
     float3 p = lerp(v1, v2, uv.y);
-#endif
-    
-#if PRAC2
-    p = normalize(p);
-    float patchLen = length(quad[0].PosL);
-    p *= patchLen;
-#else
-	// 여기서 적절히 산의 모양처럼 만들어준다.
-    p.y = 0.3f * (p.z * sin(p.x) + p.x * cos(p.z));
-#endif
+
 	// 호모 공간으로 변환한 다음
     float4 posW = mul(float4(p, 1.0f), gWorld);
     dout.PosH = mul(posW, gViewProj);
