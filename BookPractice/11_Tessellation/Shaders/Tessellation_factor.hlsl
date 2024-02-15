@@ -101,16 +101,13 @@ PatchTess ConstantHS(
 {
     PatchTess pt;
     
-    float tess = 2;
-    
-    // 다 똑같이 테셀레이트 한다.
-    pt.EdgeTess[0] = tess;
-    pt.EdgeTess[1] = tess;
-    pt.EdgeTess[2] = tess;
-    pt.EdgeTess[3] = tess;
+    pt.EdgeTess[0] = 3;
+    pt.EdgeTess[1] = 3;
+    pt.EdgeTess[2] = 3;
+    pt.EdgeTess[3] = 3;
 	
-    pt.InsideTess[0] = tess;
-    pt.InsideTess[1] = tess;
+    pt.InsideTess[0] = 16;
+    pt.InsideTess[1] = 16;
 	
     return pt;
 }

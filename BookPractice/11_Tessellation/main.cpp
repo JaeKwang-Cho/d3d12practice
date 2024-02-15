@@ -12,8 +12,8 @@
 
 #define BASIC (1)
 #define PRAC1 (0 && BASIC)
-#define PRAC2 (1 && BASIC)
-#define PRAC3 (1)
+#define PRAC2 (0 && BASIC)
+#define PRAC3 (0 && BASIC)
 #define BEZIER (0)
 
 const int g_NumFrameResources = 3;
@@ -156,8 +156,8 @@ private:
 	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
 
-	float m_Phi = 1.24f * XM_PI;
-	float m_Theta = 0.42f * XM_PI;
+	float m_Phi = 0.58f * XM_PI;
+	float m_Theta = 0.22f * XM_PI;
 	float m_Radius = 50.f;
 
 	POINT m_LastMousePos = {};
@@ -718,6 +718,11 @@ void TessellationApp::BuildShadersAndInputLayout()
 	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", prac2, "HS", "hs_5_1");
 	m_Shaders["tessDS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", prac2, "DS", "ds_5_1");
 	m_Shaders["tessPS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", prac2, "PS", "ps_5_1");
+#elif PRAC3
+	m_Shaders["tessVS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation_factor.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation_factor.hlsl", nullptr, "HS", "hs_5_1");
+	m_Shaders["tessDS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation_factor.hlsl", nullptr, "DS", "ds_5_1");
+	m_Shaders["tessPS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation_factor.hlsl", nullptr, "PS", "ps_5_1");
 #else
 	m_Shaders["tessVS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Tessellation.hlsl", nullptr, "HS", "hs_5_1");
