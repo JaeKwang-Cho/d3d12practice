@@ -96,5 +96,8 @@
     <None Include="Shaders\depricated_Tessellation_iso.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Bezier_Triangle.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

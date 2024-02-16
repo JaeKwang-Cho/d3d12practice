@@ -17,6 +17,7 @@
 #define PRAC2 (0 && BASIC)
 #define PRAC3 (0 && BASIC)
 #define PRAC7 (0 && BEZIER)
+#define PRAC9 (1 && BEZIER)
 
 const int g_NumFrameResources = 3;
 
@@ -103,6 +104,7 @@ private:
 
 	void BuildQuadPatchGeometry_Bezier();
 	void BuildQuadPatchGeometry_Bezier_Quadratic();
+	void BuildTriPatchGeometry_Bezeir_Triangle();
 
 	void BuildPSOs();
 	void BuildFrameResources();
@@ -228,6 +230,8 @@ bool TessellationApp::Initialize()
 #elif BEZIER
 #if PRAC7
 	BuildQuadPatchGeometry_Bezier_Quadratic();
+#elif PRAC9
+	BuildTriPatchGeometry_Bezeir_Triangle();
 #else
 	BuildQuadPatchGeometry_Bezier();
 #endif
@@ -343,7 +347,7 @@ void TessellationApp::Draw(const GameTimer& _gt)
 	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress());
-#if PRAC2
+#if PRAC2 || PRAC9
 	DrawAllSubRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 #else
 	// 그리기 요청
@@ -744,6 +748,11 @@ void TessellationApp::BuildShadersAndInputLayout()
 	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Quadratic.hlsl", nullptr, "HS", "hs_5_1");
 	m_Shaders["tessDS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Quadratic.hlsl", nullptr, "DS", "ds_5_1");
 	m_Shaders["tessPS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Quadratic.hlsl", nullptr, "PS", "ps_5_1");
+#elif PRAC9 
+	m_Shaders["tessVS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Triangle.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Triangle.hlsl", nullptr, "HS", "hs_5_1");
+	m_Shaders["tessDS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Triangle.hlsl", nullptr, "DS", "ds_5_1");
+	m_Shaders["tessPS"] = d3dUtil::CompileShader(L"Shaders\\Bezier_Triangle.hlsl", nullptr, "PS", "ps_5_1");
 #else
 	m_Shaders["tessVS"] = d3dUtil::CompileShader(L"Shaders\\BezierTessellation.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["tessHS"] = d3dUtil::CompileShader(L"Shaders\\BezierTessellation.hlsl", nullptr, "HS", "hs_5_1");
@@ -799,144 +808,6 @@ void TessellationApp::BuildQuadPatchGeometry_Basic()
 
 	SubmeshGeometry quadSubmesh;
 	quadSubmesh.IndexCount = 4;
-	quadSubmesh.StartIndexLocation = 0;
-	quadSubmesh.BaseVertexLocation = 0;
-
-	geo->DrawArgs["quadpatch"] = quadSubmesh;
-
-	m_Geometries[geo->Name] = std::move(geo);
-}
-
-void TessellationApp::BuildQuadPatchGeometry_Bezier()
-{
-	std::array<XMFLOAT3, 16> vertices =
-	{
-		// Row 0
-		XMFLOAT3(-10.0f, -10.0f, +15.0f),	// col 0
-		XMFLOAT3(-5.0f,  0.0f, +15.0f),	 	// col 1
-		XMFLOAT3(+5.0f,  0.0f, +15.0f),	 	// col 2
-		XMFLOAT3(+10.0f, 0.0f, +15.0f),	 	// col 3
-
-		// Row 1
-		XMFLOAT3(-15.0f, 0.0f, +5.0f),		// col 0
-		XMFLOAT3(-5.0f,  0.0f, +5.0f),		// col 1
-		XMFLOAT3(+5.0f,  20.0f, +5.0f),		// col 2
-		XMFLOAT3(+15.0f, 0.0f, +5.0f),		// col 3
-
-		// Row 2
-		XMFLOAT3(-15.0f, 0.0f, -5.0f),		// col 0
-		XMFLOAT3(-5.0f,  0.0f, -5.0f),		// col 1
-		XMFLOAT3(+5.0f,  0.0f, -5.0f),		// col 2
-		XMFLOAT3(+15.0f, 0.0f, -5.0f),		// col 3
-
-		// Row 3
-		XMFLOAT3(-10.0f, 10.0f, -15.0f),	// col 0
-		XMFLOAT3(-5.0f,  0.0f, -15.0f),		// col 1
-		XMFLOAT3(+5.0f,  0.0f, -15.0f),		// col 2
-		XMFLOAT3(+25.0f, 10.0f, -15.0f),	// col 3
-	};
-
-	std::array<std::int16_t, 16> indices =
-	{
-		0, 1, 2, 3,
-		4, 5, 6, 7,
-		8, 9, 10, 11,
-		12, 13, 14, 15
-	};
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	auto geo = std::make_unique<MeshGeometry>();
-	geo->Name = "quadpatchGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(), 
-		vertices.data(), vbByteSize, 
-		geo->VertexBufferUploader);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(), 
-		indices.data(), ibByteSize, 
-		geo->IndexBufferUploader);
-
-	geo->VertexByteStride = sizeof(XMFLOAT3);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	SubmeshGeometry quadSubmesh;
-	quadSubmesh.IndexCount = (UINT)indices.size();
-	quadSubmesh.StartIndexLocation = 0;
-	quadSubmesh.BaseVertexLocation = 0;
-
-	geo->DrawArgs["quadpatch"] = quadSubmesh;
-
-	m_Geometries[geo->Name] = std::move(geo);
-}
-
-void TessellationApp::BuildQuadPatchGeometry_Bezier_Quadratic()
-{
-	std::array<XMFLOAT3, 9> vertices =
-	{
-		// Row 0
-		XMFLOAT3(-10.0f, -10.0f, +15.0f),
-		XMFLOAT3(-5.0f,  0.0f, +15.0f),
-		XMFLOAT3(+10.0f, 0.0f, +15.0f),
-
-		// Row 1
-		XMFLOAT3(-15.0f, 0.0f, 0.f),
-		XMFLOAT3(+5.0f,  20.0f,0.f),
-		XMFLOAT3(+15.0f, 0.0f, 0.f),
-
-		// Row 3
-		XMFLOAT3(-10.0f, 10.0f, -15.0f),
-		XMFLOAT3(-5.0f,  0.0f, -15.0f),
-		XMFLOAT3(+25.0f, 10.0f, -15.0f)
-	};
-
-	std::array<std::int16_t, 16> indices =
-	{
-		0, 1, 2, 
-		3, 4, 5, 
-		6, 7, 8
-	};
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	auto geo = std::make_unique<MeshGeometry>();
-	geo->Name = "quadpatchGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(),
-		vertices.data(), vbByteSize,
-		geo->VertexBufferUploader);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(),
-		indices.data(), ibByteSize,
-		geo->IndexBufferUploader);
-
-	geo->VertexByteStride = sizeof(XMFLOAT3);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	SubmeshGeometry quadSubmesh;
-	quadSubmesh.IndexCount = (UINT)indices.size();
 	quadSubmesh.StartIndexLocation = 0;
 	quadSubmesh.BaseVertexLocation = 0;
 
@@ -1049,6 +920,192 @@ void TessellationApp::BuildIcosahedronPatchGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
+void TessellationApp::BuildQuadPatchGeometry_Bezier()
+{
+	std::array<XMFLOAT3, 16> vertices =
+	{
+		// Row 0
+		XMFLOAT3(-10.0f, -10.0f, +15.0f),	// col 0
+		XMFLOAT3(-5.0f,  0.0f, +15.0f),	 	// col 1
+		XMFLOAT3(+5.0f,  0.0f, +15.0f),	 	// col 2
+		XMFLOAT3(+10.0f, 0.0f, +15.0f),	 	// col 3
+
+		// Row 1
+		XMFLOAT3(-15.0f, 0.0f, +5.0f),		// col 0
+		XMFLOAT3(-5.0f,  0.0f, +5.0f),		// col 1
+		XMFLOAT3(+5.0f,  20.0f, +5.0f),		// col 2
+		XMFLOAT3(+15.0f, 0.0f, +5.0f),		// col 3
+
+		// Row 2
+		XMFLOAT3(-15.0f, 0.0f, -5.0f),		// col 0
+		XMFLOAT3(-5.0f,  0.0f, -5.0f),		// col 1
+		XMFLOAT3(+5.0f,  0.0f, -5.0f),		// col 2
+		XMFLOAT3(+15.0f, 0.0f, -5.0f),		// col 3
+
+		// Row 3
+		XMFLOAT3(-10.0f, 10.0f, -15.0f),	// col 0
+		XMFLOAT3(-5.0f,  0.0f, -15.0f),		// col 1
+		XMFLOAT3(+5.0f,  0.0f, -15.0f),		// col 2
+		XMFLOAT3(+25.0f, 10.0f, -15.0f),	// col 3
+	};
+
+	std::array<std::int16_t, 16> indices =
+	{
+		0, 1, 2, 3,
+		4, 5, 6, 7,
+		8, 9, 10, 11,
+		12, 13, 14, 15
+	};
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "quadpatchGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		vertices.data(), vbByteSize,
+		geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		indices.data(), ibByteSize,
+		geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(XMFLOAT3);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = (UINT)indices.size();
+	quadSubmesh.StartIndexLocation = 0;
+	quadSubmesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["quadpatch"] = quadSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
+}
+
+void TessellationApp::BuildQuadPatchGeometry_Bezier_Quadratic()
+{
+	std::array<XMFLOAT3, 9> vertices =
+	{
+		// Row 0
+		XMFLOAT3(-10.0f, -10.0f, +15.0f),
+		XMFLOAT3(-5.0f,  0.0f, +15.0f),
+		XMFLOAT3(+10.0f, 0.0f, +15.0f),
+
+		// Row 1
+		XMFLOAT3(-15.0f, 0.0f, 0.f),
+		XMFLOAT3(+5.0f,  20.0f,0.f),
+		XMFLOAT3(+15.0f, 0.0f, 0.f),
+
+		// Row 3
+		XMFLOAT3(-10.0f, 10.0f, -15.0f),
+		XMFLOAT3(-5.0f,  0.0f, -15.0f),
+		XMFLOAT3(+25.0f, 10.0f, -15.0f)
+	};
+
+	std::array<std::int16_t, 16> indices =
+	{
+		0, 1, 2,
+		3, 4, 5,
+		6, 7, 8
+	};
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "quadpatchGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		vertices.data(), vbByteSize,
+		geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		indices.data(), ibByteSize,
+		geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(XMFLOAT3);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = (UINT)indices.size();
+	quadSubmesh.StartIndexLocation = 0;
+	quadSubmesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["quadpatch"] = quadSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
+}
+
+void TessellationApp::BuildTriPatchGeometry_Bezeir_Triangle()
+{
+	std::array<XMFLOAT3, 3> vertices =
+	{
+		XMFLOAT3(-10.0f, 1.0f, +10.0f),
+		XMFLOAT3(+10.0f, 9.0f, +5.0f),
+		XMFLOAT3(-3.0f, -8.0f, -10.0f),
+	};
+
+	std::array<std::int16_t, 3> indices = {0, 1, 2};
+
+	const UINT vbByteSize = (UINT)vertices.size() * sizeof(XMFLOAT3);
+	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
+
+	auto geo = std::make_unique<MeshGeometry>();
+	geo->Name = "quadpatchGeo";
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		vertices.data(), vbByteSize,
+		geo->VertexBufferUploader);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(), m_CommandList.Get(),
+		indices.data(), ibByteSize,
+		geo->IndexBufferUploader);
+
+	geo->VertexByteStride = sizeof(XMFLOAT3);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = (UINT)indices.size();
+	quadSubmesh.StartIndexLocation = 0;
+	quadSubmesh.BaseVertexLocation = 0;
+
+	geo->DrawArgs["quadpatch"] = quadSubmesh;
+
+	m_Geometries[geo->Name] = std::move(geo);
+}
+
 void TessellationApp::BuildPSOs()
 {
 	// 불투명 PSO
@@ -1078,8 +1135,8 @@ void TessellationApp::BuildPSOs()
 		m_Shaders["tessPS"]->GetBufferSize()
 	};
 	opaquePSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	//opaquePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-	//opaquePSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	opaquePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	opaquePSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	opaquePSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	opaquePSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	opaquePSODesc.SampleMask = UINT_MAX;
@@ -1141,6 +1198,8 @@ void TessellationApp::BuildRenderItems()
 #elif BEZIER
 #if PRAC7
 	quadPatchRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST; // 꼭짓점 9개의 Patch를 list로 넘긴다.
+#elif PRAC9
+	quadPatchRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST; // 꼭짓점 3개의 Patch를 list로 넘긴다.
 #else
 	quadPatchRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST; // 꼭짓점 16개의 Patch를 list로 넘긴다.
 #endif
