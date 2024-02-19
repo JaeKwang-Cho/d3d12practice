@@ -10,6 +10,7 @@
 #include <DirectXColors.h>
 #include <iomanip>
 #include "FileReader.h"
+#include "../Common/Camera.h"
 
 const int g_NumFrameResources = 3;
 
@@ -81,7 +82,6 @@ private:
 	
 	// ==== Update ====
 	void OnKeyboardInput(const GameTimer _gt);
-	void UpdateCamera(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
@@ -149,9 +149,8 @@ private:
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
 
-	XMFLOAT3 m_EyePos = { 0.f, 0.f, 0.f };
-	XMFLOAT4X4 m_ViewMat = MathHelper::Identity4x4();
-	XMFLOAT4X4 m_ProjMat = MathHelper::Identity4x4();
+	// Camera
+	Camera m_Camera;
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
@@ -204,6 +203,8 @@ bool FPSCameraApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
+	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
+
 	// ======== 초기화 ==========
 	LoadTextures();
 	BuildRootSignature();
@@ -235,16 +236,13 @@ void FPSCameraApp::OnResize()
 {
 	D3DApp::OnResize();
 
-	// Projection Mat은 윈도우 종횡비에 영향을 받는다.
-	XMMATRIX projMat = XMMatrixPerspectiveFovLH(0.25f * MathHelper::Pi, GetAspectRatio(), 0.01f, 1000.f);
-	XMStoreFloat4x4(&m_ProjMat, projMat);
+	m_Camera.SetFrustum(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
 }
 
 void FPSCameraApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
-	UpdateCamera(_gt);
 
 	// 원형 배열을 돌면서
 	m_CurrFrameResourceIndex = (m_CurrFrameResourceIndex + 1) % g_NumFrameResources;
@@ -390,23 +388,8 @@ void FPSCameraApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 		float dx = XMConvertToRadians(0.25f * static_cast<float>(_x - m_LastMousePos.x));
 		float dy = XMConvertToRadians(0.25f * static_cast<float>(_y - m_LastMousePos.y));
 
-		m_Phi += dx;
-		m_Theta += dy;
-
-		// Phi는 0 ~ Pi 구간을 유지하도록 한다.
-		m_Theta = MathHelper::Clamp(m_Theta, 0.1f, MathHelper::Pi - 0.1f);
-	}
-	// 오른쪽 마우스가 눌린 상태에서 움직이면
-	else if ((_btnState & MK_RBUTTON) != 0)
-	{
-		// 마우스가 움직인 만큼 구심좌표계의 반지름을 변화시킨다.
-		float dx = 0.1f * static_cast<float>(_x - m_LastMousePos.x);
-		float dy = 0.1f * static_cast<float>(_y - m_LastMousePos.y);
-
-		m_Radius += dx - dy;
-
-		// 반지름은 3 ~ 15 구간을 유지한다.
-		m_Radius = MathHelper::Clamp(m_Radius, 5.f, 150.f);
+		m_Camera.AddPitch(dy);
+		m_Camera.AddYaw(dx);
 	}
 
 	m_LastMousePos.x = _x;
@@ -415,23 +398,27 @@ void FPSCameraApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 
 void FPSCameraApp::OnKeyboardInput(const GameTimer _gt)
 {
+	const float dt = _gt.GetDeltaTime();
 
-}
+	if (GetAsyncKeyState('W') & 0x8000)
+		m_Camera.Walk(10.0f * dt);
 
-void FPSCameraApp::UpdateCamera(const GameTimer& _gt)
-{
-	// 구심 좌표계 값에 따라 데카르트 좌표계로 변환한다.
-	m_EyePos.x = m_Radius * sinf(m_Theta) * cosf(m_Phi);
-	m_EyePos.z = m_Radius * sinf(m_Theta) * sinf(m_Phi);
-	m_EyePos.y = m_Radius * cosf(m_Theta);
+	if (GetAsyncKeyState('S') & 0x8000)
+		m_Camera.Walk(-10.0f * dt);
 
-	// View(Camera) Mat을 초기화 한다.
-	XMVECTOR pos = XMVectorSet(m_EyePos.x, m_EyePos.y, m_EyePos.z, 1.f); // 카메라 위치
-	XMVECTOR target = XMVectorZero(); // 카메라 바라보는 곳
-	XMVECTOR up = XMVectorSet(0.f, 1.f, 0.f, 0.f); // 월드(?) 업 벡터
+	if (GetAsyncKeyState('A') & 0x8000)
+		m_Camera.Strafe(-10.0f * dt);
 
-	XMMATRIX viewMat = XMMatrixLookAtLH(pos, target, up);
-	XMStoreFloat4x4(&m_ViewMat, viewMat);
+	if (GetAsyncKeyState('D') & 0x8000)
+		m_Camera.Strafe(10.0f * dt);
+
+	if (GetAsyncKeyState('Q') & 0x8000)
+		m_Camera.Ascend(10.0f * dt);
+
+	if (GetAsyncKeyState('E') & 0x8000)
+		m_Camera.Ascend(-10.0f * dt);
+
+	m_Camera.UpdateViewMatrix();
 }
 
 void FPSCameraApp::UpdateObjectCBs(const GameTimer& _gt)
@@ -490,8 +477,8 @@ void FPSCameraApp::UpdateMaterialCBs(const GameTimer& _gt)
 
 void FPSCameraApp::UpdateMainPassCB(const GameTimer& _gt)
 {
-	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ViewMat);
-	XMMATRIX ProjMat = XMLoadFloat4x4(&m_ProjMat);
+	XMMATRIX ViewMat = m_Camera.GetViewMat();
+	XMMATRIX ProjMat = m_Camera.GetProjMat();
 
 	XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
 
@@ -511,7 +498,7 @@ void FPSCameraApp::UpdateMainPassCB(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
 
-	m_MainPassCB.EyePosW = m_EyePos;
+	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
 	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
 	m_MainPassCB.NearZ = 0.01f;
