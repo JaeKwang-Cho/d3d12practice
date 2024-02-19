@@ -214,10 +214,10 @@ bool FPSCameraApp::Initialize()
 	BuildStageGeometry();
 	BuildSkullGeometry();
 
-	BuildPSOs();
 	BuildMaterials();
 	BuildRenderItems();
 	BuildFrameResources();
+	BuildPSOs();
 	// =========================
 
 
@@ -322,7 +322,15 @@ void FPSCameraApp::Draw(const GameTimer& _gt)
 
 	// 현재 Frame Constant Buffer를 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
-	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
+	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
+
+	// 현재 프레임에 사용하는 Material Buffer를 Srv로 바인드 해준다.
+	ID3D12Resource* matStructredBuffer = m_CurrFrameResource->MaterialBuffer->Resource();
+	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
+
+	// 택스쳐가 올라가 있는 view heap에서 텍스쳐 첫번째 핸들을 설정해준다.
+	// (첫번째 것만 설정해서 넘겨주면 된다. Root Signature에 이미 정보가 다 있다.)
+	m_CommandList->SetGraphicsRootDescriptorTable(3, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart()); // Tex arr는 3번
 
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	// 그래야 alpha 계산이 가능하다.
@@ -335,7 +343,6 @@ void FPSCameraApp::Draw(const GameTimer& _gt)
 	// 이제 반투명한 애들을 출력해준다.
 	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
-
 
 	// ======================================
 
@@ -441,6 +448,9 @@ void FPSCameraApp::UpdateObjectCBs(const GameTimer& _gt)
 
 			// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
 			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
+
+			// 머테리얼 인덱스를 넣어준다.
+			objConstants.MaterialIndex = e->Mat->MatCBIndex;
 			
 			// CB에 넣어주고
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
@@ -453,7 +463,7 @@ void FPSCameraApp::UpdateObjectCBs(const GameTimer& _gt)
 
 void FPSCameraApp::UpdateMaterialCBs(const GameTimer& _gt)
 {
-	UploadBuffer<MaterialConstants>* currMaterialCB = m_CurrFrameResource->MaterialCB.get();	
+	UploadBuffer<MaterialData>* currMaterialCB = m_CurrFrameResource->MaterialBuffer.get();	
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
 	{
 		// 이것도 dirty flag가 켜져있을 때만 업데이트를 한다.
@@ -462,13 +472,15 @@ void FPSCameraApp::UpdateMaterialCBs(const GameTimer& _gt)
 		{
 			XMMATRIX matTransform = XMLoadFloat4x4(&mat->MatTransform);
 
-			MaterialConstants matConstants;
-			matConstants.DiffuseAlbedo = mat->DiffuseAlbedo;
-			matConstants.FresnelR0 = mat->FresnelR0;
-			matConstants.Roughness = mat->Roughness;
-			XMStoreFloat4x4(&matConstants.MatTransform, XMMatrixTranspose(matTransform));
+			MaterialData matData;
+			matData.DiffuseAlbedo = mat->DiffuseAlbedo;
+			matData.FresnelR0 = mat->FresnelR0;
+			matData.Roughness = mat->Roughness;
+			XMStoreFloat4x4(&matData.MaterialTransform, XMMatrixTranspose(matTransform));
+			// Texture 인덱스를 넣어준다.
+			matData.DiffuseMapIndex = mat->MatCBIndex;
 
-			currMaterialCB->CopyData(mat->MatCBIndex, matConstants);
+			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
 			mat->NumFramesDirty--;
 		}
@@ -605,13 +617,14 @@ void FPSCameraApp::BuildRootSignature()
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 - texture 정보
-
+	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 5개로 만들어 준다.
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0); // t0 - texture 정보
+	
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
-	slotRootParameter[0].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL);
-	slotRootParameter[1].InitAsConstantBufferView(0); // b0 - PerObject
-	slotRootParameter[2].InitAsConstantBufferView(1); // b1 - PassConstants
-	slotRootParameter[3].InitAsConstantBufferView(2); // b2 - Material
+	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
+	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
+	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL); // t0 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
 	// Static Sampler 방법이다. 최대 2000개 생성 가능
@@ -685,18 +698,22 @@ void FPSCameraApp::BuildDescriptorHeaps()
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = bricksTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
 	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = stoneTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
 	m_d3dDevice->CreateShaderResourceView(stoneTex, &srcDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = tileTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
 	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
 	srcDesc.Format = whiteTex->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
 	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
 }
 
@@ -716,7 +733,7 @@ void FPSCameraApp::BuildShadersAndInputLayout()
 	};
 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", defines, "PS", "ps_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", nullptr, "PS", "ps_5_1");
 	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_InputLayout =
@@ -1164,7 +1181,6 @@ void FPSCameraApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const st
 	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
-	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
@@ -1183,20 +1199,12 @@ void FPSCameraApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const st
 		{
 			_cmdList->IASetPrimitiveTopology(_Type);
 		}
-		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-		tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
-
 		// Object Constant와
 		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
 		objCBAddress += ri->ObjCBIndex * objCBByteSize;
-		// Material Constant를
-		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress();
-		matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
 
-		// PSO에 연결해준다.
-		_cmdList->SetGraphicsRootDescriptorTable(0, tex);
-		_cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
-		_cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
+		// 이제 Item은 Object Buffer만 넘겨주어도 된다.
+		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
@@ -1209,7 +1217,6 @@ void FPSCameraApp::DrawAllSubRenderItems(ID3D12GraphicsCommandList* _cmdList, co
 	UINT matCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(MaterialConstants));
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
-	ID3D12Resource* matCB = m_CurrFrameResource->MaterialCB->Resource();
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
@@ -1228,24 +1235,16 @@ void FPSCameraApp::DrawAllSubRenderItems(ID3D12GraphicsCommandList* _cmdList, co
 		{
 			_cmdList->IASetPrimitiveTopology(_Type);
 		}
-		CD3DX12_GPU_DESCRIPTOR_HANDLE tex(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-		tex.Offset(ri->Mat->DiffuseSrvHeapIndex, m_CbvSrvUavDescriptorSize);
-
 		// Object Constant와
 		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
 		objCBAddress += ri->ObjCBIndex * objCBByteSize;
-		// Material Constant를
-		D3D12_GPU_VIRTUAL_ADDRESS matCBAddress = matCB->GetGPUVirtualAddress();
-		matCBAddress += ri->Mat->MatCBIndex * matCBByteSize;
 
 		MeshGeometry* meshGeo = ri->Geo;
 		std::unordered_map<std::string, SubmeshGeometry>::iterator iter = meshGeo->DrawArgs.begin();
 		for (; iter != meshGeo->DrawArgs.end(); iter++)
 		{
-			// PSO에 연결해준다.
-			_cmdList->SetGraphicsRootDescriptorTable(0, tex);
-			_cmdList->SetGraphicsRootConstantBufferView(1, objCBAddress);
-			_cmdList->SetGraphicsRootConstantBufferView(3, matCBAddress);
+			// 이제 Item은 Object Buffer만 넘겨주어도 된다
+			_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 			_cmdList->DrawIndexedInstanced(iter->second.IndexCount, 1, iter->second.StartIndexLocation, iter->second.BaseVertexLocation, 0);
 		}
 	}

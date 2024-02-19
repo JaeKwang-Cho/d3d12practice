@@ -21,8 +21,27 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-Texture2D gDiffuseMap : register(t0);
-Texture2D gDisplacementMap : register(t1);
+struct MaterialData
+{
+    float4 DiffuseAlbedo;
+    float3 FresnelR0;
+    float Roughness;
+    float4x4 MaterialTransform;
+    uint DiffuseMapIndex;
+    uint MatPad0;
+    uint MatPad1;
+    uint MatPad2;
+};
+
+// 5.1 부터 사용 가능한 Texture Array다. Texture2DArray와 다른 점은
+// Texture 크기가 달라도 사용가능 하다는 점이다.
+Texture2D gDiffuseMap[5] : register(t0);
+// 이렇게 배열로 만들면
+// t0 ~ t4 까지 사용하게 된다.
+
+// space는 레지스터 번호가 겹치지 않게 해주는 것이다...
+// 기본은 space0 이다.
+StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -42,6 +61,10 @@ cbuffer cbPerObject : register(b0)
     float4x4 gWorld;
     float4x4 gInvWorldTranspose;
     float4x4 gTexTransform;
+    uint gMaterialIndex;
+    uint gObjPad0;
+    uint gObjPad1;
+    uint gObjPad2;
 };
 
 // 프레임 마다 달라지는 Constant Buffer
@@ -80,15 +103,6 @@ cbuffer cbPass : register(b1)
     // are spot lights for a maximum of MaxLights per object.
     Light gLights[MaxLights];
 };
-
-cbuffer cbMaterial : register(b2)
-{
-    float4 gDiffuseAlbedo;
-    float3 gFresnelR0;
-    float gRoughness;
-    float4x4 gMatTransform;
-};
-
  
 // 입력으로 Pos, Norm 을 받는다.
 struct VertexIn
@@ -110,6 +124,9 @@ struct VertexOut
 VertexOut VS(VertexIn vin)
 {
     VertexOut vout = (VertexOut) 0.0f;
+    
+    // 머테리얼 데이터를 가져온다
+    MaterialData matData = gMaterialData[gMaterialIndex];
 	
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
@@ -127,14 +144,22 @@ VertexOut VS(VertexIn vin)
     // Texture에게 주어진 Transform을 적용시킨 다음
     float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
     // World를 곱해서 PS로 넘겨준다.
-    vout.TexC = mul(texC, gMatTransform).xy;
+    vout.TexC = mul(texC, matData.MaterialTransform).xy;
     return vout;
 }
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    // Texture에서 색을 뽑아낸다. (샘플러와 머테리얼 베이스 색도 함께 적용시킨다.)
-    float4 diffuseAlbedo = gDiffuseMap.Sample(gSamLinearWrap, pin.TexC) * gDiffuseAlbedo;
+    // Object Constant에 있는 Index를 이용해서
+    // Pipeline에 bind 된, Material 정보와 Texture를 가져와서 색을 뽑아낸다.
+    MaterialData matData = gMaterialData[gMaterialIndex];
+    float4 diffuseAlbedo = matData.DiffuseAlbedo;
+    float3 fresnelR0 = matData.FresnelR0;
+    float roughness = matData.Roughness;
+    uint diffuseTexIndex = matData.DiffuseMapIndex;
+    
+    // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
+    diffuseAlbedo *= gDiffuseMap[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
@@ -145,17 +170,15 @@ float4 PS(VertexOut pin) : SV_Target
     pin.NormalW = normalize(pin.NormalW);
 
     // 표면에서 카메라 까지 벡터를 구한다.
-    float3 toEyeW = gEyePosW - pin.PosW;
-    float distToEye = length(toEyeW); // 표면과 카메라의 거리를 구하고
-    toEyeW /= distToEye; // 정규화 한다.
+    float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
 	// 일단 냅다 간접광을 설정한다.
     float4 ambient = gAmbientLight * diffuseAlbedo;
 
     // 광택을 설정하고
-    const float shininess = 1.0f - gRoughness;
+    const float shininess = 1.0f - roughness;
     // 구조체를 채운 다음
-    Material mat = { diffuseAlbedo, gFresnelR0, shininess };
+    Material mat = { diffuseAlbedo, fresnelR0, shininess };
     // (그림자는 나중에 할 것이다.)
     float3 shadowFactor = 1.0f;
     // 이전에 정의 했던 식을 이용해서 넘긴다.
@@ -163,13 +186,6 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
-    
-#ifdef FOG
-    // 카메라에서 거리가 멀 수록
-    float fogAmount = saturate((distToEye - gFogStart) / gFogRange);
-    // fog의 색으로 채워진다.
-    litColor = lerp(litColor, gFogColor, fogAmount);
-#endif
 
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;

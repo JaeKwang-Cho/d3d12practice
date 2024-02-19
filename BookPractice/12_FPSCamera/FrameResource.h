@@ -13,6 +13,10 @@ struct ObjectConstants
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
 	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+	UINT MaterialIndex;
+	UINT objPad0;
+	UINT objPad1;
+	UINT objPad2;
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
@@ -53,6 +57,22 @@ struct PassConstants {
 	Light Lights[MaxLights];
 };
 
+// 물체별로 색인화를 할 수 있기 때문에,
+// 구조체를 만들어서 넘겨줘서, 구조적 버퍼에서 참조하게 한다.
+struct MaterialData
+{
+	DirectX::XMFLOAT4 DiffuseAlbedo = { 1.f, 1.f, 1.f, 1.f };
+	DirectX::XMFLOAT3 FresnelR0 = { 0.01f, 0.01f, 0.01f };
+	float Roughness = 64.f;
+
+	DirectX::XMFLOAT4X4 MaterialTransform = MathHelper::Identity4x4();
+
+	UINT DiffuseMapIndex = 0;
+	UINT MaterialPad0;
+	UINT MaterialPad1;
+	UINT MaterialPad2;
+};
+
 // 사용할 Vertex 정보
 struct Vertex {
 	Vertex() = default;
@@ -87,8 +107,9 @@ public:
 	std::unique_ptr<UploadBuffer<PassConstants>> PassCB = nullptr;
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
 
-	// 여기서는 Material도 추가한다.
-	std::unique_ptr<UploadBuffer<MaterialConstants>> MaterialCB = nullptr;
+	// 이제 Constant Buffer가 아니라 StructuredBuffer으로 넘겨주고
+	// Material 정보에 Transform과 Index를 추가한 구조체를 넘겨준다.
+	std::unique_ptr<UploadBuffer<MaterialData>> MaterialBuffer = nullptr;
 
 	// 혹시나 CPU가 더 빠를 때를 대비한, Fence이다.
 	UINT64 Fence = 0;
