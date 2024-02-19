@@ -115,7 +115,7 @@ float Camera::GetFarWindowHeight()const
 
 void Camera::SetFrustum(float fovY, float aspect, float zn, float zf)
 {
-	// cache properties
+	// 속성값 저장
 	m_FovY = fovY;
 	m_Aspect = aspect;
 	m_NearZ = zn;
@@ -124,6 +124,7 @@ void Camera::SetFrustum(float fovY, float aspect, float zn, float zf)
 	m_NearWindowHeight = 2.0f * m_NearZ * tanf( 0.5f*m_FovY );
 	mFarWindowHeight  = 2.0f * m_FarZ * tanf( 0.5f*m_FovY );
 
+	// XMMath 라이브러리를 사용한다.
 	XMMATRIX P = XMMatrixPerspectiveFovLH(m_FovY, m_Aspect, m_NearZ, m_FarZ);
 	XMStoreFloat4x4(&m_ProjMat, P);
 }
@@ -200,7 +201,7 @@ void Camera::Walk(float d)
 
 void Camera::Ascend(float d)
 {
-	// m_Position += d*m_Look
+	// m_Position += d*m_Up
 	XMVECTOR s = XMVectorReplicate(d);
 	XMVECTOR l = XMLoadFloat3(&m_Up);
 	XMVECTOR p = XMLoadFloat3(&m_Position);
@@ -211,7 +212,7 @@ void Camera::Ascend(float d)
 
 void Camera::AddPitch(float angle)
 {
-	// Rotate up and look vector about the right vector.
+	// 로컬 오른쪽 벡터를 기준으로 회전시킨다.
 
 	XMMATRIX R = XMMatrixRotationAxis(XMLoadFloat3(&m_Right), angle);
 
@@ -223,7 +224,7 @@ void Camera::AddPitch(float angle)
 
 void Camera::AddYaw(float angle)
 {
-	// Rotate the basis vectors about the world y-axis.
+	// 뭐 다른 이유는 없으니, 월드 y 벡터를 기준으로 회전 시킨다.
 
 	XMMATRIX R = XMMatrixRotationY(angle);
 
@@ -243,14 +244,14 @@ void Camera::UpdateViewMatrix()
 		XMVECTOR L = XMLoadFloat3(&m_Look);
 		XMVECTOR P = XMLoadFloat3(&m_Position);
 
-		// Keep camera's axes orthogonal to each other and of unit length.
+		// 로컬 카메라 축을 나타내는값들이 서로, 수직이 되도록 유지시킨다.
 		L = XMVector3Normalize(L);
 		U = XMVector3Normalize(XMVector3Cross(L, R));
 
-		// U, L already ortho-normal, so no need to normalize cross product.
+		// up 벡터와 front 벡터로 right 벡터를 구한다.
 		R = XMVector3Cross(U, L);
 
-		// Fill in the view matrix entries.
+		// view 매트릭스를 공식대로 채운다.
 		float x = -XMVectorGetX(XMVector3Dot(P, R));
 		float y = -XMVectorGetX(XMVector3Dot(P, U));
 		float z = -XMVectorGetX(XMVector3Dot(P, L));
