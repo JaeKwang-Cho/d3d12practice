@@ -1,5 +1,5 @@
 //***************************************************************************************
-// 11_FPSCamera.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+// 13_Instancing_Frustum.hlsl by Frank Luna (C) 2015 All Rights Reserved.
 //
 // Default shader, currently supports lighting.
 //***************************************************************************************
@@ -21,6 +21,17 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
+struct InstanceData
+{
+    float4x4 WorldMat;
+    float4x4 InvWorldTransposeMat;
+    float4x4 TexTransform;
+    uint MaterialIndex;
+    uint InstPad0;
+    uint InstPad1;
+    uint InstPad2;
+};
+
 struct MaterialData
 {
     float4 DiffuseAlbedo;
@@ -33,15 +44,10 @@ struct MaterialData
     uint MatPad2;
 };
 
-// 5.1 부터 사용 가능한 Texture Array다. Texture2DArray와 다른 점은
-// Texture 크기가 달라도 사용가능 하다는 점이다.
-Texture2D gDiffuseMap[5] : register(t0);
-// 이렇게 배열로 만들면
-// t0 ~ t4 까지 사용하게 된다.
+Texture2D gDiffuseMap[7] : register(t0);
 
-// space는 레지스터 번호가 겹치지 않게 해주는 것이다...
-// 기본은 space0 이다.
-StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
+StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
+StructuredBuffer<MaterialData> gMaterialData : register(t1, space1);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -54,21 +60,8 @@ SamplerState gSamLinearBorder : register(s7);
 SamplerState gSamAnisotropicWrap : register(s8);
 SamplerState gSamAnisotropicClamp : register(s9);
 
-
-// Material 마다 달라지는 Constant Buffer
-cbuffer cbPerObject : register(b0)
-{
-    float4x4 gWorld;
-    float4x4 gInvWorldTranspose;
-    float4x4 gTexTransform;
-    uint gMaterialIndex;
-    uint gObjPad0;
-    uint gObjPad1;
-    uint gObjPad2;
-};
-
 // 프레임 마다 달라지는 Constant Buffer
-cbuffer cbPass : register(b1)
+cbuffer cbPass : register(b0)
 {
     float4x4 gView;
     float4x4 gInvView;
@@ -119,30 +112,41 @@ struct VertexOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float2 TexC : TEXCOORD;
+    // nointerpolation 키워드를 이용하면, 값이 삼각형 따라 보간되지 않는다.
+    nointerpolation uint MatIndex : MATINDEX;
 };
 
-VertexOut VS(VertexIn vin)
+VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
 {
     VertexOut vout = (VertexOut) 0.0f;
     
+    // 인스턴스 자료를 가져온다.
+    InstanceData instData = gInstanceData[instanceID];
+    float4x4 world = instData.WorldMat;
+    float4x4 InvWorldTranspose = instData.InvWorldTransposeMat;
+    float4x4 texTransform = instData.TexTransform;
+    uint matIndex = instData.MaterialIndex;
+    
+    vout.MatIndex = matIndex;
+    
     // 머테리얼 데이터를 가져온다
-    MaterialData matData = gMaterialData[gMaterialIndex];
+    MaterialData matData = gMaterialData[matIndex];
 	
     // World Pos로 바꾼다.
-    float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
+    float4 posW = mul(float4(vin.PosL, 1.0f), world);
     vout.PosW = posW.xyz;
 
     // Uniform Scaling 이라고 가정하고 계산한다.
     // (그렇지 않으면, 역전치 행렬을 사용해야 한다.)
     //vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
-    vout.NormalW = mul(vin.NormalL, (float3x3) gInvWorldTranspose);
+    vout.NormalW = mul(vin.NormalL, (float3x3) InvWorldTranspose);
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
 
     vout.PosH = mul(posW, gViewProj);
     
     // Texture에게 주어진 Transform을 적용시킨 다음
-    float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
+    float4 texC = mul(float4(vin.TexC, 0.f, 1.f), texTransform);
     // World를 곱해서 PS로 넘겨준다.
     vout.TexC = mul(texC, matData.MaterialTransform).xy;
     return vout;
@@ -152,7 +156,7 @@ float4 PS(VertexOut pin) : SV_Target
 {
     // Object Constant에 있는 Index를 이용해서
     // Pipeline에 bind 된, Material 정보와 Texture를 가져와서 색을 뽑아낸다.
-    MaterialData matData = gMaterialData[gMaterialIndex];
+    MaterialData matData = gMaterialData[pin.MatIndex];
     float4 diffuseAlbedo = matData.DiffuseAlbedo;
     float3 fresnelR0 = matData.FresnelR0;
     float roughness = matData.Roughness;

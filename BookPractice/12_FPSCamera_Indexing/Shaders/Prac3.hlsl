@@ -1,5 +1,5 @@
 //***************************************************************************************
-// 11_FPSCamera.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+// Prac3.hlsl by Frank Luna (C) 2015 All Rights Reserved.
 //
 // Default shader, currently supports lighting.
 //***************************************************************************************
@@ -106,7 +106,7 @@ struct VertexIn
     float3 PosL : POSITION;
     float3 NormalL : NORMAL;
     float2 TexC : TEXCOORD;
-    uint Index : BLENDINDICES;
+    uint Index : INDEX;
 };
 
 // 출력으로는 World Pos와 동차 (Homogeneous clip space) Pos로 나눈다.

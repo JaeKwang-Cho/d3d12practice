@@ -1,5 +1,5 @@
 //***************************************************************************************
-// 11_FPSCamera.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+// 12_FPSCamera_Indexing.hlsl by Frank Luna (C) 2015 All Rights Reserved.
 //
 // Default shader, currently supports lighting.
 //***************************************************************************************
