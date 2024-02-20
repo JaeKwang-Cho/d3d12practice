@@ -76,7 +76,14 @@
     <None Include="Shaders\waves.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="Shaders\11_FPSCamera.hlsl" />
-    <None Include="Shaders\LightingUtil.hlsl" />
+    <None Include="Shaders\11_FPSCamera.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Prac3.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

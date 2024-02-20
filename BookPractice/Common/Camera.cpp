@@ -223,7 +223,13 @@ void Camera::AddPitch(float angle)
 }
 
 void Camera::AddYaw(float angle)
-{
+{	/*
+	XMMATRIX R = XMMatrixRotationAxis(XMLoadFloat3(&m_Up), angle);
+
+	XMStoreFloat3(&m_Right, XMVector3TransformNormal(XMLoadFloat3(&m_Right), R));
+	XMStoreFloat3(&m_Look, XMVector3TransformNormal(XMLoadFloat3(&m_Look), R));
+	*/	
+
 	// 뭐 다른 이유는 없으니, 월드 y 벡터를 기준으로 회전 시킨다.
 
 	XMMATRIX R = XMMatrixRotationY(angle);
@@ -231,6 +237,18 @@ void Camera::AddYaw(float angle)
 	XMStoreFloat3(&m_Right,   XMVector3TransformNormal(XMLoadFloat3(&m_Right), R));
 	XMStoreFloat3(&m_Up, XMVector3TransformNormal(XMLoadFloat3(&m_Up), R));
 	XMStoreFloat3(&m_Look, XMVector3TransformNormal(XMLoadFloat3(&m_Look), R));
+
+	m_ViewDirty = true;
+}
+
+void Camera::AddRoll(float angle)
+{
+	// 로컬 정면 벡터를 기준으로 회전 시킨다..
+
+	XMMATRIX R = XMMatrixRotationAxis(XMLoadFloat3(&m_Look), angle);
+
+	XMStoreFloat3(&m_Right, XMVector3TransformNormal(XMLoadFloat3(&m_Right), R));
+	XMStoreFloat3(&m_Up, XMVector3TransformNormal(XMLoadFloat3(&m_Up), R));
 
 	m_ViewDirty = true;
 }

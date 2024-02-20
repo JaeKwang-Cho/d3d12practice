@@ -14,6 +14,8 @@
 
 const int g_NumFrameResources = 3;
 
+#define PRAC3 (1)
+
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
 struct RenderItem 
@@ -35,10 +37,9 @@ struct RenderItem
 	// Render Item과 GPU에 넘어간 CB가 함께 가지는 Index 값
 	UINT ObjCBIndex = 1;
 
-	// 이 예제에서는 Geometry 말고도
 	MeshGeometry* Geo = nullptr;
-	// Material 포인터도 가지고 있는다.
-	Material* Mat = nullptr;
+	// Material 포인터 대신 인덱스만 가지고 있는다.
+	UINT MatIndex = 0;
 
 	// 다른걸 쓸일은 잘 없을 듯
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -96,10 +97,10 @@ private:
 	void BuildStageGeometry();
 	void BuildSkullGeometry();
 
-	void BuildPSOs();
-	void BuildFrameResources();
 	void BuildMaterials();
 	void BuildRenderItems();
+	void BuildPSOs();
+	void BuildFrameResources();
 
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
 	void DrawAllSubRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
@@ -107,6 +108,26 @@ private:
 	// 지형의 높이와 노멀을 계산하는 함수다.
 	float GetHillsHeight(float _x, float _z) const;
 	XMFLOAT3 GetHillsNormal(float _x, float _z)const;
+
+	// Practice 3
+	void LoadTextures_Prac3();
+	void BuildDescriptorHeaps_Prac3();
+	void BuildShadersAndInputLayout_Prac3();
+	void BuildBoxesGeometry_Prac3();
+	void BuildMaterials_Prac3();
+	void BuildRenderItems_Prac3();
+	void InitPractice3()
+	{
+		LoadTextures_Prac3();
+		BuildRootSignature();
+		BuildDescriptorHeaps_Prac3();
+		BuildShadersAndInputLayout_Prac3();
+		BuildBoxesGeometry_Prac3();
+		BuildMaterials_Prac3();
+		BuildRenderItems_Prac3();
+		BuildPSOs();
+		BuildFrameResources();
+	}
 
 	// 정적 샘플러 구조체를 미리 만드는 함수이다.
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> GetStaticSamplers();
@@ -206,6 +227,10 @@ bool FPSCameraApp::Initialize()
 	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
 
 	// ======== 초기화 ==========
+
+#if PRAC3
+	InitPractice3();
+#else
 	LoadTextures();
 	BuildRootSignature();
 	BuildDescriptorHeaps();
@@ -218,6 +243,7 @@ bool FPSCameraApp::Initialize()
 	BuildRenderItems();
 	BuildFrameResources();
 	BuildPSOs();
+#endif
 	// =========================
 
 
@@ -391,14 +417,22 @@ void FPSCameraApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
 	{
-		// 마우스가 움직인 픽셀의 1/4 만큼 1 radian 으로 바꿔서 세타와 피에 적용시킨다.
 		float dx = XMConvertToRadians(0.25f * static_cast<float>(_x - m_LastMousePos.x));
 		float dy = XMConvertToRadians(0.25f * static_cast<float>(_y - m_LastMousePos.y));
 
 		m_Camera.AddPitch(dy);
 		m_Camera.AddYaw(dx);
 	}
+	// 가운데 마우스가 눌린 상태에서 움직인다면
+	/*
+	if ((_btnState & MK_MBUTTON) != 0)
+	{
+		float dx = XMConvertToRadians(0.25f * static_cast<float>(_x - m_LastMousePos.x));
+		float dy = XMConvertToRadians(0.25f * static_cast<float>(_y - m_LastMousePos.y));
 
+		m_Camera.AddRoll(dx);
+	}
+	*/
 	m_LastMousePos.x = _x;
 	m_LastMousePos.y = _y;
 }
@@ -450,7 +484,7 @@ void FPSCameraApp::UpdateObjectCBs(const GameTimer& _gt)
 			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
 
 			// 머테리얼 인덱스를 넣어준다.
-			objConstants.MaterialIndex = e->Mat->MatCBIndex;
+			objConstants.MaterialIndex = e->MatIndex;
 			
 			// CB에 넣어주고
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
@@ -1067,7 +1101,7 @@ void FPSCameraApp::BuildRenderItems()
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
 	boxRitem->ObjCBIndex = 1;
 	boxRitem->Geo = m_Geometries["shapeGeo"].get();
-	boxRitem->Mat = m_Materials["stoneMat"].get();
+	boxRitem->MatIndex = m_Materials["stoneMat"].get()->MatCBIndex;
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -1082,7 +1116,7 @@ void FPSCameraApp::BuildRenderItems()
 	gridRitem->WorldMat = MathHelper::Identity4x4();
 	gridRitem->ObjCBIndex = 2;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();
-	gridRitem->Mat = m_Materials["tileMat"].get();
+	gridRitem->MatIndex = m_Materials["tileMat"].get()->MatCBIndex;
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
@@ -1110,7 +1144,7 @@ void FPSCameraApp::BuildRenderItems()
 		XMStoreFloat4x4(&leftCylRitem->TexTransform, XMMatrixIdentity());
 		leftCylRitem->ObjCBIndex = objCBIndex++;
 		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftCylRitem->Mat = m_Materials["brickMat"].get();
+		leftCylRitem->MatIndex = m_Materials["brickMat"].get()->MatCBIndex;
 		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1120,7 +1154,7 @@ void FPSCameraApp::BuildRenderItems()
 		XMStoreFloat4x4(&rightCylRitem->TexTransform, XMMatrixIdentity());
 		rightCylRitem->ObjCBIndex = objCBIndex++;
 		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightCylRitem->Mat = m_Materials["brickMat"].get();
+		rightCylRitem->MatIndex = m_Materials["brickMat"].get()->MatCBIndex;
 		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1129,7 +1163,7 @@ void FPSCameraApp::BuildRenderItems()
 		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
 		leftSphereRitem->ObjCBIndex = objCBIndex++;
 		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftSphereRitem->Mat = m_Materials["stoneMat"].get();
+		leftSphereRitem->MatIndex = m_Materials["stoneMat"].get()->MatCBIndex;
 		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1138,7 +1172,7 @@ void FPSCameraApp::BuildRenderItems()
 		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
 		rightSphereRitem->ObjCBIndex = objCBIndex++;
 		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightSphereRitem->Mat = m_Materials["stoneMat"].get();
+		rightSphereRitem->MatIndex = m_Materials["stoneMat"].get()->MatCBIndex;
 		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1163,7 +1197,7 @@ void FPSCameraApp::BuildRenderItems()
 	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
 	skullRenderItem->ObjCBIndex = 0;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
-	skullRenderItem->Mat = m_Materials["whiteMat"].get();
+	skullRenderItem->MatIndex = m_Materials["whiteMat"].get()->MatCBIndex;
 	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
@@ -1271,6 +1305,298 @@ XMFLOAT3 FPSCameraApp::GetHillsNormal(float _x, float _z) const
 	XMStoreFloat3(&n, unitNormal);
 
 	return n;
+}
+
+void FPSCameraApp::LoadTextures_Prac3()
+{
+	std::unique_ptr<Texture> boxTex0 = std::make_unique<Texture>();
+	boxTex0->Name = "boxTex0";
+	boxTex0->Filename = L"../Textures/ice.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		boxTex0->Filename.c_str(),
+		boxTex0->Resource,
+		boxTex0->UploadHeap
+	));
+
+	m_Textures[boxTex0->Name] = std::move(boxTex0);
+
+	std::unique_ptr<Texture> boxTex1 = std::make_unique<Texture>();
+	boxTex1->Name = "boxTex1";
+	boxTex1->Filename = L"../Textures/bricks2.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		boxTex1->Filename.c_str(),
+		boxTex1->Resource,
+		boxTex1->UploadHeap
+	));
+
+	m_Textures[boxTex1->Name] = std::move(boxTex1);
+
+	std::unique_ptr<Texture> boxTex2 = std::make_unique<Texture>();
+	boxTex2->Name = "boxTex2";
+	boxTex2->Filename = L"../Textures/bricks3.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		boxTex2->Filename.c_str(),
+		boxTex2->Resource,
+		boxTex2->UploadHeap
+	));
+
+	m_Textures[boxTex2->Name] = std::move(boxTex2);
+
+	std::unique_ptr<Texture> boxTex3 = std::make_unique<Texture>();
+	boxTex3->Name = "boxTex3";
+	boxTex3->Filename = L"../Textures/checkboard.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		boxTex3->Filename.c_str(),
+		boxTex3->Resource,
+		boxTex3->UploadHeap
+	));
+
+	m_Textures[boxTex3->Name] = std::move(boxTex3);
+
+	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
+	std::unique_ptr<Texture> boxTex4 = std::make_unique<Texture>();
+	boxTex4->Name = "boxTex4";
+	boxTex4->Filename = L"../Textures/flare.dds";
+	ThrowIfFailed(CreateDDSTextureFromFile12(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		boxTex4->Filename.c_str(),
+		boxTex4->Resource,
+		boxTex4->UploadHeap
+	));
+	m_Textures[boxTex4->Name] = std::move(boxTex4);
+}
+
+void FPSCameraApp::BuildDescriptorHeaps_Prac3()
+{
+	const int textureDescriptorCount = 5;
+
+	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = textureDescriptorCount;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_CbvSrvUavDescriptorHeap)));
+
+	// 이제 텍스쳐를 View로 만들면서 Heap과 연결해준다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	// 텍스쳐 리소스를 얻은 다음
+	ID3D12Resource* boxTex0 = m_Textures["boxTex0"].get()->Resource.Get();
+	ID3D12Resource* boxTex1 = m_Textures["boxTex1"].get()->Resource.Get();
+	ID3D12Resource* boxTex2 = m_Textures["boxTex2"].get()->Resource.Get();
+	ID3D12Resource* boxTex3 = m_Textures["boxTex3"].get()->Resource.Get();
+	ID3D12Resource* boxTex4 = m_Textures["boxTex4"].get()->Resource.Get();
+
+	// view를 만들어주고
+	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
+	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srcDesc.Format = boxTex0->GetDesc().Format;
+	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srcDesc.Texture2D.MostDetailedMip = 0;
+	srcDesc.Texture2D.MipLevels = -1;
+	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+
+	// view를 만들면서 연결해준다.
+	m_d3dDevice->CreateShaderResourceView(boxTex0, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = boxTex1->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = boxTex1->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(boxTex1, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = boxTex2->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = boxTex2->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(boxTex2, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = boxTex3->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = boxTex3->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(boxTex3, &srcDesc, viewHandle);
+
+	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+	srcDesc.Format = boxTex4->GetDesc().Format;
+	srcDesc.Texture2D.MipLevels = boxTex4->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(boxTex4, &srcDesc, viewHandle);
+}
+
+void FPSCameraApp::BuildShadersAndInputLayout_Prac3()
+{
+	const D3D_SHADER_MACRO alphaTestDefines[] =
+	{
+		"ALPHA_TEST", "1",
+		NULL, NULL
+	};
+
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\Prac3.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\Prac3.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\Prac3.hlsl", alphaTestDefines, "PS", "ps_5_1");
+
+	m_InputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "BLENDINDICES", 0, DXGI_FORMAT_R32_UINT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+	};
+}
+
+void FPSCameraApp::BuildBoxesGeometry_Prac3()
+{
+	struct Vertex_Prac3 
+	{
+		XMFLOAT3 Pos;
+		XMFLOAT3 Normal;
+		XMFLOAT2 TexC;
+		UINT Index;
+		Vertex_Prac3() = default;
+		Vertex_Prac3(const GeometryGenerator::Vertex& _vert, UINT _index)
+			:Pos(_vert.Position), Normal(_vert.Normal), TexC(_vert.TexC), Index(_index)
+		{ }
+	};
+
+	GeometryGenerator geoGenerator;
+	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.f, 1.f, 1.f, 2);
+
+	UINT boxVertCount = (UINT)box.Vertices.size();
+	UINT boxIndexCount = (UINT)box.Indices32.size();
+	
+	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+	geo->Name = "boxGeo";
+
+	std::vector<Vertex_Prac3> vertices;
+	vertices.reserve(boxVertCount * 5);
+
+	std::vector<uint32_t> indices;
+	indices.reserve(boxIndexCount * 5);
+
+	for (UINT b = 0; b < 5; b++)
+	{
+		for (UINT i = 0; i < boxVertCount; i++)
+		{
+			vertices.push_back(Vertex_Prac3(box.Vertices[i], b));
+		}
+		indices.insert(indices.end(), std::begin(box.Indices32), std::end(box.Indices32));
+
+		SubmeshGeometry boxSubmesh;
+		boxSubmesh.IndexCount = boxIndexCount;
+		boxSubmesh.StartIndexLocation = boxIndexCount * b;
+		boxSubmesh.BaseVertexLocation = boxVertCount * b;
+
+		std::string boxArgs = "box" + to_string(b);
+		geo->DrawArgs[boxArgs] = boxSubmesh;
+	}
+	const UINT vbByteSize = boxVertCount * sizeof(Vertex_Prac3) * 5;
+	const UINT ibByteSize = boxIndexCount * sizeof(std::uint32_t) * 5;
+
+	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+	// Vertex 와 Index 정보를 Default Buffer로 만들고
+	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		vertices.data(),
+		vbByteSize,
+		geo->VertexBufferUploader
+	);
+
+	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		indices.data(),
+		ibByteSize,
+		geo->IndexBufferUploader
+	);
+
+	geo->VertexByteStride = sizeof(Vertex_Prac3);
+	geo->VertexBufferByteSize = vbByteSize;
+	geo->IndexFormat = DXGI_FORMAT_R32_UINT;
+	geo->IndexBufferByteSize = ibByteSize;
+
+	m_Geometries["boxGeo"] = std::move(geo);
+}
+
+void FPSCameraApp::BuildMaterials_Prac3()
+{
+	std::unique_ptr<Material> box0Mat = std::make_unique<Material>();
+	box0Mat->Name = "box0Mat";
+	box0Mat->MatCBIndex = 0;
+	box0Mat->DiffuseSrvHeapIndex = 0;
+	box0Mat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	box0Mat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
+	box0Mat->Roughness = 0.125f;
+
+	std::unique_ptr<Material> box1Mat = std::make_unique<Material>();
+	box1Mat->Name = "box1Mat";
+	box1Mat->MatCBIndex = 1;
+	box1Mat->DiffuseSrvHeapIndex = 1;
+	box1Mat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	box1Mat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	box1Mat->Roughness = 0.3f;
+
+	std::unique_ptr<Material> box2Mat = std::make_unique<Material>();
+	box2Mat->Name = "box2Mat";
+	box2Mat->MatCBIndex = 2;
+	box2Mat->DiffuseSrvHeapIndex = 2;
+	box2Mat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	box2Mat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
+	box2Mat->Roughness = 0.3f;
+
+	std::unique_ptr<Material> box3Mat = std::make_unique<Material>();
+	box3Mat->Name = "box3Mat";
+	box3Mat->MatCBIndex = 3;
+	box3Mat->DiffuseSrvHeapIndex = 3;
+	box3Mat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	box3Mat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	box3Mat->Roughness = 0.3f;
+
+	std::unique_ptr<Material> box4Mat = std::make_unique<Material>();
+	box4Mat->Name = "box4Mat";
+	box4Mat->MatCBIndex = 4;
+	box4Mat->DiffuseSrvHeapIndex = 4;
+	box4Mat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	box4Mat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	box4Mat->Roughness = 0.3f;
+
+	m_Materials["box0Mat"] = std::move(box0Mat);
+	m_Materials["box1Mat"] = std::move(box1Mat);
+	m_Materials["box2Mat"] = std::move(box2Mat);
+	m_Materials["box3Mat"] = std::move(box3Mat);
+	m_Materials["box4Mat"] = std::move(box4Mat);
+}
+
+void FPSCameraApp::BuildRenderItems_Prac3()
+{
+	for (UINT i = 0; i < 5; i++)
+	{
+		std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
+
+		XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixTranslation(2.f, 0.f, 0.f) * XMMatrixRotationY((XM_2PI  * i) / 5));
+		XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
+		boxRitem->ObjCBIndex = i;
+		boxRitem->Geo = m_Geometries["boxGeo"].get();
+		boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		string subGeoArgs = "box" + to_string(i);
+		boxRitem->IndexCount = boxRitem->Geo->DrawArgs[subGeoArgs].IndexCount;
+		boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs[subGeoArgs].StartIndexLocation;
+		boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs[subGeoArgs].BaseVertexLocation;
+
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
+		m_AllRenderItems.push_back(std::move(boxRitem));
+	}
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> FPSCameraApp::GetStaticSamplers()

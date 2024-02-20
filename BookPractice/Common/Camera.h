@@ -64,6 +64,7 @@ public:
 	// 카메라 회전
 	void AddPitch(float angle);
 	void AddYaw(float angle);
+	void AddRoll(float angle);
 
 	// 카메라 속성이 바뀌었을 때, 내부 값 갱신
 	void UpdateViewMatrix();
