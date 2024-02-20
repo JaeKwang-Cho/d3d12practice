@@ -14,7 +14,7 @@
 
 const int g_NumFrameResources = 3;
 
-#define PRAC3 (1)
+#define PRAC3 (0)
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -766,9 +766,9 @@ void FPSCameraApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", nullptr, "PS", "ps_5_1");
-	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\11_FPSCamera.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\12_FPSCamera_Indexing.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\12_FPSCamera_Indexing.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\12_FPSCamera_Indexing.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_InputLayout =
 	{

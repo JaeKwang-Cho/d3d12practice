@@ -1,20 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Commons">
-      <UniqueIdentifier>{8941ebe7-7815-443b-b68b-a0bb2c1f4e46}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Commons\소스 파일">
-      <UniqueIdentifier>{5750783a-4886-4796-946c-fe2f447138c2}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Commons\헤더 파일">
-      <UniqueIdentifier>{0baacf59-7146-4975-badd-79576096eefa}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Shaders">
-      <UniqueIdentifier>{ff02a6dc-9c98-42a4-8531-41932beeffba}</UniqueIdentifier>
-    </Filter>
-  </ItemGroup>
-  <ItemGroup>
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="main.cpp" />
     <ClCompile Include="..\Common\Camera.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
@@ -24,10 +12,10 @@
     <ClCompile Include="..\Common\d3dUtil.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\Common\GameTimer.cpp">
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
+    <ClCompile Include="..\Common\GameTimer.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="..\Common\GeometryGenerator.cpp">
@@ -36,11 +24,10 @@
     <ClCompile Include="..\Common\MathHelper.cpp">
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
-    <ClCompile Include="FrameResource.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="Waves_CS.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="FrameResource.h" />
     <ClInclude Include="..\Common\Camera.h">
       <Filter>Commons\헤더 파일</Filter>
     </ClInclude>
@@ -68,36 +55,33 @@
     <ClInclude Include="..\Common\UploadBuffer.h">
       <Filter>Commons\헤더 파일</Filter>
     </ClInclude>
-    <ClInclude Include="FrameResource.h" />
-    <ClInclude Include="Waves_CS.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\11_TessellationShader.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\waves.hlsl">
+    <None Include="Shaders\12_FPSCamera_Indexing.hlsl">
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\LightingUtil.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="Shaders\Tessellation.hlsl">
+    <None Include="Shaders\waves.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="Shaders\BezierTessellation.hlsl">
+    <None Include="Shaders\Prac3.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="Shaders\Bezier_Quadratic.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\Tessellation_factor.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\depricated_Tessellation_iso.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\Bezier_Triangle.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Commons">
+      <UniqueIdentifier>{8ddc547d-f2e1-4514-8106-6764301e6066}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{8d643059-8df7-4441-af3b-21a16754dc4d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\소스 파일">
+      <UniqueIdentifier>{e093897d-5f3d-477e-9ad9-70059bb6ff8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\헤더 파일">
+      <UniqueIdentifier>{cc0ccac9-0f89-4a63-89dc-1d5be285758c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
 </Project>

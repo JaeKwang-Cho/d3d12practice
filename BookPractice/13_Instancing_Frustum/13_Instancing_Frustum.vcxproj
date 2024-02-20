@@ -43,26 +43,18 @@
     <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\11_FPSCamera.hlsl">
+    <None Include="Shaders\13_Instancing_Frustum.hlsl">
       <FileType>Document</FileType>
     </None>
     <None Include="Shaders\LightingUtil.hlsl">
-      <FileType>Document</FileType>
-    </None>
-    <None Include="Shaders\waves.hlsl">
-      <FileType>Document</FileType>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="Shaders\Prac3.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{12535442-fe78-44bf-bb31-e894f68febc2}</ProjectGuid>
-    <RootNamespace>My12FPSCamera</RootNamespace>
+    <ProjectGuid>{4b70aa1c-9acd-45bb-b3fd-a2c3bb25a918}</ProjectGuid>
+    <RootNamespace>My13InstancingFrustum</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
