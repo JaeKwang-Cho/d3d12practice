@@ -12,6 +12,8 @@
 #include "FileReader.h"
 #include "../Common/Camera.h"
 
+#define PRAC1 (1)
+
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -45,7 +47,12 @@ struct RenderItem
 	std::vector<InstanceData> Instances;
 	UINT InstanceCount = 0;
 	// Axis-Aligned-Bounding-Box 이다.
+#if PRAC1
+	BoundingSphere Bounds;
+#else
 	BoundingBox Bounds;
+#endif
+	
 
 	// DrawIndexedInstanced 인자이다.
 	UINT IndexCount = 0;
@@ -833,8 +840,13 @@ void InstancingApp::BuildSkullGeometry()
 	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
 
+#if PRAC1
+	BoundingSphere bounds;
+	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
+#else
 	BoundingBox bounds;
 	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
+#endif
 
 	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
@@ -876,7 +888,11 @@ void InstancingApp::BuildSkullGeometry()
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
 	// 구해놓은 바운딩박스도 설정해준다.
-	submesh.Bounds = bounds;
+#if PRAC1
+	submesh.BoundSphere = bounds;
+#else
+	submesh.BoundBox = bounds;
+#endif
 
 	geo->DrawArgs["skull"] = submesh;
 
@@ -1041,7 +1057,12 @@ void InstancingApp::BuildRenderItems()
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
 	skullRenderItem->InstanceCount = 0;
-	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].Bounds;
+#if PRAC1
+	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].BoundSphere;
+#else
+	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].BoundBox;
+#endif
+	
 
 	// instance 정보를 만든다.
 	const int n = 5;

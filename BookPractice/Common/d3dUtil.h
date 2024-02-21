@@ -141,7 +141,9 @@ struct SubmeshGeometry
 	INT BaseVertexLocation = 0;
 
     // sub mesh를 감싸는 bounding box를 정의한다.
-	DirectX::BoundingBox Bounds;
+	DirectX::BoundingBox BoundBox;
+	// sub mesh를 감싸는 bounding Sphere를 정의한다.
+	DirectX::BoundingSphere BoundSphere;
 };
 
 struct MeshGeometry
