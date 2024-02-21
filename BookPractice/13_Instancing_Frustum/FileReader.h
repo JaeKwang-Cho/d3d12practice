@@ -32,7 +32,7 @@ namespace Dorasima
 		return uv;
 	}
 
-	void Prac3VerticesNIndicies(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices)
+	void Prac3VerticesNIndicies(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices, BoundingBox& _outBounds)
 	{
 		ifstream fin;
 		fin.open(_Path);
@@ -43,6 +43,12 @@ namespace Dorasima
 
 		float px, py, pz, nx, ny, nz;
 		uint32_t index;
+
+		XMFLOAT3 vMinf3(+MathHelper::Infinity, +MathHelper::Infinity, +MathHelper::Infinity);
+		XMFLOAT3 vMaxf3(-MathHelper::Infinity, -MathHelper::Infinity, -MathHelper::Infinity);
+
+		XMVECTOR vMin = XMLoadFloat3(&vMinf3);
+		XMVECTOR vMax = XMLoadFloat3(&vMaxf3);
 
 		if (fin.is_open())
 		{
@@ -69,7 +75,16 @@ namespace Dorasima
 				//XMFLOAT2 uv(0.f, 0.f);
 				Vertex skullVert = { pos, norm, uv };
 				_outVertices.push_back(skullVert);
+
+				// XMVECTOR를 이용해서 성분별로 최대최소를 쉽게 구한다.
+				XMVECTOR P = XMLoadFloat3(&pos);
+
+				vMin = XMVectorMin(vMin, P);
+				vMax = XMVectorMax(vMax, P);
 			}
+			XMStoreFloat3(&_outBounds.Center, 0.5f * (vMin + vMax));
+			XMStoreFloat3(&_outBounds.Extents, 0.5f * (vMax - vMin));
+
 			fin >> TrashBin;
 			fin >> TrashBin;
 			fin >> TrashBin;

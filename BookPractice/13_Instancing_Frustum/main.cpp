@@ -40,9 +40,12 @@ struct RenderItem
 
 	// 다른걸 쓸일은 잘 없을 듯
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
 	// 인스턴스 개수와 함께 가지고 있는다.
 	std::vector<InstanceData> Instances;
 	UINT InstanceCount = 0;
+	// Axis-Aligned-Bounding-Box 이다.
+	BoundingBox Bounds;
 
 	// DrawIndexedInstanced 인자이다.
 	UINT IndexCount = 0;
@@ -153,6 +156,9 @@ private:
 
 	// FrameResource에게 전달해 주기 위해 Instance 개수를 앱에서 기록한다.
 	UINT m_InstanceCount = 0;
+	// 카메라 안에 들어오는 Bounding Frustum이다.
+	BoundingFrustum m_CamFrustum;
+	bool m_FrustumCullingEnabled = true;
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
@@ -238,6 +244,9 @@ void InstancingApp::OnResize()
 	D3DApp::OnResize();
 
 	m_Camera.SetFrustum(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
+
+	// frustum의 모양새는 Projection Matrix가 결정한다.
+	BoundingFrustum::CreateFromMatrix(m_CamFrustum, m_Camera.GetProjMat());
 }
 
 void InstancingApp::Update(const GameTimer& _gt)
@@ -435,6 +444,12 @@ void InstancingApp::OnKeyboardInput(const GameTimer _gt)
 	if (GetAsyncKeyState('E') & 0x8000)
 		m_Camera.Ascend(-10.0f * dt);
 
+	if (GetAsyncKeyState('1') & 0x8000)
+		m_FrustumCullingEnabled = true;
+
+	if (GetAsyncKeyState('2') & 0x8000)
+		m_FrustumCullingEnabled = false;
+
 	m_Camera.UpdateViewMatrix();
 }
 
@@ -460,13 +475,23 @@ void InstancingApp::UpdateInstanceData(const GameTimer& _gt)
 			XMVECTOR detworldMat = XMMatrixDeterminant(worldMat);
 			XMMATRIX invWorldMat = XMMatrixInverse(&detworldMat, worldMat);
 
-			InstanceData data;
-			XMStoreFloat4x4(&data.WorldMat, XMMatrixTranspose(worldMat));
-			XMStoreFloat4x4(&data.InvWorldMat, XMMatrixTranspose(invWorldMat));
-			XMStoreFloat4x4(&data.TexTransform, XMMatrixTranspose(texTransform));
-			data.MaterialIndex = instanceData[i].MaterialIndex;
+			// 뷰 공간을 오브젝트 로컬 공간으로 변환한다.
+			XMMATRIX viewToLocal = XMMatrixMultiply(invViewMat, invWorldMat);
+			// 카메라 프러스텀을 뷰공간에서 오브젝트 로컬 공간으로 변환한다.
+			BoundingFrustum localSpaceFrustum;
+			m_CamFrustum.Transform(localSpaceFrustum, viewToLocal);
 
-			currInstanceBuffer->CopyData(visibleInstanceCount++, data);
+			// 로컬 공간에서 물체 BB와 카메라 FB가 겹친다면 해당 인스턴스를 그린다.
+			if ((localSpaceFrustum.Contains(e->Bounds) != DirectX::DISJOINT) || (m_FrustumCullingEnabled == false))
+			{
+				InstanceData data;
+				XMStoreFloat4x4(&data.WorldMat, XMMatrixTranspose(worldMat));
+				XMStoreFloat4x4(&data.InvWorldMat, XMMatrixTranspose(invWorldMat));
+				XMStoreFloat4x4(&data.TexTransform, XMMatrixTranspose(texTransform));
+				data.MaterialIndex = instanceData[i].MaterialIndex;
+				// 업로드 버퍼로 해놔서 바로 가능하다.
+				currInstanceBuffer->CopyData(visibleInstanceCount++, data);
+			}
 		}
 
 		e->InstanceCount = visibleInstanceCount;
@@ -808,7 +833,8 @@ void InstancingApp::BuildSkullGeometry()
 	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
 
-	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices);
+	BoundingBox bounds;
+	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
 
 	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
@@ -849,6 +875,8 @@ void InstancingApp::BuildSkullGeometry()
 	submesh.IndexCount = (UINT)SkullIndices.size();
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
+	// 구해놓은 바운딩박스도 설정해준다.
+	submesh.Bounds = bounds;
 
 	geo->DrawArgs["skull"] = submesh;
 
@@ -1013,6 +1041,7 @@ void InstancingApp::BuildRenderItems()
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
 	skullRenderItem->InstanceCount = 0;
+	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].Bounds;
 
 	// instance 정보를 만든다.
 	const int n = 5;
