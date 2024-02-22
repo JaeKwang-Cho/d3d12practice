@@ -7,7 +7,8 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
-// 오브젝트마다 넘겨주는 친구이다.
+// 인스턴스마다 넘겨주는 친구이다.
+/*
 struct InstanceData 
 {
 	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
@@ -17,6 +18,19 @@ struct InstanceData
 	UINT instPad0;
 	UINT instPad1;
 	UINT instPad2;
+};
+*/
+
+// 오브젝트마다 넘겨주는 친구이다.
+struct ObjectConstants
+{
+	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
+	UINT MaterialIndex;
+	UINT objPad0;
+	UINT objPad1;
+	UINT objPad2;
 };
 
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
@@ -108,7 +122,10 @@ public:
 
 	// RenderItem이 하나여서 하나만 가지고 있지만, 만약 여러개를 하고 싶다면,
 	// 이걸 여러개 가지던가, 그에 알맞는 구조를 가져야 할 것이다.
-	std::unique_ptr<UploadBuffer<InstanceData>> InstanceBuffer = nullptr;
+	// std::unique_ptr<UploadBuffer<InstanceData>> InstanceBuffer = nullptr;
+
+	// 다시 Object Constant Buffer로 돌아왔다.
+	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
 
 	// 이제 Constant Buffer가 아니라 StructuredBuffer으로 넘겨주고
 	// Material 정보에 Transform과 Index를 추가한 구조체를 넘겨준다.

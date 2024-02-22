@@ -12,8 +12,6 @@
 #include "FileReader.h"
 #include "../Common/Camera.h"
 
-#define PRAC1 (1)
-
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -43,16 +41,8 @@ struct RenderItem
 	// 다른걸 쓸일은 잘 없을 듯
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
-	// 인스턴스 개수와 함께 가지고 있는다.
-	std::vector<InstanceData> Instances;
-	UINT InstanceCount = 0;
-	// Axis-Aligned-Bounding-Box 이다.
-#if PRAC1
-	BoundingSphere Bounds;
-#else
+	bool Visible = true;
 	BoundingBox Bounds;
-#endif
-	
 
 	// DrawIndexedInstanced 인자이다.
 	UINT IndexCount = 0;
@@ -93,7 +83,8 @@ private:
 	
 	// ==== Update ====
 	void OnKeyboardInput(const GameTimer _gt);
-	void UpdateInstanceData(const GameTimer& _gt);
+	void UpdateObjectCBs(const GameTimer& _gt);
+	// void UpdateInstanceData(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void AnimateMaterials(const GameTimer& _gt);
@@ -104,7 +95,7 @@ private:
 	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
 
-	void BuildSkullGeometry();
+	void BuildCarGeometry();
 
 	void BuildMaterials();
 	void BuildRenderItems();
@@ -161,8 +152,6 @@ private:
 	// Camera
 	Camera m_Camera;
 
-	// FrameResource에게 전달해 주기 위해 Instance 개수를 앱에서 기록한다.
-	UINT m_InstanceCount = 0;
 	// 카메라 안에 들어오는 Bounding Frustum이다.
 	BoundingFrustum m_CamFrustum;
 	bool m_FrustumCullingEnabled = true;
@@ -226,7 +215,7 @@ bool PickingApp::Initialize()
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
 
-	BuildSkullGeometry();
+	BuildCarGeometry();
 
 	BuildMaterials();
 	BuildRenderItems();
@@ -284,7 +273,7 @@ void PickingApp::Update(const GameTimer& _gt)
 
 	AnimateMaterials(_gt);
 	// CB를 업데이트 해준다.
-	UpdateInstanceData(_gt);
+	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
 }
@@ -339,12 +328,12 @@ void PickingApp::Draw(const GameTimer& _gt)
 
 	// 현재 Frame Constant Buffer를 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
-	m_CommandList->SetGraphicsRootConstantBufferView(2, passCB->GetGPUVirtualAddress()); // Pass는 2번
+	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
 	// Structured Buffer는 Heap 없이 그냥 Rood Descriptor로 넘겨줄 수 있다.
 	// 현재 프레임에 사용하는 Material Buffer를 Srv로 바인드 해준다.
 	ID3D12Resource* matStructredBuffer = m_CurrFrameResource->MaterialBuffer->Resource();
-	m_CommandList->SetGraphicsRootShaderResourceView(1, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 1번
+	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
 
 	// 택스쳐가 올라가 있는 view heap에서 텍스쳐 첫번째 핸들을 설정해준다.
 	// (첫번째 것만 설정해서 넘겨주면 된다. Root Signature에 이미 정보가 다 있다.)
@@ -451,57 +440,39 @@ void PickingApp::OnKeyboardInput(const GameTimer _gt)
 	if (GetAsyncKeyState('E') & 0x8000)
 		m_Camera.Ascend(-10.0f * dt);
 
-	if (GetAsyncKeyState('1') & 0x8000)
-		m_FrustumCullingEnabled = true;
-
-	if (GetAsyncKeyState('2') & 0x8000)
-		m_FrustumCullingEnabled = false;
-
 	m_Camera.UpdateViewMatrix();
 }
 
-void PickingApp::UpdateInstanceData(const GameTimer& _gt)
+void PickingApp::UpdateObjectCBs(const GameTimer& _gt)
 {
-	XMMATRIX viewMat = m_Camera.GetViewMat();
-	XMVECTOR detViewVec = XMMatrixDeterminant(viewMat);
-	XMMATRIX invViewMat = XMMatrixInverse(&detViewVec, viewMat);
-
-	UploadBuffer<InstanceData>* currInstanceBuffer = m_CurrFrameResource->InstanceBuffer.get();
+	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
 	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
 	{
-		// 아이템 마다 Instanace Data를 여러개 가지고 있다. (그게 목적이니깐)
-		const vector<InstanceData>& instanceData = e->Instances;
-		
-		int visibleInstanceCount = 0;
-
-		for (UINT i = 0; i < (UINT)instanceData.size(); i++)
+		// Constant Buffer가 변경됐을 때 Update를 한다.
+		if (e->NumFrameDirty > 0)
 		{
-			XMMATRIX worldMat = XMLoadFloat4x4(&instanceData[i].WorldMat);
-			XMMATRIX texTransform = XMLoadFloat4x4(&instanceData[i].TexTransform);
+			// CPU에 있는 값을 가져와서
+			XMMATRIX worldMat = XMLoadFloat4x4(&e->WorldMat);
+			XMMATRIX texTransform = XMLoadFloat4x4(&e->TexTransform);
 
-			XMVECTOR detworldMat = XMMatrixDeterminant(worldMat);
-			XMMATRIX invWorldMat = XMMatrixInverse(&detworldMat, worldMat);
+			ObjectConstants objConstants;
+			XMStoreFloat4x4(&objConstants.WorldMat, XMMatrixTranspose(worldMat));
+			XMVECTOR DetworldMat = XMMatrixDeterminant(worldMat);
+			XMMATRIX InvworldMat = XMMatrixInverse(&DetworldMat, worldMat);
+			XMStoreFloat4x4(&objConstants.InvWorldMat, InvworldMat);
 
-			// 뷰 공간을 오브젝트 로컬 공간으로 변환한다.
-			XMMATRIX viewToLocal = XMMatrixMultiply(invViewMat, invWorldMat);
-			// 카메라 프러스텀을 뷰공간에서 오브젝트 로컬 공간으로 변환한다.
-			BoundingFrustum localSpaceFrustum;
-			m_CamFrustum.Transform(localSpaceFrustum, viewToLocal);
+			// Texture Tile이나, Animation을 위한 Transform도 같이 넣어준다.
+			XMStoreFloat4x4(&objConstants.TexTransform, XMMatrixTranspose(texTransform));
 
-			// 로컬 공간에서 물체 BB와 카메라 FB가 겹친다면 해당 인스턴스를 그린다.
-			if ((localSpaceFrustum.Contains(e->Bounds) != DirectX::DISJOINT) || (m_FrustumCullingEnabled == false))
-			{
-				InstanceData data;
-				XMStoreFloat4x4(&data.WorldMat, XMMatrixTranspose(worldMat));
-				XMStoreFloat4x4(&data.InvWorldMat, XMMatrixTranspose(invWorldMat));
-				XMStoreFloat4x4(&data.TexTransform, XMMatrixTranspose(texTransform));
-				data.MaterialIndex = instanceData[i].MaterialIndex;
-				// 업로드 버퍼로 해놔서 바로 가능하다.
-				currInstanceBuffer->CopyData(visibleInstanceCount++, data);
-			}
+			// 머테리얼 인덱스를 넣어준다.
+			objConstants.MaterialIndex = e->Mat->MatCBIndex;
+
+			// CB에 넣어주고
+			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
+
+			// 다음 FrameResource에서 업데이트를 하도록 설정한다.
+			e->NumFrameDirty--;
 		}
-
-		e->InstanceCount = visibleInstanceCount;
 	}
 }
 
@@ -586,55 +557,6 @@ void PickingApp::AnimateMaterials(const GameTimer& _gt)
 
 void PickingApp::LoadTextures()
 {
-	std::unique_ptr<Texture> iceTex = std::make_unique<Texture>();
-	iceTex->Name = "iceTex";
-	iceTex->Filename = L"../Textures/ice.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		iceTex->Filename.c_str(),
-		iceTex->Resource,
-		iceTex->UploadHeap
-	));
-
-	
-
-	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
-	bricksTex->Name = "bricksTex";
-	bricksTex->Filename = L"../Textures/bricks.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		bricksTex->Filename.c_str(),
-		bricksTex->Resource,
-		bricksTex->UploadHeap
-	));
-	
-
-	std::unique_ptr<Texture> stoneTex = std::make_unique<Texture>();
-	stoneTex->Name = "stoneTex";
-	stoneTex->Filename = L"../Textures/stone.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		stoneTex->Filename.c_str(),
-		stoneTex->Resource,
-		stoneTex->UploadHeap
-	));
-	
-
-	std::unique_ptr<Texture> tileTex = std::make_unique<Texture>();
-	tileTex->Name = "tileTex";
-	tileTex->Filename = L"../Textures/tile.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		tileTex->Filename.c_str(),
-		tileTex->Resource,
-		tileTex->UploadHeap
-	));
-	
-
 	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
 	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
 	white1x1Tex->Name = "white1x1Tex";
@@ -647,37 +569,7 @@ void PickingApp::LoadTextures()
 		white1x1Tex->UploadHeap
 	)); 
 
-	std::unique_ptr<Texture> checkboardTex = std::make_unique<Texture>();
-	checkboardTex->Name = "checkboardTex";
-	checkboardTex->Filename = L"../Textures/checkboard.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		checkboardTex->Filename.c_str(),
-		checkboardTex->Resource,
-		checkboardTex->UploadHeap
-	)); 
-
-	std::unique_ptr<Texture> flareTex = std::make_unique<Texture>();
-	flareTex->Name = "flareTex";
-	flareTex->Filename = L"../Textures/flare.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		flareTex->Filename.c_str(),
-		flareTex->Resource,
-		flareTex->UploadHeap
-	));
-
-
-
-	m_Textures[iceTex->Name] = std::move(iceTex);
-	m_Textures[bricksTex->Name] = std::move(bricksTex);
-	m_Textures[stoneTex->Name] = std::move(stoneTex);
-	m_Textures[tileTex->Name] = std::move(tileTex);
 	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
-	m_Textures[checkboardTex->Name] = std::move(checkboardTex);
-	m_Textures[flareTex->Name] = std::move(flareTex);
 }
 
 
@@ -689,13 +581,13 @@ void PickingApp::BuildRootSignature()
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable;
-	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 7개로 만들어 준다.
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 7, 0); // t0 - texture 정보
-	
-	// Srv가 넘어가는 테이블, Instance Data, Material Data, Pass Constants를 정의 해준다.
-	slotRootParameter[0].InitAsShaderResourceView(0, 1); // space 1 / t0 - Instance Structured Buffer
-	slotRootParameter[1].InitAsShaderResourceView(1, 1); // space 1 / t1 - Material Structured Buffer
-	slotRootParameter[2].InitAsConstantBufferView(0); // b0 - PerObject
+	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 5개로 만들어 준다.
+	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0); // t0 - texture 정보
+
+	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
+	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
+	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
+	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL); // t0 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
@@ -737,7 +629,7 @@ void PickingApp::BuildRootSignature()
 
 void PickingApp::BuildDescriptorHeaps()
 {
-	const int textureDescriptorCount = 7;
+	const int textureDescriptorCount = 1;
 
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -750,55 +642,19 @@ void PickingApp::BuildDescriptorHeaps()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* skullTex = m_Textures["iceTex"].get()->Resource.Get();
-	ID3D12Resource* bricksTex = m_Textures["bricksTex"].get()->Resource.Get();
-	ID3D12Resource* stoneTex = m_Textures["stoneTex"].get()->Resource.Get();
-	ID3D12Resource* tileTex = m_Textures["tileTex"].get()->Resource.Get();
 	ID3D12Resource* whiteTex = m_Textures["white1x1Tex"].get()->Resource.Get();
-	ID3D12Resource* checkboardTex = m_Textures["checkboardTex"].get()->Resource.Get();
-	ID3D12Resource* flareTex = m_Textures["flareTex"].get()->Resource.Get();
 
 	// view를 만들어주고
 	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
 	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = skullTex->GetDesc().Format;
+	srcDesc.Format = whiteTex->GetDesc().Format;
 	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srcDesc.Texture2D.MostDetailedMip = 0;
 	srcDesc.Texture2D.MipLevels = -1;
 	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
 	// view를 만들면서 연결해준다.
-	m_d3dDevice->CreateShaderResourceView(skullTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = bricksTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = stoneTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(stoneTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = tileTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = whiteTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
 	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = checkboardTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = checkboardTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(checkboardTex, &srcDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = flareTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = flareTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(flareTex, &srcDesc, viewHandle);
 }
 
 void PickingApp::BuildShadersAndInputLayout()
@@ -828,36 +684,31 @@ void PickingApp::BuildShadersAndInputLayout()
 	};
 }
 
-void PickingApp::BuildSkullGeometry()
+void PickingApp::BuildCarGeometry()
 {
-	vector<Vertex> SkullVertices;
-	vector<uint32_t> SkullIndices;
+	vector<Vertex> CarVertices;
+	vector<uint32_t> CarIndices;
 
-#if PRAC1
-	BoundingSphere bounds;
-	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
-#else
 	BoundingBox bounds;
-	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
-#endif
+	Dorasima::Prac3VerticesNIndicies(L"..\\14_Picking\\Models\\car.txt", CarVertices, CarIndices, bounds);
 
-	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
+	const UINT vbByteSize = (UINT)CarVertices.size() * sizeof(Vertex);
+	const UINT ibByteSize = (UINT)CarIndices.size() * sizeof(std::uint32_t);
 
 	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "SkullGeo";
+	geo->Name = "CarGeo";
 
 	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), SkullVertices.data(), vbByteSize);
+	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), CarVertices.data(), vbByteSize);
 
 	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), SkullIndices.data(), ibByteSize);
+	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), CarIndices.data(), ibByteSize);
 
 	// Vertex 와 Index 정보를 Default Buffer로 만들고
 	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		SkullVertices.data(),
+		CarVertices.data(),
 		vbByteSize,
 		geo->VertexBufferUploader
 	);
@@ -865,7 +716,7 @@ void PickingApp::BuildSkullGeometry()
 	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
 		m_d3dDevice.Get(),
 		m_CommandList.Get(),
-		SkullIndices.data(),
+		CarIndices.data(),
 		ibByteSize,
 		geo->IndexBufferUploader
 	);
@@ -877,19 +728,15 @@ void PickingApp::BuildSkullGeometry()
 
 	// 서브 메쉬 설정을 해준다.
 	SubmeshGeometry submesh;
-	submesh.IndexCount = (UINT)SkullIndices.size();
+	submesh.IndexCount = (UINT)CarIndices.size();
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
 	// 구해놓은 바운딩박스도 설정해준다.
-#if PRAC1
-	submesh.BoundSphere = bounds;
-#else
 	submesh.BoundBox = bounds;
-#endif
 
-	geo->DrawArgs["skull"] = submesh;
+	geo->DrawArgs["car"] = submesh;
 
-	m_Geometries["SkullGeo"] = std::move(geo);
+	m_Geometries["CarGeo"] = std::move(geo);
 }
 
 void PickingApp::BuildPSOs()
@@ -964,7 +811,7 @@ void PickingApp::BuildFrameResources()
 		m_FrameResources.push_back(
 			std::make_unique<FrameResource>(m_d3dDevice.Get(),
 			passCBCount,
-			m_InstanceCount,
+			(UINT)m_AllRenderItems.size(),
 			(UINT)m_Materials.size()
 		));
 	}
@@ -972,137 +819,45 @@ void PickingApp::BuildFrameResources()
 
 void PickingApp::BuildMaterials()
 {
-	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
-	skullMat->Name = "skullMat";
-	skullMat->MatCBIndex = 0;
-	skullMat->DiffuseSrvHeapIndex = 0;
-	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	skullMat->Roughness = 0.125f;
-
-	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
-	brickMat->Name = "brickMat";
-	brickMat->MatCBIndex = 1;
-	brickMat->DiffuseSrvHeapIndex = 1;
-	brickMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	brickMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	brickMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> stoneMat = std::make_unique<Material>();
-	stoneMat->Name = "stoneMat";
-	stoneMat->MatCBIndex = 2;
-	stoneMat->DiffuseSrvHeapIndex = 2;
-	stoneMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	stoneMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	stoneMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
-	tileMat->Name = "tileMat";
-	tileMat->MatCBIndex = 3;
-	tileMat->DiffuseSrvHeapIndex = 3;
-	tileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	tileMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	tileMat->Roughness = 0.3f;
-
 	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
-	whiteMat->Name = "whiteMat";
-	whiteMat->MatCBIndex = 4;
-	whiteMat->DiffuseSrvHeapIndex = 4;
-	whiteMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	whiteMat->Name = "grayMat";
+	whiteMat->MatCBIndex = 0;
+	whiteMat->DiffuseSrvHeapIndex = 0;
+	whiteMat->DiffuseAlbedo = XMFLOAT4(0.7f, 0.7f, 0.7f, 1.0f);
 	whiteMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
 	whiteMat->Roughness = 0.3f;
 
-	std::unique_ptr<Material> checkboardMat = std::make_unique<Material>();
-	checkboardMat->Name = "checkboardMat";
-	checkboardMat->MatCBIndex = 5;
-	checkboardMat->DiffuseSrvHeapIndex = 5;
-	checkboardMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	checkboardMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	checkboardMat->Roughness = 0.0f;
-
-	std::unique_ptr<Material> flareMat = std::make_unique<Material>();
-	flareMat->Name = "flareMat";
-	flareMat->MatCBIndex = 6;
-	flareMat->DiffuseSrvHeapIndex = 6;
-	flareMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	flareMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	flareMat->Roughness = 0.1f;
-
-	m_Materials["skullMat"] = std::move(skullMat);
-	m_Materials["brickMat"] = std::move(brickMat);
-	m_Materials["stoneMat"] = std::move(stoneMat);
-	m_Materials["tileMat"] = std::move(tileMat);
-	m_Materials["whiteMat"] = std::move(whiteMat);
-	m_Materials["checkboardMat"] = std::move(checkboardMat);
-	m_Materials["flareMat"] = std::move(flareMat);
+	m_Materials["grayMat"] = std::move(whiteMat);
 }
 
 void PickingApp::BuildRenderItems()
 {
-	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
-	skullRenderItem->WorldMat = MathHelper::Identity4x4();
-	skullRenderItem->TexTransform = MathHelper::Identity4x4();
-	skullRenderItem->ObjCBIndex = 0;
-	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
-	skullRenderItem->Mat = m_Materials["skullMat"].get();
-	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
-	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
-	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
-	skullRenderItem->InstanceCount = 0;
-#if PRAC1
-	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].BoundSphere;
-#else
-	skullRenderItem->Bounds = skullRenderItem->Geo->DrawArgs["skull"].BoundBox;
-#endif
-	
+	std::unique_ptr<RenderItem> carRenderItem = std::make_unique<RenderItem>();
+	carRenderItem->WorldMat = MathHelper::Identity4x4();
+	carRenderItem->TexTransform = MathHelper::Identity4x4();
+	carRenderItem->ObjCBIndex = 0;
+	carRenderItem->Geo = m_Geometries["CarGeo"].get();
+	carRenderItem->Mat = m_Materials["grayMat"].get();
+	carRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	carRenderItem->IndexCount = carRenderItem->Geo->DrawArgs["car"].IndexCount;
+	carRenderItem->StartIndexLocation = carRenderItem->Geo->DrawArgs["car"].StartIndexLocation;
+	carRenderItem->BaseVertexLocation = carRenderItem->Geo->DrawArgs["car"].BaseVertexLocation;
+	carRenderItem->Bounds = carRenderItem->Geo->DrawArgs["car"].BoundBox;
 
-	// instance 정보를 만든다.
-	const int n = 5;
-	m_InstanceCount = n * n * n;
-	skullRenderItem->Instances.resize(m_InstanceCount);
-
-
-	float width = 200.0f;
-	float height = 200.0f;
-	float depth = 200.0f;
-
-	float x = -0.5f * width;
-	float y = -0.5f * height;
-	float z = -0.5f * depth;
-	float dx = width / (n - 1);
-	float dy = height / (n - 1);
-	float dz = depth / (n - 1);
-	for (int k = 0; k < n; ++k)
-	{
-		for (int i = 0; i < n; ++i)
-		{
-			for (int j = 0; j < n; ++j)
-			{
-				int index = k * n * n + i * n + j;
-				// Position instanced along a 3D grid.
-				skullRenderItem->Instances[index].WorldMat = XMFLOAT4X4(
-					1.0f, 0.0f, 0.0f, 0.0f,
-					0.0f, 1.0f, 0.0f, 0.0f,
-					0.0f, 0.0f, 1.0f, 0.0f,
-					x + j * dx, y + i * dy, z + k * dz, 1.0f);
-
-				XMStoreFloat4x4(&skullRenderItem->Instances[index].TexTransform, XMMatrixScaling(2.0f, 2.0f, 1.0f));
-				skullRenderItem->Instances[index].MaterialIndex = index % m_Materials.size();
-			}
-		}
-	}
-
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
-	m_AllRenderItems.push_back(std::move(skullRenderItem));
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(carRenderItem.get());
+	m_AllRenderItems.push_back(std::move(carRenderItem));
 }
 
 void PickingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
 {
+	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+
+	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
+
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
 		RenderItem* ri = _renderItems[i];
-		
+
 		// 일단 Vertex, Index를 IA에 세팅해주고
 		D3D12_VERTEX_BUFFER_VIEW VBView = ri->Geo->VertexBufferView();
 		_cmdList->IASetVertexBuffers(0, 1, &VBView);
@@ -1116,11 +871,14 @@ void PickingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 		{
 			_cmdList->IASetPrimitiveTopology(_Type);
 		}
-		// Instance Data를 가진 Buffer를 설정해준다.
-		ID3D12Resource* instanceBuffer = m_CurrFrameResource->InstanceBuffer->Resource();
-		_cmdList->SetGraphicsRootShaderResourceView(0, instanceBuffer->GetGPUVirtualAddress()); // Instance Data는 Srv으로 루트 시그니처 0번으로 묶어준다.
-		// Instance Data에 맞게 draw를 걸어준다.
-		_cmdList->DrawIndexedInstanced(ri->IndexCount, ri->InstanceCount, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
+		// Object Constant와
+		D3D12_GPU_VIRTUAL_ADDRESS objCBAddress = objectCB->GetGPUVirtualAddress();
+		objCBAddress += ri->ObjCBIndex * objCBByteSize;
+
+		// 이제 Item은 Object Buffer만 넘겨주어도 된다.
+		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
+
+		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
 }
 

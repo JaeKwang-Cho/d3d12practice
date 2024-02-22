@@ -13,8 +13,10 @@ FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objec
 	}
 	if (_objectCount > 0)
 	{
-		// 이제 CB가 아니다.
-		InstanceBuffer = std::make_unique<UploadBuffer<InstanceData>>(_device, _objectCount, false);
+		// InstanceBuffer = std::make_unique<UploadBuffer<InstanceData>>(_device, _objectCount, false);
+
+		// 다시 Object Constast Buffer로 돌아왔다.
+		ObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(_device, _objectCount, true);
 	}
 	if (_materialCount > 0)
 	{
