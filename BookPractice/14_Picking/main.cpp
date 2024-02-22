@@ -12,6 +12,8 @@
 #include "FileReader.h"
 #include "../Common/Camera.h"
 
+#define PRAC1 (0)
+
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -42,8 +44,11 @@ struct RenderItem
 	D3D12_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 
 	bool Visible = true;
+#if PRAC1
+	BoundingSphere Bounds;
+#else
 	BoundingBox Bounds;
-
+#endif
 	// DrawIndexedInstanced 인자이다.
 	UINT IndexCount = 0;
 	UINT StartIndexLocation = 0;
@@ -694,7 +699,11 @@ void PickingApp::BuildCarGeometry()
 	vector<Vertex> CarVertices;
 	vector<uint32_t> CarIndices;
 
+#if PRAC1
+	BoundingSphere bounds;
+#else
 	BoundingBox bounds;
+#endif
 	Dorasima::Prac3VerticesNIndicies(L"..\\14_Picking\\Models\\car.txt", CarVertices, CarIndices, bounds);
 
 	const UINT vbByteSize = (UINT)CarVertices.size() * sizeof(Vertex);
@@ -736,8 +745,13 @@ void PickingApp::BuildCarGeometry()
 	submesh.IndexCount = (UINT)CarIndices.size();
 	submesh.StartIndexLocation = 0;
 	submesh.BaseVertexLocation = 0;
+
+#if PRAC1
+	submesh.BoundSphere = bounds;
+#else
 	// 구해놓은 바운딩박스도 설정해준다.
 	submesh.BoundBox = bounds;
+#endif
 
 	geo->DrawArgs["car"] = submesh;
 
@@ -954,7 +968,11 @@ void PickingApp::BuildRenderItems()
 	carRenderItem->IndexCount = carRenderItem->Geo->DrawArgs["car"].IndexCount;
 	carRenderItem->StartIndexLocation = carRenderItem->Geo->DrawArgs["car"].StartIndexLocation;
 	carRenderItem->BaseVertexLocation = carRenderItem->Geo->DrawArgs["car"].BaseVertexLocation;
+#if PRAC1
+	carRenderItem->Bounds = carRenderItem->Geo->DrawArgs["car"].BoundSphere;
+#else
 	carRenderItem->Bounds = carRenderItem->Geo->DrawArgs["car"].BoundBox;
+#endif
 
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(carRenderItem.get());
 	m_AllRenderItems.push_back(std::move(carRenderItem));
