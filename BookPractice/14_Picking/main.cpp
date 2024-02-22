@@ -58,6 +58,7 @@ enum class RenderLayer : int
 	Opaque = 0,
 	Transparent,
 	AlphaTested,
+	Highlight,
 	Count
 };
 
@@ -84,7 +85,6 @@ private:
 	// ==== Update ====
 	void OnKeyboardInput(const GameTimer _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
-	// void UpdateInstanceData(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void AnimateMaterials(const GameTimer& _gt);
@@ -94,14 +94,16 @@ private:
 	void BuildRootSignature();
 	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
-
 	void BuildCarGeometry();
-
 	void BuildMaterials();
 	void BuildRenderItems();
 	void BuildPSOs();
 	void BuildFrameResources();
 
+	// ==== Func ====
+	void Pick(int _sx, int _sy);
+
+	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
 
 	// 지형의 높이와 노멀을 계산하는 함수다.
@@ -151,6 +153,9 @@ private:
 
 	// Camera
 	Camera m_Camera;
+
+	// 편하게 하도록 App에서 관리한다.
+	RenderItem* m_PickedRenderitem = nullptr;
 
 	// 카메라 안에 들어오는 Bounding Frustum이다.
 	BoundingFrustum m_CamFrustum;
@@ -207,16 +212,17 @@ bool PickingApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
-	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
+	m_Camera.LookAt(
+		XMFLOAT3(5.0f, 4.0f, -15.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f),
+		XMFLOAT3(0.0f, 1.0f, 0.0f));
 
 	// ======== 초기화 ==========
 	LoadTextures();
 	BuildRootSignature();
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
-
 	BuildCarGeometry();
-
 	BuildMaterials();
 	BuildRenderItems();
 	BuildFrameResources();
@@ -240,9 +246,6 @@ void PickingApp::OnResize()
 	D3DApp::OnResize();
 
 	m_Camera.SetFrustum(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
-
-	// frustum의 모양새는 Projection Matrix가 결정한다.
-	BoundingFrustum::CreateFromMatrix(m_CamFrustum, m_Camera.GetProjMat());
 }
 
 void PickingApp::Update(const GameTimer& _gt)
@@ -272,7 +275,6 @@ void PickingApp::Update(const GameTimer& _gt)
 	}
 
 	AnimateMaterials(_gt);
-	// CB를 업데이트 해준다.
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
@@ -343,13 +345,9 @@ void PickingApp::Draw(const GameTimer& _gt)
 	// 그래야 alpha 계산이 가능하다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-	// 알파 자르기하는 친구들을 출력해주고
-	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
-
-	// 이제 반투명한 애들을 출력해준다.
-	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+	// 하이라이트를 출력해준다.
+	m_CommandList->SetPipelineState(m_PSOs["highlight"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Highlight]);
 
 	// ======================================
 
@@ -380,11 +378,18 @@ void PickingApp::Draw(const GameTimer& _gt)
 
 void PickingApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 {
-	// 마우스의 위치를 기억하고
-	m_LastMousePos.x = _x;
-	m_LastMousePos.y = _y;
-	// 마우스를 붙잡는다.
-	SetCapture(m_hMainWnd);
+	if ((_btnState & MK_LBUTTON) != 0)
+	{
+		// 마우스의 위치를 기억하고
+		m_LastMousePos.x = _x;
+		m_LastMousePos.y = _y;
+		// 마우스를 붙잡는다.
+		SetCapture(m_hMainWnd);
+	}
+	else if ((_btnState & MK_RBUTTON) != 0)
+	{
+		Pick(_x, _y);
+	}
 }
 
 void PickingApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
@@ -493,7 +498,7 @@ void PickingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			matData.Roughness = mat->Roughness;
 			XMStoreFloat4x4(&matData.MaterialTransform, XMMatrixTranspose(matTransform));
 			// Texture 인덱스를 넣어준다.
-			matData.DiffuseMapIndex = mat->MatCBIndex;
+			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
@@ -777,8 +782,6 @@ void PickingApp::BuildPSOs()
 	transparencyBlendDesc.LogicOpEnable = false;
 	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
 	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-	// transparencyBlendDesc.SrcBlend = D3D12_BLEND_BLEND_FACTOR;
-	// transparencyBlendDesc.DestBlend = D3D12_BLEND_BLEND_FACTOR;
 	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
 	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
 	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
@@ -799,6 +802,14 @@ void PickingApp::BuildPSOs()
 	};
 	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
+
+	// 하이라이트 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC highlighPSODesc = opaquePSODesc;
+	// 선택된 삼각형 위에 노란삼각형을 하나 더 그리는 것이다.
+	highlighPSODesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL; // 이렇게 해야 잘 보인다.
+	// 전형적인 Transparency Blending을 사용한다. (이미 위에 있다.)
+	highlighPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&highlighPSODesc, IID_PPV_ARGS(&m_PSOs["highlight"])));
 }
 
 void PickingApp::BuildFrameResources()
@@ -817,17 +828,118 @@ void PickingApp::BuildFrameResources()
 	}
 }
 
+void PickingApp::Pick(int _sx, int _sy)
+{
+	XMFLOAT4X4 p = m_Camera.GetProj4x4f();
+	// 카메라에 있는 프로젝션 매트릭스를 위해서,
+	// Projection Plane의 (0, 0)에서 view frustum으로 뻣어나가는 Ray를 구한다.
+
+	// 교재 공식을 사용한다.
+	float vx = (2.f * _sx / m_ClientWidth - 1.f) / p(0, 0);
+	float vy = (-2.f * _sy / m_ClientHeight + 1.f) / p(1, 1);
+
+	// Ray 벡터를 정의한다.
+	XMVECTOR rayOrigin = XMVectorSet(0.f, 0.f, 0.f, 1.f); // 점이니까 w 성분이 1
+	XMVECTOR rayDirection = XMVectorSet(vx, vy, 1.f, 0.f); // 방향이니까 w 성분이 0
+
+	// model을 옮기는 것보다 Ray를 view 공간으로 변환해서 비교하는게 더 효율적이다.
+	XMMATRIX v = m_Camera.GetViewMat();
+	XMVECTOR vDet = XMMatrixDeterminant(v);
+	XMMATRIX invV = XMMatrixInverse(&vDet, v);
+
+	// 일단 초기화
+	m_PickedRenderitem->Visible = false;
+	// 일단 여기선 '선택가능한 리스트'가 아니라 불투명한 애들로 루프를 돈다.
+	for (RenderItem* ri : m_RenderItemLayer[(int)RenderLayer::Opaque])
+	{
+		if (ri->Visible == false)
+		{
+			continue;
+		}
+
+		MeshGeometry* geo = ri->Geo;
+		// 물체의 월드 위치도 역으로 Ray가 움직여서 계산한다.
+		XMMATRIX w = XMLoadFloat4x4(&ri->WorldMat);
+		XMVECTOR detW = XMMatrixDeterminant(w);
+		XMMATRIX invW = XMMatrixInverse(&detW, w);
+
+		XMMATRIX toLocalMat = XMMatrixMultiply(invV, invW);
+
+		// 점으로서 행렬변환하고
+		rayOrigin = XMVector3TransformCoord(rayOrigin, toLocalMat);
+		// 벡터로서 행렬변환한다.
+		rayDirection = XMVector3TransformNormal(rayDirection, toLocalMat);
+		rayDirection = XMVector3Normalize(rayDirection);
+
+		// 모델이 선택이 되었으면, 해당 모델에 모든 삼각형에 대해 
+		// Ray intersection 테스트를 하고 그 중에서 가장 가까운 삼각형을 선택한다.
+		float tmin = 0.f;
+		if (ri->Bounds.Intersects(rayOrigin, rayDirection, tmin))
+		{
+			// 이것도 만약 geometry 마다 구성이 다르다면,
+			// intersection을 테스트하는 또다른 메타데이터를 정의해야할 것이다.
+			Vertex* vertices = (Vertex*)geo->VertexBufferCPU->GetBufferPointer();
+			std::uint32_t* indices = (std::uint32_t*)geo->IndexBufferCPU->GetBufferPointer();
+			UINT triCount = ri->IndexCount / 3;
+
+			// 가장 가까이서 겹치는 삼각형을 찾는다.
+			tmin = MathHelper::Infinity;
+			for (UINT i = 0; i < triCount; i++)
+			{
+				// 모든 삼각형을 돌면서
+				UINT i0 = indices[i * 3 + 0];
+				UINT i1 = indices[i * 3 + 1];
+				UINT i2 = indices[i * 3 + 2];
+
+				XMVECTOR v0 = XMLoadFloat3(&vertices[i0].Pos);
+				XMVECTOR v1 = XMLoadFloat3(&vertices[i1].Pos);
+				XMVECTOR v2 = XMLoadFloat3(&vertices[i2].Pos);
+
+				// 출력용 t이다. 거리를 받아온다.
+				float t = 0.f; 
+				if (DirectX::TriangleTests::Intersects(rayOrigin, rayDirection, v0, v1, v2, t))
+				{
+					if (t < tmin)
+					{
+						tmin = t;
+
+						m_PickedRenderitem->Visible = true;
+						m_PickedRenderitem->IndexCount = 3;
+						m_PickedRenderitem->StartIndexLocation = 3 * i;
+						m_PickedRenderitem->BaseVertexLocation = 0;
+						
+						// 모델과 똑같은 World를 넘겨준다.
+						m_PickedRenderitem->WorldMat = ri->WorldMat;
+						m_PickedRenderitem->NumFrameDirty = g_NumFrameResources;
+					}
+				}
+			}
+		}
+	}
+
+}
+
 void PickingApp::BuildMaterials()
 {
 	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
 	whiteMat->Name = "grayMat";
 	whiteMat->MatCBIndex = 0;
 	whiteMat->DiffuseSrvHeapIndex = 0;
-	whiteMat->DiffuseAlbedo = XMFLOAT4(0.7f, 0.7f, 0.7f, 1.0f);
+	whiteMat->DiffuseAlbedo = XMFLOAT4(0.7f, 0.7f, 0.7f, 1.f);
 	whiteMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
 	whiteMat->Roughness = 0.3f;
 
 	m_Materials["grayMat"] = std::move(whiteMat);
+
+	std::unique_ptr<Material> highlightMat = std::make_unique<Material>();
+	highlightMat->Name = "highlightMat";
+	highlightMat->MatCBIndex = 1;
+	highlightMat->DiffuseSrvHeapIndex = 0;
+	highlightMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 0.0f, 0.6f);
+	highlightMat->FresnelR0 = XMFLOAT3(0.06f, 0.06f, 0.06f);
+	highlightMat->Roughness = 0.0f;
+
+	m_Materials["highlightMat"] = std::move(highlightMat);
 }
 
 void PickingApp::BuildRenderItems()
@@ -846,6 +958,23 @@ void PickingApp::BuildRenderItems()
 
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(carRenderItem.get());
 	m_AllRenderItems.push_back(std::move(carRenderItem));
+
+	std::unique_ptr<RenderItem> pickedRenderItem = std::make_unique<RenderItem>();
+	pickedRenderItem->WorldMat = MathHelper::Identity4x4();
+	pickedRenderItem->TexTransform = MathHelper::Identity4x4();
+	pickedRenderItem->ObjCBIndex = 1;
+	pickedRenderItem->Geo = m_Geometries["CarGeo"].get();
+	pickedRenderItem->Mat = m_Materials["highlightMat"].get();
+	pickedRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	// 선택되기 전 까지 세팅하지 않는다.
+	pickedRenderItem->Visible = false;
+	pickedRenderItem->IndexCount = 0;
+	pickedRenderItem->StartIndexLocation = 0;
+	pickedRenderItem->BaseVertexLocation = 0;
+	m_PickedRenderitem = pickedRenderItem.get();
+
+	m_RenderItemLayer[(int)RenderLayer::Highlight].push_back(pickedRenderItem.get());
+	m_AllRenderItems.push_back(std::move(pickedRenderItem));
 }
 
 void PickingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
@@ -857,6 +986,10 @@ void PickingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
 		RenderItem* ri = _renderItems[i];
+		if (ri->Visible == false)
+		{
+			continue;
+		}
 
 		// 일단 Vertex, Index를 IA에 세팅해주고
 		D3D12_VERTEX_BUFFER_VIEW VBView = ri->Geo->VertexBufferView();
