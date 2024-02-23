@@ -73,12 +73,16 @@
     <ClInclude Include="FrameResource.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\15_CubeMap.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Commons.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Sky.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

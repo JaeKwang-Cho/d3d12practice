@@ -49,14 +49,13 @@ struct RenderItem
 	int BaseVertexLocation = 0;
 };
 
-// 드디어 불투명, 반투명, 알파자르기
-// 이외에도 stencil을 사용하는
-// Mirror, Reflected, Shadow가 추가 되었다.
+// 스카이 맵을 그리는 lay를 따로 둔다. 
 enum class RenderLayer : int
 {
 	Opaque = 0,
 	Transparent,
 	AlphaTested,
+	Sky, 
 	Count
 };
 
@@ -125,9 +124,7 @@ private:
 
 	// 도형, 쉐이더, PSO 등등 App에서 관리한다..
 	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
-	// Material 도 추가한다.
 	std::unordered_map<std::string, std::unique_ptr<Material>> m_Materials;
-	// Texture도 추가한다.
 	std::unordered_map<std::string, std::unique_ptr<Texture>> m_Textures;
 	std::unordered_map<std::string, ComPtr<ID3DBlob>> m_Shaders;
 	std::unordered_map<std::string, ComPtr<ID3D12PipelineState>> m_PSOs;
@@ -150,12 +147,8 @@ private:
 	// Camera
 	Camera m_Camera;
 
-	// 편하게 하도록 App에서 관리한다.
-	RenderItem* m_PickedRenderitem = nullptr;
-
-	// 카메라 안에 들어오는 Bounding Frustum이다.
-	BoundingFrustum m_CamFrustum;
-	bool m_FrustumCullingEnabled = true;
+	// Sky Texture가 위치한 view Handle Offset을 저장해 놓는다.
+	UINT m_SkyTexHeapIndex = 0;
 
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
@@ -208,10 +201,7 @@ bool CubeMapApp::Initialize()
 	// Command List를 사용한다.
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
-	m_Camera.LookAt(
-		XMFLOAT3(5.0f, 4.0f, -15.0f),
-		XMFLOAT3(0.0f, 1.0f, 0.0f),
-		XMFLOAT3(0.0f, 1.0f, 0.0f));
+	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
 
 	// ======== 초기화 ==========
 	LoadTextures();
@@ -319,36 +309,38 @@ void CubeMapApp::Draw(const GameTimer& _gt)
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 
 	// ============== 그리기 =================
-	
+	// #1 Descriptor heap과 Root Signature를 세팅해준다.
 	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
 	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
 	// PSO에 Root Signature를 세팅해준다.
 	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
 
-	// 현재 Frame Constant Buffer를 업데이트한다.
+	// #2 현재 Frame Constant Buffer를 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
-	// Structured Buffer는 Heap 없이 그냥 Rood Descriptor로 넘겨줄 수 있다.
+	// #2 Structured Buffer는 Heap 없이 그냥 Rood Descriptor로 넘겨줄 수 있다.
 	// 현재 프레임에 사용하는 Material Buffer를 Srv로 바인드 해준다.
 	ID3D12Resource* matStructredBuffer = m_CurrFrameResource->MaterialBuffer->Resource();
 	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
 
-	// 택스쳐가 올라가 있는 view heap에서 텍스쳐 첫번째 핸들을 설정해준다.
+	// #3 Texture Array는 택스쳐가 올라가 있는 view heap에서 텍스쳐 첫번째 핸들을 설정해준다.
 	// (첫번째 것만 설정해서 넘겨주면 된다. Root Signature에 이미 정보가 다 있다.)
-	m_CommandList->SetGraphicsRootDescriptorTable(3, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart()); // Tex arr는 3번
+	m_CommandList->SetGraphicsRootDescriptorTable(4, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart()); // Tex arr는 4번
 
+	// #4 SkyMap을 그리고, 반사면을 그릴 TextureCube를 바인드해준다.
+	// (앱에서 기록하고 있던 offset을 이용해서 view handle을 넘겨준다.)
+	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	skyTexDescriptor.Offset(m_SkyTexHeapIndex, m_CbvSrvUavDescriptorSize);
+	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
+
+	// #5 drawcall을 걸어준다.
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
-	// 그래야 alpha 계산이 가능하다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-	// 알파 자르기하는 친구들을 출력해주고
-	m_CommandList->SetPipelineState(m_PSOs["alphaTested"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::AlphaTested]);
-
-	// 이제 반투명한 애들을 출력해준다.
-	m_CommandList->SetPipelineState(m_PSOs["transparent"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Transparent]);
+	// 하늘을 맨 마지막에 출력해주는 것이 depth test 성능상 좋다고 한다. 
+	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
 
 	// ======================================
 
@@ -559,89 +551,58 @@ void CubeMapApp::AnimateMaterials(const GameTimer& _gt)
 
 void CubeMapApp::LoadTextures()
 {
-	std::unique_ptr<Texture> skullTex = std::make_unique<Texture>();
-	skullTex->Name = "skullTex";
-	skullTex->Filename = L"../Textures/ice.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		skullTex->Filename.c_str(),
-		skullTex->Resource,
-		skullTex->UploadHeap
-	));
+	// 진작에 이렇게 할걸
+	std::vector<std::string> texNames =
+	{
+		"bricksDiffuseMap",
+		"tileDiffuseMap",
+		"defaultDiffuseMap",
+		"skyCubeMap"
+	};
 
-	m_Textures[skullTex->Name] = std::move(skullTex);
+	std::vector<std::wstring> texFilenames =
+	{
+		L"../Textures/bricks2.dds",
+		L"../Textures/tile.dds",
+		L"../Textures/white1x1.dds",
+		L"../Textures/grasscube1024.dds"
+	};
 
-	std::unique_ptr<Texture> bricksTex = std::make_unique<Texture>();
-	bricksTex->Name = "bricksTex";
-	bricksTex->Filename = L"../Textures/bricks.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		bricksTex->Filename.c_str(),
-		bricksTex->Resource,
-		bricksTex->UploadHeap
-	));
+	for (int i = 0; i < (int)texNames.size(); ++i)
+	{
+		std::unique_ptr<Texture>  texMap = std::make_unique<Texture>();
+		texMap->Name = texNames[i];
+		texMap->Filename = texFilenames[i];
+		ThrowIfFailed(DirectX::CreateDDSTextureFromFile12(m_d3dDevice.Get(),
+					  m_CommandList.Get(), texMap->Filename.c_str(),
+					  texMap->Resource, texMap->UploadHeap));
 
-	m_Textures[bricksTex->Name] = std::move(bricksTex);
-
-	std::unique_ptr<Texture> stoneTex = std::make_unique<Texture>();
-	stoneTex->Name = "stoneTex";
-	stoneTex->Filename = L"../Textures/stone.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		stoneTex->Filename.c_str(),
-		stoneTex->Resource,
-		stoneTex->UploadHeap
-	));
-
-	m_Textures[stoneTex->Name] = std::move(stoneTex);
-
-	std::unique_ptr<Texture> tileTex = std::make_unique<Texture>();
-	tileTex->Name = "tileTex";
-	tileTex->Filename = L"../Textures/tile.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		tileTex->Filename.c_str(),
-		tileTex->Resource,
-		tileTex->UploadHeap
-	));
-
-	m_Textures[tileTex->Name] = std::move(tileTex);
-
-	// 텍스쳐를 사용하지 않을 때 쓰는 친구다.
-	std::unique_ptr<Texture> white1x1Tex = std::make_unique<Texture>();
-	white1x1Tex->Name = "white1x1Tex";
-	white1x1Tex->Filename = L"../Textures/white1x1.dds";
-	ThrowIfFailed(CreateDDSTextureFromFile12(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		white1x1Tex->Filename.c_str(),
-		white1x1Tex->Resource,
-		white1x1Tex->UploadHeap
-	));
-	m_Textures[white1x1Tex->Name] = std::move(white1x1Tex);
+		m_Textures[texMap->Name] = std::move(texMap);
+	}
 }
 
 
 void CubeMapApp::BuildRootSignature()
 {	
 	// Table도 쓸거고, Constant도 쓸거다.
-	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
-	UINT numOfParameter = 4;
+	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
+	UINT numOfParameter = 5;
+
+	// TextureCube가 넘어가는 Table
+	CD3DX12_DESCRIPTOR_RANGE texTable0;
+	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0);
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
-	CD3DX12_DESCRIPTOR_RANGE texTable;
+	CD3DX12_DESCRIPTOR_RANGE texTable1;
 	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 5개로 만들어 준다.
-	texTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 0); // t0 - texture 정보
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 1, 0); // space0 / t1 - texture 정보
 
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
 	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
 	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
-	slotRootParameter[3].InitAsDescriptorTable(1, &texTable, D3D12_SHADER_VISIBILITY_PIXEL); // t0 - Texture2D Array
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t1 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
 	// Static Sampler 방법이다. 최대 2000개 생성 가능
@@ -682,7 +643,8 @@ void CubeMapApp::BuildRootSignature()
 
 void CubeMapApp::BuildDescriptorHeaps()
 {
-	const int textureDescriptorCount = 5;
+	const int textureDescriptorCount = 4;
+	int viewCount = 0;
 
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
 	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
@@ -695,63 +657,62 @@ void CubeMapApp::BuildDescriptorHeaps()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* skullTex = m_Textures["skullTex"].get()->Resource.Get();
-	ID3D12Resource* bricksTex = m_Textures["bricksTex"].get()->Resource.Get();
-	ID3D12Resource* stoneTex = m_Textures["stoneTex"].get()->Resource.Get();
-	ID3D12Resource* tileTex = m_Textures["tileTex"].get()->Resource.Get();
-	ID3D12Resource* whiteTex = m_Textures["white1x1Tex"].get()->Resource.Get();
+	ID3D12Resource* bricksTex = m_Textures["bricksDiffuseMap"].get()->Resource.Get();
+	ID3D12Resource* tileTex = m_Textures["tileDiffuseMap"].get()->Resource.Get();
+	ID3D12Resource* whiteTex = m_Textures["defaultDiffuseMap"].get()->Resource.Get();
+	ID3D12Resource* skyTex = m_Textures["skyCubeMap"].get()->Resource.Get();
 
 	// view를 만들어주고
-	D3D12_SHADER_RESOURCE_VIEW_DESC srcDesc = {};
-	srcDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srcDesc.Format = skullTex->GetDesc().Format;
-	srcDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srcDesc.Texture2D.MostDetailedMip = 0;
-	srcDesc.Texture2D.MipLevels = -1;
-	srcDesc.Texture2D.ResourceMinLODClamp = 0.f;
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = bricksTex->GetDesc().Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.MipLevels = -1;
+	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
 	// view를 만들면서 연결해준다.
-	m_d3dDevice->CreateShaderResourceView(skullTex, &srcDesc, viewHandle);
+	m_d3dDevice->CreateShaderResourceView(bricksTex, &srvDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = bricksTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = bricksTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(bricksTex, &srcDesc, viewHandle);
+	viewCount++;
+	srvDesc.Format = tileTex->GetDesc().Format;
+	srvDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(tileTex, &srvDesc, viewHandle);
 
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = stoneTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = stoneTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(stoneTex, &srcDesc, viewHandle);
+	viewCount++;
+	srvDesc.Format = whiteTex->GetDesc().Format;
+	srvDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
+	m_d3dDevice->CreateShaderResourceView(whiteTex, &srvDesc, viewHandle);
 
+	// TextureCube는 프로퍼티가 다르기때문에
+	// 수정해주고 Resource View를 생성한다.
 	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = tileTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(tileTex, &srcDesc, viewHandle);
+	viewCount++;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+	srvDesc.TextureCube.MipLevels = skyTex->GetDesc().MipLevels;
+	srvDesc.TextureCube.ResourceMinLODClamp = 0.f;
+	srvDesc.Format = skyTex->GetDesc().Format;
 
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	srcDesc.Format = whiteTex->GetDesc().Format;
-	srcDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(whiteTex, &srcDesc, viewHandle);
+	m_d3dDevice->CreateShaderResourceView(skyTex, &srvDesc, viewHandle);
+	m_SkyTexHeapIndex = viewCount;
 }
 
 void CubeMapApp::BuildShadersAndInputLayout()
 {
-	const D3D_SHADER_MACRO defines[] =
-	{
-		"FOG", "1",
-		NULL, NULL
-	};
-
 	const D3D_SHADER_MACRO alphaTestDefines[] =
 	{
-		"FOG", "1",
 		"ALPHA_TEST", "1",
 		NULL, NULL
 	};
 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", nullptr, "PS", "ps_5_1");
-	m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", alphaTestDefines, "PS", "ps_5_1");
+
+	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_InputLayout =
 	{
@@ -980,34 +941,27 @@ void CubeMapApp::BuildPSOs()
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
-	// 반투명 PSO
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC transparentPSODesc = opaquePSODesc;
+	// Sky용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPSODesc = opaquePSODesc;
 
-	D3D12_RENDER_TARGET_BLEND_DESC transparencyBlendDesc;
-	transparencyBlendDesc.BlendEnable = true;
-	transparencyBlendDesc.LogicOpEnable = false;
-	transparencyBlendDesc.SrcBlend = D3D12_BLEND_SRC_ALPHA;
-	transparencyBlendDesc.DestBlend = D3D12_BLEND_INV_SRC_ALPHA;
-	transparencyBlendDesc.BlendOp = D3D12_BLEND_OP_ADD;
-	transparencyBlendDesc.SrcBlendAlpha = D3D12_BLEND_ONE;
-	transparencyBlendDesc.DestBlendAlpha = D3D12_BLEND_ZERO;
-	transparencyBlendDesc.BlendOpAlpha = D3D12_BLEND_OP_ADD;
-	transparencyBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
-	transparencyBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
-
-	transparentPSODesc.BlendState.RenderTarget[0] = transparencyBlendDesc;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&transparentPSODesc, IID_PPV_ARGS(&m_PSOs["transparent"])));
-
-	// 알파 자르기 PSO
-
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC alphaTestPSODesc = opaquePSODesc;
-	alphaTestPSODesc.PS =
+	// 커다란 구로 표현을 할거고, 안쪽에서 바라보기 때문에 cull을 반대로 해줘야한다.
+	skyPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
+	// z가 항상 1로 고정이 되기 때문에 LESS_EQUAL로 걸어줘야 한다.
+	// Init()에서 Clear를 할때 Depth Clear를 1.f로 한다.
+	// 안그러면 초기 화면 값만 보이게 된다.
+	skyPSODesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	skyPSODesc.pRootSignature = m_RootSignature.Get();
+	skyPSODesc.VS =
 	{
-		reinterpret_cast<BYTE*>(m_Shaders["alphaTestedPS"]->GetBufferPointer()),
-		m_Shaders["alphaTestedPS"]->GetBufferSize()
+		reinterpret_cast<BYTE*>(m_Shaders["skyVS"]->GetBufferPointer()),
+		m_Shaders["skyVS"]->GetBufferSize()
 	};
-	alphaTestPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&alphaTestPSODesc, IID_PPV_ARGS(&m_PSOs["alphaTested"])));
+	skyPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["skyPS"]->GetBufferPointer()),
+		m_Shaders["skyPS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
 }
 
 void CubeMapApp::BuildFrameResources()
@@ -1028,62 +982,76 @@ void CubeMapApp::BuildFrameResources()
 
 void CubeMapApp::BuildMaterials()
 {
-	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
-	skullMat->Name = "skullMat";
-	skullMat->MatCBIndex = 0;
-	skullMat->DiffuseSrvHeapIndex = 0;
-	skullMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	skullMat->FresnelR0 = XMFLOAT3(0.01f, 0.01f, 0.01f);
-	skullMat->Roughness = 0.125f;
-
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
-	brickMat->MatCBIndex = 1;
-	brickMat->DiffuseSrvHeapIndex = 1;
+	brickMat->MatCBIndex = 0;
+	brickMat->DiffuseSrvHeapIndex = 0;
 	brickMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	brickMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	brickMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	brickMat->Roughness = 0.3f;
-
-	std::unique_ptr<Material> stoneMat = std::make_unique<Material>();
-	stoneMat->Name = "stoneMat";
-	stoneMat->MatCBIndex = 2;
-	stoneMat->DiffuseSrvHeapIndex = 2;
-	stoneMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	stoneMat->FresnelR0 = XMFLOAT3(0.05f, 0.05f, 0.05f);
-	stoneMat->Roughness = 0.3f;
 
 	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
 	tileMat->Name = "tileMat";
-	tileMat->MatCBIndex = 3;
-	tileMat->DiffuseSrvHeapIndex = 3;
-	tileMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	tileMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	tileMat->MatCBIndex = 1;
+	tileMat->DiffuseSrvHeapIndex = 1;
+	tileMat->DiffuseAlbedo = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
+	tileMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	tileMat->Roughness = 0.3f;
+
+	std::unique_ptr<Material> mirrorMat = std::make_unique<Material>();
+	mirrorMat->Name = "mirrorMat";
+	mirrorMat->MatCBIndex = 2;
+	mirrorMat->DiffuseSrvHeapIndex = 2;
+	mirrorMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.1f, 1.0f);
+	mirrorMat->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
+	mirrorMat->Roughness = 0.1f;
 
 	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
 	whiteMat->Name = "whiteMat";
-	whiteMat->MatCBIndex = 4;
-	whiteMat->DiffuseSrvHeapIndex = 4;
-	whiteMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
-	whiteMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
-	whiteMat->Roughness = 0.3f;
+	whiteMat->MatCBIndex = 3;
+	whiteMat->DiffuseSrvHeapIndex = 2;
+	whiteMat->DiffuseAlbedo = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
+	whiteMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	whiteMat->Roughness = 0.2f;
 
-	m_Materials["skullMat"] = std::move(skullMat);
+	std::unique_ptr<Material> skyMat = std::make_unique<Material>();
+	skyMat->Name = "skyMat";
+	skyMat->MatCBIndex = 4;
+	skyMat->DiffuseSrvHeapIndex = 3;
+	skyMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);;
+	skyMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
+	skyMat->Roughness = 1.0f;
+
 	m_Materials["brickMat"] = std::move(brickMat);
-	m_Materials["stoneMat"] = std::move(stoneMat);
+	m_Materials["mirrorMat"] = std::move(mirrorMat);
 	m_Materials["tileMat"] = std::move(tileMat);
 	m_Materials["whiteMat"] = std::move(whiteMat);
+	m_Materials["skyMat"] = std::move(skyMat);
 }
 
 void CubeMapApp::BuildRenderItems()
 {
+	std::unique_ptr<RenderItem> skyRitem = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&skyRitem->WorldMat, XMMatrixScaling(5000.0f, 5000.0f, 5000.0f));
+	skyRitem->TexTransform = MathHelper::Identity4x4();
+	skyRitem->ObjCBIndex = 0;
+	skyRitem->Mat = m_Materials["skyMat"].get();
+	skyRitem->Geo = m_Geometries["shapeGeo"].get();
+	skyRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	skyRitem->IndexCount = skyRitem->Geo->DrawArgs["sphere"].IndexCount;
+	skyRitem->StartIndexLocation = skyRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
+	skyRitem->BaseVertexLocation = skyRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Sky].push_back(skyRitem.get());
+	m_AllRenderItems.push_back(std::move(skyRitem));
+
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 
 	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
 	boxRitem->ObjCBIndex = 1;
 	boxRitem->Geo = m_Geometries["shapeGeo"].get();
-	boxRitem->Mat = m_Materials["stoneMat"].get();
+	boxRitem->Mat = m_Materials["brickMat"].get();
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -1145,7 +1113,7 @@ void CubeMapApp::BuildRenderItems()
 		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
 		leftSphereRitem->ObjCBIndex = objCBIndex++;
 		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftSphereRitem->Mat = m_Materials["stoneMat"].get();
+		leftSphereRitem->Mat = m_Materials["mirrorMat"].get();
 		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1154,7 +1122,7 @@ void CubeMapApp::BuildRenderItems()
 		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
 		rightSphereRitem->ObjCBIndex = objCBIndex++;
 		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightSphereRitem->Mat = m_Materials["stoneMat"].get();
+		rightSphereRitem->Mat = m_Materials["mirrorMat"].get();
 		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
 		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
@@ -1177,7 +1145,7 @@ void CubeMapApp::BuildRenderItems()
 	XMMATRIX SkullWorldMat = ScaleHalfMat * TranslateDown5Units;
 	// skullRenderItem->WorldMat = MathHelper::Identity4x4();
 	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
-	skullRenderItem->ObjCBIndex = 0;
+	skullRenderItem->ObjCBIndex = objCBIndex;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
 	skullRenderItem->Mat = m_Materials["whiteMat"].get();
 	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;

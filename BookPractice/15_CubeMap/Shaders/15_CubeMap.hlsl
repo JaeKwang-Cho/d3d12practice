@@ -1,115 +1,11 @@
 //***************************************************************************************
-// 14_Picking.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+// 15_CubeMap.hlsl by Frank Luna (C) 2015 All Rights Reserved.
 //
 // Default shader, currently supports lighting.
 //***************************************************************************************
 
-// LightingUtil.hlsl을 include 해주기 전에 이렇개 해야, 
-// 계산이 알맞게 된다.
-#ifndef NUM_DIR_LIGHTS
-#define NUM_DIR_LIGHTS 3
-#endif
+#include "Commons.hlsl"
 
-#ifndef NUM_POINT_LIGHTS
-#define NUM_POINT_LIGHTS 0
-#endif
-
-#ifndef NUM_SPOT_LIGHTS
-#define NUM_SPOT_LIGHTS 0
-#endif
-
-// 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
-#include "LightingUtil.hlsl"
-/*
-struct InstanceData
-{
-    float4x4 WorldMat;
-    float4x4 InvWorldTransposeMat;
-    float4x4 TexTransform;
-    uint MaterialIndex;
-    uint InstPad0;
-    uint InstPad1;
-    uint InstPad2;
-};
-*/
-struct MaterialData
-{
-    float4 DiffuseAlbedo;
-    float3 FresnelR0;
-    float Roughness;
-    float4x4 MaterialTransform;
-    uint DiffuseMapIndex;
-    uint MatPad0;
-    uint MatPad1;
-    uint MatPad2;
-};
-
-Texture2D gDiffuseMap[4] : register(t0);
-
-//StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
-StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
-
-SamplerState gSamPointWrap : register(s0);
-SamplerState gSamPointClamp : register(s1);
-SamplerState gSamPointMirror : register(s2);
-SamplerState gSamPointBorder : register(s3);
-SamplerState gSamLinearWrap : register(s4);
-SamplerState gSamLinearClamp : register(s5);
-SamplerState gSamLinearMirror : register(s6);
-SamplerState gSamLinearBorder : register(s7);
-SamplerState gSamAnisotropicWrap : register(s8);
-SamplerState gSamAnisotropicClamp : register(s9);
-
-// 물체마다 가지고 있는 Constant Buffer
-cbuffer cbPerObject : register(b0)
-{
-    float4x4 gWorld;
-    float4x4 gInvWorldTranspose;
-    float4x4 gTexTransform;
-    uint gMaterialIndex;
-    uint gObjPad0;
-    uint gObjPad1;
-    uint gObjPad2;
-};
-
-
-// 프레임 마다 달라지는 Constant Buffer
-cbuffer cbPass : register(b1)
-{
-    float4x4 gView;
-    float4x4 gInvView;
-    float4x4 gProj;
-    float4x4 gInvProj;
-    float4x4 gViewProj;
-    float4x4 gInvViewProj;
-    
-    float3 gEyePosW;
-    float cbPerPassad1;
-    
-    float2 gRenderTargetSize;
-    float2 gInvRenderTargetSize;
-    
-    float gNearZ;
-    float gFarZ;
-    float gTotalTime;
-    float gDeltaTime;
-    
-    float4 gAmbientLight;
-    
-    // fog 정보는 pass로 넘어온다
-    float4 gFogColor;
-    
-    float gFogStart;
-    float gFogRange;
-    float2 cbPerPassPad2;
-
-    // Indices [0, NUM_DIR_LIGHTS) are directional lights;
-    // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
-    // indices [NUM_DIR_LIGHTS+NUM_POINT_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHT+NUM_SPOT_LIGHTS)
-    // are spot lights for a maximum of MaxLights per object.
-    Light gLights[MaxLights];
-};
- 
 // 입력으로 Pos, Norm 을 받는다.
 struct VertexIn
 {
@@ -192,6 +88,18 @@ float4 PS(VertexOut pin) : SV_Target
         pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
+    
+    // # 주변 환경 반사를 한다.
+    // 카메라 위치에서, 현재 픽셀이 위치한곳의 World 법선을 타고
+    // 어떻게 뻗어나갈지 reflect()를 이용해 구한다.
+    float3 r = reflect(-toEyeW, pin.NormalW);
+    // 그 벡터를 lookup vector로 사용한다. 
+    // (이렇게 하면 정확하지 않다. 카메라에서 쏘는 것처럼 lookup을 하기 때문이다.)
+    float4 reflectionColor = gCubeMap.Sample(gSamLinearWrap, r);
+    // 반사광은 Fresnel을 사용하여 가저온다.
+    float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);
+    // 거칠기도 반영한다.
+    litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
 
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;
