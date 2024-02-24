@@ -11,8 +11,12 @@
 #include <iomanip>
 #include "FileReader.h"
 #include "../Common/Camera.h"
+#include "CubeRenderTarget.h"
+
+#define DYNAMIC_CUBE (1)
 
 const int g_NumFrameResources = 3;
+const UINT CubeMapSize = 512;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -53,8 +57,7 @@ struct RenderItem
 enum class RenderLayer : int
 {
 	Opaque = 0,
-	Transparent,
-	AlphaTested,
+	OpaqueDynamicReflectors,
 	Sky, 
 	Count
 };
@@ -97,6 +100,13 @@ private:
 	void BuildRenderItems();
 	void BuildPSOs();
 	void BuildFrameResources();
+
+	// ==== Dynamic Cube ====
+	virtual void CreateRtvAndDsvDescriptorHeaps() override;
+	void UpdateCubeMapFacePassCB(const GameTimer& _gt);
+	void BuildCubeDepthStencil();
+	void DrawSceneToCubeMap();
+	void BuildCubeFaceCamera(float _x, float _y, float _z);
 
 	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
@@ -144,8 +154,22 @@ private:
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
 
+	POINT m_LastMousePos = {};
+
+	// ==== Dynamic Cube ====
+	ComPtr<ID3D12Resource> m_CubeDepthStencilBuffer;
+
+	UINT m_DynamicTexHeapIndex = 0;
+
+	RenderItem* m_SkullRitem = nullptr;
+
+	std::unique_ptr<CubeRenderTarget> m_DynamicCubeMap = nullptr;
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE m_CubeDsvHandle;
+
 	// Camera
 	Camera m_Camera;
+	Camera m_CubeMapCamera[6];
 
 	// Sky Texture가 위치한 view Handle Offset을 저장해 놓는다.
 	UINT m_SkyTexHeapIndex = 0;
@@ -153,8 +177,6 @@ private:
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
 	float m_Radius = 20.f;
-
-	POINT m_LastMousePos = {};
 };
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
@@ -207,6 +229,10 @@ bool CubeMapApp::Initialize()
 	LoadTextures();
 	BuildRootSignature();
 	BuildDescriptorHeaps();
+#if DYNAMIC_CUBE
+	BuildCubeFaceCamera(0.f, 2.f, 0.f);
+	BuildCubeDepthStencil();
+#endif
 	BuildShadersAndInputLayout();
 	BuildStageGeometry();
 	BuildSkullGeometry();
@@ -239,6 +265,16 @@ void CubeMapApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
+
+#if DYNAMIC_CUBE
+	XMMATRIX skullScale = XMMatrixScaling(0.2f, 0.2f, 0.2f);
+	XMMATRIX skullOffset = XMMatrixTranslation(3.0f, 2.0f, 0.0f);
+	XMMATRIX skullLocalRotate = XMMatrixRotationY(2.0f * _gt.GetTotalTime());
+	XMMATRIX skullGlobalRotate = XMMatrixRotationY(0.5f * _gt.GetTotalTime());
+	XMStoreFloat4x4(&m_SkullRitem->WorldMat, skullScale * skullLocalRotate * skullOffset * skullGlobalRotate);
+	// 이걸 위에서 app에서 가지고 있었던 것이다.
+	m_SkullRitem->NumFrameDirty = g_NumFrameResources;
+#endif
 
 	// 원형 배열을 돌면서
 	m_CurrFrameResourceIndex = (m_CurrFrameResourceIndex + 1) % g_NumFrameResources;
@@ -283,6 +319,8 @@ void CubeMapApp::Draw(const GameTimer& _gt)
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
 	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
+
+	startHereVar = 0;
 
 	// 그림을 그릴 resource인 back buffer의 Resource Barrier의 Usage를 D3D12_RESOURCE_STATE_RENDER_TARGET으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT_RT = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -1156,6 +1194,55 @@ void CubeMapApp::BuildRenderItems()
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
+}
+
+void CubeMapApp::CreateRtvAndDsvDescriptorHeaps()
+{
+#if DYNAMIC_CUBE
+	// 랜더 타겟을 6개 더 만든다.
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
+	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 6;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	rtvHeapDesc.NodeMask = 0;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&rtvHeapDesc, IID_PPV_ARGS(m_RtvHeap.GetAddressOf())
+	));
+
+	// DepthStencil도 1개 더 만든다.
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
+	dsvHeapDesc.NumDescriptors = 2;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	dsvHeapDesc.NodeMask = 0;
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&dsvHeapDesc, IID_PPV_ARGS(m_DsvHeap.GetAddressOf())
+	));
+	// app에서 미리 핸들을 가지고 있는다.
+	m_CubeDsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
+		m_DsvHeap->GetCPUDescriptorHandleForHeapStart(),
+		1,
+		m_DsvDescriptorSize
+	);
+#else
+	__super::CreateRtvAndDsvDescriptorHeaps();
+#endif
+}
+
+void CubeMapApp::UpdateCubeMapFacePassCB(const GameTimer& _gt)
+{
+}
+
+void CubeMapApp::BuildCubeDepthStencil()
+{
+}
+
+void CubeMapApp::DrawSceneToCubeMap()
+{
+}
+
+void CubeMapApp::BuildCubeFaceCamera(float _x, float _y, float _z)
+{
 }
 
 void CubeMapApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
