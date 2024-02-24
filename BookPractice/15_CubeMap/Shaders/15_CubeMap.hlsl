@@ -93,8 +93,10 @@ float4 PS(VertexOut pin) : SV_Target
     // 카메라 위치에서, 현재 픽셀이 위치한곳의 World 법선을 타고
     // 어떻게 뻗어나갈지 reflect()를 이용해 구한다.
     float3 r = reflect(-toEyeW, pin.NormalW);
-    // 그 벡터를 lookup vector로 사용한다. 
-    // (이렇게 하면 정확하지 않다. 카메라에서 쏘는 것처럼 lookup을 하기 때문이다.)
+    // 이 벡터를 그대로 lookup vector로 사용하면 정확하지 않다. 
+    // 카메라에서 쏘는 것처럼 lookup을 하기 때문이다.
+    // 하늘은 구 형태이고 크기가 엄청 커서(1000) 어색함이 거의 없지만.
+    // 방과 같은 평면을 가지는 공간이라면 어색함이 생길 수 있다.
     float4 reflectionColor = gCubeMap.Sample(gSamLinearWrap, r);
     // 반사광은 Fresnel을 사용하여 가저온다.
     float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);

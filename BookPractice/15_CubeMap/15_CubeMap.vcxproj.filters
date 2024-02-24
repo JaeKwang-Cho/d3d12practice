@@ -40,6 +40,7 @@
     </ClCompile>
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="CubeRenderTarget.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h">
@@ -71,6 +72,7 @@
     </ClInclude>
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="CubeRenderTarget.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\15_CubeMap.hlsl">
