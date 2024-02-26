@@ -89,6 +89,12 @@ float4 PS(VertexOut pin) : SV_Target
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
     
+#ifdef PRAC3
+    float3 r = refract(-toEyeW, pin.NormalW, matData.Eta);
+    float4 refractionColor = gCubeMap.Sample(gSamLinearWrap, r);
+    float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);
+    litColor.rgb += shininess * fresnelFactor * refractionColor.rgb;
+#else
     // # 주변 환경 반사를 한다.
     // 카메라 위치에서, 현재 픽셀이 위치한곳의 World 법선을 타고
     // 어떻게 뻗어나갈지 reflect()를 이용해 구한다.
@@ -102,6 +108,7 @@ float4 PS(VertexOut pin) : SV_Target
     float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
+#endif
 
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;

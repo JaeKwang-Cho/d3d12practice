@@ -3,6 +3,8 @@
 #include "../Common/UploadBuffer.h"
 #include "../Common/MathHelper.h"
 
+#define PRAC3 (0)
+
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
@@ -82,7 +84,11 @@ struct MaterialData
 	DirectX::XMFLOAT4X4 MaterialTransform = MathHelper::Identity4x4();
 
 	UINT DiffuseMapIndex = 0;
+#if PRAC3
+	float ETA;
+#else
 	UINT MaterialPad0;
+#endif
 	UINT MaterialPad1;
 	UINT MaterialPad2;
 };

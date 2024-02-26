@@ -560,6 +560,9 @@ void CubeMapApp::UpdateMaterialCBs(const GameTimer& _gt)
 			XMStoreFloat4x4(&matData.MaterialTransform, XMMatrixTranspose(matTransform));
 			// Texture 인덱스를 넣어준다.
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
+#if PRAC3
+			matData.ETA = mat->ETA;
+#endif
 
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
@@ -637,8 +640,8 @@ void CubeMapApp::LoadTextures()
 		L"../Textures/bricks2.dds",
 		L"../Textures/tile.dds",
 		L"../Textures/white1x1.dds",
-		// L"../Textures/grasscube1024.dds"
-		L"../Textures/skymap.dds"
+		L"../Textures/grasscube1024.dds"
+		//L"../Textures/skymap.dds"
 		// image source: https://www.cleanpng.com/png-skybox-texture-mapping-cube-mapping-desktop-wallpa-6020000/
 	};
 
@@ -810,8 +813,18 @@ void CubeMapApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO prac3[] =
+	{
+		"PRAC3", "1",
+		NULL, NULL
+	};
+
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", nullptr, "VS", "vs_5_1");
+#if PRAC3
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", prac3, "PS", "ps_5_1");
+#else
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", nullptr, "PS", "ps_5_1");
+#endif
 	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\15_CubeMap.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
@@ -1112,6 +1125,9 @@ void CubeMapApp::BuildMaterials()
 	mirrorMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.1f, 1.0f);
 	mirrorMat->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
 	mirrorMat->Roughness = 0.1f;
+#if PRAC3
+	mirrorMat->ETA = 0.95f;
+#endif
 
 	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
 	whiteMat->Name = "whiteMat";

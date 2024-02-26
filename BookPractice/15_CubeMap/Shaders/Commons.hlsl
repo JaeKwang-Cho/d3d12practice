@@ -39,7 +39,11 @@ struct MaterialData
     float Roughness;
     float4x4 MaterialTransform;
     uint DiffuseMapIndex;
+#ifdef PRAC3
+    float Eta;        
+#else
     uint MatPad0;
+#endif
     uint MatPad1;
     uint MatPad2;
 };
