@@ -14,6 +14,7 @@
 #include "CubeRenderTarget.h"
 
 #define DYNAMIC_CUBE (0)
+#define PRAC1 (0)
 
 const int g_NumFrameResources = 3;
 const UINT CubeMapSize = 512;
@@ -636,7 +637,9 @@ void CubeMapApp::LoadTextures()
 		L"../Textures/bricks2.dds",
 		L"../Textures/tile.dds",
 		L"../Textures/white1x1.dds",
-		L"../Textures/grasscube1024.dds"
+		// L"../Textures/grasscube1024.dds"
+		L"../Textures/skymap.dds"
+		// image source: https://www.cleanpng.com/png-skybox-texture-mapping-cube-mapping-desktop-wallpa-6020000/
 	};
 
 	for (int i = 0; i < (int)texNames.size(); ++i)
@@ -1155,7 +1158,11 @@ void CubeMapApp::BuildRenderItems()
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
 	boxRitem->ObjCBIndex = 1;
 	boxRitem->Geo = m_Geometries["shapeGeo"].get();
+#if PRAC1
+	boxRitem->Mat = m_Materials["mirrorMat"].get();
+#else
 	boxRitem->Mat = m_Materials["brickMat"].get();
+#endif
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
 	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
@@ -1198,7 +1205,11 @@ void CubeMapApp::BuildRenderItems()
 		XMStoreFloat4x4(&leftCylRitem->TexTransform, XMMatrixIdentity());
 		leftCylRitem->ObjCBIndex = objCBIndex++;
 		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
+#if PRAC1
+		leftCylRitem->Mat = m_Materials["mirrorMat"].get();
+#else
 		leftCylRitem->Mat = m_Materials["brickMat"].get();
+#endif
 		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
@@ -1208,7 +1219,11 @@ void CubeMapApp::BuildRenderItems()
 		XMStoreFloat4x4(&rightCylRitem->TexTransform, XMMatrixIdentity());
 		rightCylRitem->ObjCBIndex = objCBIndex++;
 		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
+#if PRAC1
+		rightCylRitem->Mat = m_Materials["mirrorMat"].get();
+#else
 		rightCylRitem->Mat = m_Materials["brickMat"].get();
+#endif
 		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
 		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
