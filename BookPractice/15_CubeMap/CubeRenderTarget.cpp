@@ -18,7 +18,7 @@ CubeRenderTarget::CubeRenderTarget(ID3D12Device* _device, UINT _width, UINT _hei
 	BuildResource();
 }
 
-void CubeRenderTarget::BuildDescriptor(CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuSrv, CD3DX12_GPU_DESCRIPTOR_HANDLE _hGpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuRtv[6])
+void CubeRenderTarget::BuildDescriptors(CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuSrv, CD3DX12_GPU_DESCRIPTOR_HANDLE _hGpuSrv, CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuRtv[6])
 {
 	m_hCpuSrv = _hCpuSrv;
 	m_hGpuSrv = _hGpuSrv;
@@ -61,13 +61,21 @@ void CubeRenderTarget::BuildResource()
 	texDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
 	texDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
 
+	D3D12_CLEAR_VALUE optClear = {};
+	optClear.Format = m_Format;
+	const float* color = DirectX::Colors::LightSteelBlue;
+	optClear.Color[0] = color[0];
+	optClear.Color[1] = color[1];
+	optClear.Color[2] = color[2];
+	optClear.Color[3] = color[3];
+
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
 		&defaultHeapProps,
 		D3D12_HEAP_FLAG_NONE,
 		&texDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
+		&optClear,
 		IID_PPV_ARGS(&m_CubeMap)
 	));
 }

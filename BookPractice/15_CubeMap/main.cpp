@@ -13,7 +13,7 @@
 #include "../Common/Camera.h"
 #include "CubeRenderTarget.h"
 
-#define DYNAMIC_CUBE (1)
+#define DYNAMIC_CUBE (0)
 
 const int g_NumFrameResources = 3;
 const UINT CubeMapSize = 512;
@@ -225,12 +225,21 @@ bool CubeMapApp::Initialize()
 
 	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
 
+#if DYNAMIC_CUBE
+	BuildCubeFaceCamera(0.f, 2.f, 0.f);
+	m_DynamicCubeMap = std::make_unique<CubeRenderTarget>(
+		m_d3dDevice.Get(),
+		CubeMapSize,
+		CubeMapSize,
+		DXGI_FORMAT_R8G8B8A8_UNORM
+	);
+#endif
+
 	// ======== 초기화 ==========
 	LoadTextures();
 	BuildRootSignature();
 	BuildDescriptorHeaps();
 #if DYNAMIC_CUBE
-	BuildCubeFaceCamera(0.f, 2.f, 0.f);
 	BuildCubeDepthStencil();
 #endif
 	BuildShadersAndInputLayout();
@@ -301,6 +310,9 @@ void CubeMapApp::Update(const GameTimer& _gt)
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
+#if DYNAMIC_CUBE
+	UpdateCubeMapFacePassCB(_gt);
+#endif
 }
 
 void CubeMapApp::Draw(const GameTimer& _gt)
@@ -316,11 +328,42 @@ void CubeMapApp::Draw(const GameTimer& _gt)
 	// PSO별로 등록하면서, Allocator와 함께, Command List를 초기화 한다.
 	ThrowIfFailed(m_CommandList->Reset(CurrCommandAllocator.Get(), m_PSOs["opaque"].Get()));
 
+	// Descriptor heap과 Root Signature를 세팅해준다.
+	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
+	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
+
+	// PSO에 Root Signature를 세팅해준다.
+	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
+
+	// Structured Buffer는 Heap 없이 그냥 Rood Descriptor로 넘겨줄 수 있다.
+	// Material 정보는 공통으로 사용하기에 맨 먼저 바인드 해준다.
+	// 현재 프레임에 사용하는 Material Buffer를 Srv로 바인드 해준다.
+	ID3D12Resource* matStructredBuffer = m_CurrFrameResource->MaterialBuffer->Resource();
+	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
+
+	// 텍스쳐도 인덱스를 이용해서 공통으로 사용하니깐, 이렇게 넘겨준다.
+	m_CommandList->SetGraphicsRootDescriptorTable(4, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+	// 배경을 그릴 skyTexture 핸들은 미리 만들어 놓는다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	skyTexDescriptor.Offset(m_SkyTexHeapIndex, m_CbvSrvUavDescriptorSize);
+
+#if DYNAMIC_CUBE 
+	// ==== 큐브맵 그리기 ====
+	// 다이나믹 큐브맵을 사용할 친구는 하나니깐, Per Frame에서 CubeMap을 생성한다.
+	// 만약 여러 물체가 사용하게 하려면 Per Object를 사용해야 할 것이다.
+	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor); // TextureCube는 3번
+	
+	// 함수로 묶어놨다.
+	// 각 방향마다 카메라 설정하고, 물체를 그리고
+	// 그 결과를 헬퍼 클래스가 관리하는 텍스쳐에 넣어놓는다.
+	DrawSceneToCubeMap();
+#endif
+	// ==== 화면 그리기 ====
+
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
 	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
-
-	startHereVar = 0;
 
 	// 그림을 그릴 resource인 back buffer의 Resource Barrier의 Usage를 D3D12_RESOURCE_STATE_RENDER_TARGET으로 바꾼다.
 	D3D12_RESOURCE_BARRIER bufferBarrier_PRESENT_RT = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -333,7 +376,7 @@ void CubeMapApp::Draw(const GameTimer& _gt)
 	// 백 버퍼와 깊이 버퍼를 초기화 한다.
 	m_CommandList->ClearRenderTargetView(
 		GetCurrentBackBufferView(),
-		(float*)&m_MainPassCB.FogColor,  // 근데 여기서 좀더 사실감을 살리기 위해 배경을 fog 색으로 채운다.
+		Colors::LightSteelBlue,  
 		0, nullptr);	
 	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
 	m_CommandList->ClearDepthStencilView(
@@ -346,33 +389,23 @@ void CubeMapApp::Draw(const GameTimer& _gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 
-	// ============== 그리기 =================
-	// #1 Descriptor heap과 Root Signature를 세팅해준다.
-	ID3D12DescriptorHeap* descriptorHeaps[] = { m_CbvSrvUavDescriptorHeap.Get() };
-	m_CommandList->SetDescriptorHeaps(_countof(descriptorHeaps), descriptorHeaps);
-	// PSO에 Root Signature를 세팅해준다.
-	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
-
-	// #2 현재 Frame Constant Buffer를 업데이트한다.
+	// 현재 Frame Constant Buffer를 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
-	// #2 Structured Buffer는 Heap 없이 그냥 Rood Descriptor로 넘겨줄 수 있다.
-	// 현재 프레임에 사용하는 Material Buffer를 Srv로 바인드 해준다.
-	ID3D12Resource* matStructredBuffer = m_CurrFrameResource->MaterialBuffer->Resource();
-	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
+#if DYNAMIC_CUBE
+	// Dynamic Cube를 TextureCube에 바인드 해준다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE dynamicTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	dynamicTexDescriptor.Offset(m_SkyTexHeapIndex + 1, m_CbvSrvUavDescriptorSize);
+	m_CommandList->SetGraphicsRootDescriptorTable(3, dynamicTexDescriptor);
 
-	// #3 Texture Array는 택스쳐가 올라가 있는 view heap에서 텍스쳐 첫번째 핸들을 설정해준다.
-	// (첫번째 것만 설정해서 넘겨주면 된다. Root Signature에 이미 정보가 다 있다.)
-	m_CommandList->SetGraphicsRootDescriptorTable(4, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart()); // Tex arr는 4번
-
-	// #4 SkyMap을 그리고, 반사면을 그릴 TextureCube를 바인드해준다.
-	// (앱에서 기록하고 있던 offset을 이용해서 view handle을 넘겨준다.)
-	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	skyTexDescriptor.Offset(m_SkyTexHeapIndex, m_CbvSrvUavDescriptorSize);
+	// 그리고 거울 공을 그린다.
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::OpaqueDynamicReflectors]);
+#endif
+	// SkyMap을 그릴 TextureCube를 바인드해준다.
 	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
 
-	// #5 drawcall을 걸어준다.
+	// drawcall을 걸어준다.
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
@@ -639,7 +672,7 @@ void CubeMapApp::BuildRootSignature()
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
 	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
 	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
-	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL);
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t0 - TextureCube
 	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t1 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
@@ -681,7 +714,12 @@ void CubeMapApp::BuildRootSignature()
 
 void CubeMapApp::BuildDescriptorHeaps()
 {
+#if DYNAMIC_CUBE
+	const int textureDescriptorCount = 6;
+#else
 	const int textureDescriptorCount = 4;
+#endif
+
 	int viewCount = 0;
 
 	// Texture는 Shader Resource View Heap을 사용한다. (SRV Heap)
@@ -735,6 +773,30 @@ void CubeMapApp::BuildDescriptorHeaps()
 
 	m_d3dDevice->CreateShaderResourceView(skyTex, &srvDesc, viewHandle);
 	m_SkyTexHeapIndex = viewCount;
+
+#if DYNAMIC_CUBE
+	m_DynamicTexHeapIndex = m_SkyTexHeapIndex + 1;
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuStart = m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuStart = m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+	D3D12_CPU_DESCRIPTOR_HANDLE rtvCpuStart = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
+
+	// swap chain 다음에 6개가 추가로 달려있는 거에 대해
+	// view를 생성해준다.
+	int rtvOffset = SwapChainBufferCount;
+	// 핸들을 배열로 만들어 놓고
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cubeRtvHandle[6];
+	for (int i = 0; i < 6; i++)
+	{
+		cubeRtvHandle[i] = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvCpuStart, rtvOffset + i, m_RtvDescriptorSize);
+	}
+	// 함수로 한번에 6개 view를 만든다.
+	m_DynamicCubeMap->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_DynamicTexHeapIndex, m_CbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_DynamicTexHeapIndex, m_CbvSrvUavDescriptorSize),
+		cubeRtvHandle
+	);
+#endif
 }
 
 void CubeMapApp::BuildShadersAndInputLayout()
@@ -1004,9 +1066,13 @@ void CubeMapApp::BuildPSOs()
 
 void CubeMapApp::BuildFrameResources()
 {
+#if DYNAMIC_CUBE
+	// 메인 1 + 다이나믹 큐브 생성 6
+	UINT passCBCount = 7;
+#else 
 	UINT passCBCount = 1;
-	
-	// 반사상 용 PassCB가 하나 추가 된다.
+#endif
+
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
 		m_FrameResources.push_back(
@@ -1178,12 +1244,16 @@ void CubeMapApp::BuildRenderItems()
 	}
 
 	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
+#if DYNAMIC_CUBE
+	skullRenderItem->WorldMat = MathHelper::Identity4x4();
+#else
 	XMMATRIX ScaleHalfMat = XMMatrixScaling(0.5f, 0.5f, 0.5f);
 	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, 1.f, 0.f);
 	XMMATRIX SkullWorldMat = ScaleHalfMat * TranslateDown5Units;
-	// skullRenderItem->WorldMat = MathHelper::Identity4x4();
 	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
-	skullRenderItem->ObjCBIndex = objCBIndex;
+#endif
+	skullRenderItem->TexTransform = MathHelper::Identity4x4();
+	skullRenderItem->ObjCBIndex = objCBIndex++;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
 	skullRenderItem->Mat = m_Materials["whiteMat"].get();
 	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -1191,9 +1261,28 @@ void CubeMapApp::BuildRenderItems()
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
 
+	m_SkullRitem = skullRenderItem.get();
+
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
+
+#if DYNAMIC_CUBE
+	// Dynamic Cube를 이용하는 미러볼을 생성한다.
+	std::unique_ptr<RenderItem>  globeRenderItem = std::make_unique<RenderItem>();
+	XMStoreFloat4x4(&globeRenderItem->WorldMat, XMMatrixScaling(2.0f, 2.0f, 2.0f) * XMMatrixTranslation(0.0f, 2.0f, 0.0f));
+	XMStoreFloat4x4(&globeRenderItem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
+	globeRenderItem->ObjCBIndex = objCBIndex++;
+	globeRenderItem->Mat = m_Materials["mirrorMat"].get();
+	globeRenderItem->Geo = m_Geometries["shapeGeo"].get();
+	globeRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	globeRenderItem->IndexCount = globeRenderItem->Geo->DrawArgs["sphere"].IndexCount;
+	globeRenderItem->StartIndexLocation = globeRenderItem->Geo->DrawArgs["sphere"].StartIndexLocation;
+	globeRenderItem->BaseVertexLocation = globeRenderItem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::OpaqueDynamicReflectors].push_back(globeRenderItem.get());
+	m_AllRenderItems.push_back(std::move(globeRenderItem));
+#endif
 }
 
 void CubeMapApp::CreateRtvAndDsvDescriptorHeaps()
@@ -1231,18 +1320,161 @@ void CubeMapApp::CreateRtvAndDsvDescriptorHeaps()
 
 void CubeMapApp::UpdateCubeMapFacePassCB(const GameTimer& _gt)
 {
+	for (int i = 0; i < 6; ++i)
+	{
+		// 각 텍스쳐마다 카메라 방향이 다르기 때문에
+		// pass도 따로 넘겨줘야 한다.
+		PassConstants cubeFacePassCB = m_MainPassCB;
+
+		XMMATRIX ViewMat = m_CubeMapCamera[i].GetViewMat();
+		XMMATRIX ProjMat = m_CubeMapCamera[i].GetProjMat();
+
+		XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
+
+		XMVECTOR DetViewMat = XMMatrixDeterminant(ViewMat);
+		XMMATRIX InvViewMat = XMMatrixInverse(&DetViewMat, ViewMat);
+
+		XMVECTOR DetProjMat = XMMatrixDeterminant(ProjMat);
+		XMMATRIX InvProjMat = XMMatrixInverse(&DetProjMat, ProjMat);
+
+		XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
+		XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
+
+		XMStoreFloat4x4(&cubeFacePassCB.ViewMat, XMMatrixTranspose(ViewMat));
+		XMStoreFloat4x4(&cubeFacePassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
+		XMStoreFloat4x4(&cubeFacePassCB.ProjMat, XMMatrixTranspose(ProjMat));
+		XMStoreFloat4x4(&cubeFacePassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
+		XMStoreFloat4x4(&cubeFacePassCB.VPMat, XMMatrixTranspose(VPMat));
+		XMStoreFloat4x4(&cubeFacePassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
+		cubeFacePassCB.EyePosW = m_CubeMapCamera[i].GetPosition3f();
+		cubeFacePassCB.RenderTargetSize = XMFLOAT2((float)CubeMapSize, (float)CubeMapSize);
+		cubeFacePassCB.InvRenderTargetSize = XMFLOAT2(1.0f / CubeMapSize, 1.0f / CubeMapSize);
+
+		UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
+		// 오프셋에 맞춰서 넣어준다.
+		currPassCB->CopyData(1 + i, cubeFacePassCB);
+	}
 }
 
 void CubeMapApp::BuildCubeDepthStencil()
 {
+	// DynamicTexture Cube용이다.
+	// 한 장면씩 그리기 때문에, 하나만 있어도 된다.
+	D3D12_RESOURCE_DESC depthStencilDesc;
+	depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	depthStencilDesc.Alignment = 0;
+	depthStencilDesc.Width = CubeMapSize; // 사이즈를 맞춰추고
+	depthStencilDesc.Height = CubeMapSize;
+	depthStencilDesc.DepthOrArraySize = 1;
+	depthStencilDesc.MipLevels = 1;
+	depthStencilDesc.Format = m_DepthStencilFormat;
+	depthStencilDesc.SampleDesc.Count = 1;
+	depthStencilDesc.SampleDesc.Quality = 0;
+	depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+	depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+
+	D3D12_CLEAR_VALUE optClear;
+	optClear.Format = m_DepthStencilFormat;
+	optClear.DepthStencil.Depth = 1.f;
+	optClear.DepthStencil.Stencil = 0;
+
+	// 리소스를 만들고
+	CD3DX12_HEAP_PROPERTIES defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
+		&defaultHeapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&depthStencilDesc,
+		D3D12_RESOURCE_STATE_COMMON,
+		&optClear,
+		IID_PPV_ARGS(m_CubeDepthStencilBuffer.GetAddressOf())
+	));
+	// 뷰를 만들어준다.
+	m_d3dDevice->CreateDepthStencilView(m_CubeDepthStencilBuffer.Get(), nullptr, m_CubeDsvHandle);
+	// 사용할 수 있도록 베리어를 바꿔준다.
+	CD3DX12_RESOURCE_BARRIER cubeDSV_COMM_WRITE = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_CubeDepthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	m_CommandList->ResourceBarrier(1, &cubeDSV_COMM_WRITE);
 }
 
 void CubeMapApp::DrawSceneToCubeMap()
 {
+	// 헬퍼 클래스로 관리하던, viewport와 scissorrRect 정보를 이용해서 세팅한다.
+	D3D12_VIEWPORT dynaCubeMapViewport = m_DynamicCubeMap->GetViewport();
+	D3D12_RECT dynaCubeMapScissorRect = m_DynamicCubeMap->GetScissorRect();
+	m_CommandList->RSSetViewports(1, &dynaCubeMapViewport);
+	m_CommandList->RSSetScissorRects(1, &dynaCubeMapScissorRect);
+
+	// 렌더 타겟도 클래스 인스턴스에 있는 친구로 설정한다.
+	CD3DX12_RESOURCE_BARRIER dynaCubeMap_READ_RT = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_DynamicCubeMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	m_CommandList->ResourceBarrier(1, &dynaCubeMap_READ_RT);
+
+	// 각 방향 별로 (상하전후좌우) 렌더링을 하기에, pass constanct도 그때마다 넘겨주는 것이다.
+	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
+
+	for (int i = 0; i < 6; i++)
+	{
+		// 백버퍼역할을 하는 친구와 뎁스버퍼를 초기화한다.
+		m_CommandList->ClearRenderTargetView(m_DynamicCubeMap->GetRtv(i), Colors::LightSteelBlue, 0, nullptr);
+		m_CommandList->ClearDepthStencilView(m_CubeDsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
+
+		// 렌더 타겟을 설정한다. (미리 가지고 있던, CubeMap 용 depth-stencil view도 설정한다.)
+		CD3DX12_CPU_DESCRIPTOR_HANDLE curRtv = m_DynamicCubeMap->GetRtv(i);
+		m_CommandList->OMSetRenderTargets(1, &curRtv, true, &m_CubeDsvHandle);
+
+		// 각 방향 마다 pass constant를 넘겨준다. (방향마다 camera 방향이 다르기 때문)
+		ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
+		D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = passCB->GetGPUVirtualAddress() + (1 + i) * passCBByteSize;
+		m_CommandList->SetGraphicsRootConstantBufferView(1, passCBAddress); // PassConstant는 1번
+
+		// 불투명한 친구 먼저
+		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+		// 그 다음에 하늘을 그려야 성능이 낭비가 안된다.
+		m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
+		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
+
+		m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
+	}
+
+	// 이제 다 그린 텍스쳐를 사용할 수 있게 Read로 바꾼다.
+	CD3DX12_RESOURCE_BARRIER dynaCubeMap_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_DynamicCubeMap->GetResource(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+	m_CommandList->ResourceBarrier(1, &dynaCubeMap_RT_READ);
 }
 
 void CubeMapApp::BuildCubeFaceCamera(float _x, float _y, float _z)
 {
+	// 인자로 들어온 위치에서 6방향으로 카메라를 만든다.
+	XMFLOAT3 center(_x, _y, _z);
+	XMFLOAT3 worldUp(0.0f, 1.0f, 0.0f);
+
+	XMFLOAT3 targets[6] =
+	{
+		XMFLOAT3(_x + 1.0f, _y, _z), // +X
+		XMFLOAT3(_x - 1.0f, _y, _z), // -X
+		XMFLOAT3(_x, _y + 1.0f, _z), // +Y
+		XMFLOAT3(_x, _y - 1.0f, _z), // -Y
+		XMFLOAT3(_x, _y, _z + 1.0f), // +Z
+		XMFLOAT3(_x, _y, _z - 1.0f)  // -Z
+	};
+
+	// 카메라 위 아래를 볼때는, 업벡터를 +Z/-Z를 대신 사용한다.
+	XMFLOAT3 ups[6] =
+	{
+		XMFLOAT3(0.0f, 1.0f, 0.0f),  // +X
+		XMFLOAT3(0.0f, 1.0f, 0.0f),  // -X
+		XMFLOAT3(0.0f, 0.0f, -1.0f), // +Y
+		XMFLOAT3(0.0f, 0.0f, +1.0f), // -Y
+		XMFLOAT3(0.0f, 1.0f, 0.0f),	 // +Z
+		XMFLOAT3(0.0f, 1.0f, 0.0f)	 // -Z
+	};
+	// app에서 관리하도록 카메라를 생성한다.
+	for (int i = 0; i < 6; ++i)
+	{
+		m_CubeMapCamera[i].LookAt(center, targets[i], ups[i]);
+		m_CubeMapCamera[i].SetFrustum(0.5f * XM_PI, 1.0f, 0.1f, 1000.0f);
+		m_CubeMapCamera[i].UpdateViewMatrix();
+	}
 }
 
 void CubeMapApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)

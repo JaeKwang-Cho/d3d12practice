@@ -24,7 +24,7 @@ public:
 	CubeRenderTarget& operator=(const CubeRenderTarget& _other) = delete;
 	~CubeRenderTarget() = default;
 
-	void BuildDescriptor(
+	void BuildDescriptors(
 		CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuSrv,
 		CD3DX12_GPU_DESCRIPTOR_HANDLE _hGpuSrv,
 		CD3DX12_CPU_DESCRIPTOR_HANDLE _hCpuRtv[6]
