@@ -39,21 +39,17 @@ struct MaterialData
     float Roughness;
     float4x4 MaterialTransform;
     uint DiffuseMapIndex;
-#ifdef PRAC3
-    float Eta;        
-#else
+    uint NormalMapIndex;
     uint MatPad0;
-#endif
     uint MatPad1;
-    uint MatPad2;
 };
 
 // 6개의 Texture를 가지고 있고, 록업 벡터를 이용해서
 // 픽셀 값을 참조하는 리소스이다.
 TextureCube gCubeMap : register(t0);
 
-
-Texture2D gDiffuseMap[4] : register(t1);
+// 이제 노멀맵도 함께 사용할 것이기 때문에, 개수도 늘려주고, 일반적인 이름으로 바꿔준다.
+Texture2D gTextureMaps[10] : register(t1);
 
 //StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
@@ -118,3 +114,23 @@ cbuffer cbPass : register(b1)
     Light gLights[MaxLights];
 };
  
+// normal map sample을 world 좌표계로 변환한다.
+float3 NormalSampleToWorldSpace(float3 _normalMapSample, float3 _unitNormalW, float3 tangentW)
+{
+    // 구간을 [-1, 1]로 매핑한다.
+    float3 normalT = 2.f * _normalMapSample - 1.f;
+    
+    // TBN basis를 생성한다.
+    float3 N = _unitNormalW;
+    // tangentW는 보간되어 넘어온 값이기 때문에, T에서 N 성분을 제거해야, 서로 직교가 된다.
+    float3 T = normalize(tangentW - dot(tangentW, N) * N);
+    // 외적으로 B을 마저 구한다.
+    float3 B = cross(N, T);
+    
+    // basis - transform 행렬을 만들고
+    float3x3 TBN = float3x3(T, B, N);
+    // world 좌표계로 바꾼다.
+    float3 bumpedNormalW = mul(normalT, TBN);
+    
+    return bumpedNormalW;
+}

@@ -72,19 +72,12 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\Commons.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Sky.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\16_NormalMapping.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Commons.hlsl" />
+    <None Include="Shaders\LightingUtil.hlsl" />
+    <None Include="Shaders\Sky.hlsl" />
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>

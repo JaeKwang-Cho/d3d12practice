@@ -81,25 +81,27 @@ struct MaterialData
 	DirectX::XMFLOAT4X4 MaterialTransform = MathHelper::Identity4x4();
 
 	UINT DiffuseMapIndex = 0;
+	UINT NormalMapIndex = 0;
 	UINT MaterialPad0;
 	UINT MaterialPad1;
-	UINT MaterialPad2;
 };
 
 // 사용할 Vertex 정보
 struct Vertex {
 	Vertex() = default;
-	Vertex(float x, float y, float z, float nx, float ny, float nz, float u, float v) :
+	Vertex(float x, float y, float z, float nx, float ny, float nz, float u, float v, float tx, float ty, float tz) :
 		Pos(x, y, z),
 		Normal(nx, ny, nz),
-		TexC(u, v)
+		TexC(u, v),
+		TangentU(tx, ty, tz)
 	{}
-	Vertex(XMFLOAT3 _Pos, XMFLOAT3 _Normal, XMFLOAT2 _TexC)
-		: Pos(_Pos), Normal(_Normal), TexC(_TexC)
+	Vertex(XMFLOAT3 _Pos, XMFLOAT3 _Normal, XMFLOAT2 _TexC, XMFLOAT3 _TangentU)
+		: Pos(_Pos), Normal(_Normal), TexC(_TexC), TangentU(_TangentU)
 	{ }
 	XMFLOAT3 Pos;
 	XMFLOAT3 Normal;
 	XMFLOAT2 TexC;
+	XMFLOAT3 TangentU;
 };
 
 // CPU가 프레임 마다 Command List를 구성하는데 필요한 정보들을 저장한다.

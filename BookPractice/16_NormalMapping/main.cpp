@@ -12,6 +12,8 @@
 #include "FileReader.h"
 #include "../Common/Camera.h"
 #include "CubeRenderTarget.h"
+#include "WICTextureLoader.h"
+#include "ResourceUploadBatch.h"
 
 const int g_NumFrameResources = 3;
 const UINT CubeMapSize = 512;
@@ -99,13 +101,6 @@ private:
 	void BuildPSOs();
 	void BuildFrameResources();
 
-	// ==== Dynamic Cube ====
-	virtual void CreateRtvAndDsvDescriptorHeaps() override;
-	void UpdateCubeMapFacePassCB(const GameTimer& _gt);
-	void BuildCubeDepthStencil();
-	void DrawSceneToCubeMap();
-	void BuildCubeFaceCamera(float _x, float _y, float _z);
-
 	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
 
@@ -153,17 +148,6 @@ private:
 	PassConstants m_MainPassCB;
 
 	POINT m_LastMousePos = {};
-
-	// ==== Dynamic Cube ====
-	ComPtr<ID3D12Resource> m_CubeDepthStencilBuffer;
-
-	UINT m_DynamicTexHeapIndex = 0;
-
-	RenderItem* m_SkullRitem = nullptr;
-
-	std::unique_ptr<CubeRenderTarget> m_DynamicCubeMap = nullptr;
-
-	CD3DX12_CPU_DESCRIPTOR_HANDLE m_CubeDsvHandle;
 
 	// Camera
 	Camera m_Camera;
@@ -223,23 +207,10 @@ bool NormalMappingApp::Initialize()
 
 	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
 
-#if DYNAMIC_CUBE
-	BuildCubeFaceCamera(0.f, 2.f, 0.f);
-	m_DynamicCubeMap = std::make_unique<CubeRenderTarget>(
-		m_d3dDevice.Get(),
-		CubeMapSize,
-		CubeMapSize,
-		DXGI_FORMAT_R8G8B8A8_UNORM
-	);
-#endif
-
 	// ======== 초기화 ==========
 	LoadTextures();
 	BuildRootSignature();
 	BuildDescriptorHeaps();
-#if DYNAMIC_CUBE
-	BuildCubeDepthStencil();
-#endif
 	BuildShadersAndInputLayout();
 	BuildStageGeometry();
 	BuildSkullGeometry();
@@ -273,16 +244,6 @@ void NormalMappingApp::Update(const GameTimer& _gt)
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
 
-#if DYNAMIC_CUBE
-	XMMATRIX skullScale = XMMatrixScaling(0.2f, 0.2f, 0.2f);
-	XMMATRIX skullOffset = XMMatrixTranslation(3.0f, 2.0f, 0.0f);
-	XMMATRIX skullLocalRotate = XMMatrixRotationY(2.0f * _gt.GetTotalTime());
-	XMMATRIX skullGlobalRotate = XMMatrixRotationY(0.5f * _gt.GetTotalTime());
-	XMStoreFloat4x4(&m_SkullRitem->WorldMat, skullScale * skullLocalRotate * skullOffset * skullGlobalRotate);
-	// 이걸 위에서 app에서 가지고 있었던 것이다.
-	m_SkullRitem->NumFrameDirty = g_NumFrameResources;
-#endif
-
 	// 원형 배열을 돌면서
 	m_CurrFrameResourceIndex = (m_CurrFrameResourceIndex + 1) % g_NumFrameResources;
 	m_CurrFrameResource = m_FrameResources[m_CurrFrameResourceIndex].get();
@@ -308,9 +269,6 @@ void NormalMappingApp::Update(const GameTimer& _gt)
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
 	UpdateMainPassCB(_gt);
-#if DYNAMIC_CUBE
-	UpdateCubeMapFacePassCB(_gt);
-#endif
 }
 
 void NormalMappingApp::Draw(const GameTimer& _gt)
@@ -346,17 +304,6 @@ void NormalMappingApp::Draw(const GameTimer& _gt)
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	skyTexDescriptor.Offset(m_SkyTexHeapIndex, m_CbvSrvUavDescriptorSize);
 
-#if DYNAMIC_CUBE 
-	// ==== 큐브맵 그리기 ====
-	// 다이나믹 큐브맵을 사용할 친구는 하나니깐, Per Frame에서 CubeMap을 생성한다.
-	// 만약 여러 물체가 사용하게 하려면 Per Object를 사용해야 할 것이다.
-	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor); // TextureCube는 3번
-	
-	// 함수로 묶어놨다.
-	// 각 방향마다 카메라 설정하고, 물체를 그리고
-	// 그 결과를 헬퍼 클래스가 관리하는 텍스쳐에 넣어놓는다.
-	DrawSceneToCubeMap();
-#endif
 	// ==== 화면 그리기 ====
 
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
@@ -391,15 +338,6 @@ void NormalMappingApp::Draw(const GameTimer& _gt)
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
-#if DYNAMIC_CUBE
-	// Dynamic Cube를 TextureCube에 바인드 해준다.
-	CD3DX12_GPU_DESCRIPTOR_HANDLE dynamicTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-	dynamicTexDescriptor.Offset(m_SkyTexHeapIndex + 1, m_CbvSrvUavDescriptorSize);
-	m_CommandList->SetGraphicsRootDescriptorTable(3, dynamicTexDescriptor);
-
-	// 그리고 거울 공을 그린다.
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::OpaqueDynamicReflectors]);
-#endif
 	// SkyMap을 그릴 TextureCube를 바인드해준다.
 	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
 
@@ -557,6 +495,7 @@ void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			XMStoreFloat4x4(&matData.MaterialTransform, XMMatrixTranspose(matTransform));
 			// Texture 인덱스를 넣어준다.
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
+			matData.NormalMapIndex = mat->NormalSrvHeapIndex;
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
 			mat->NumFramesDirty--;
@@ -623,19 +562,23 @@ void NormalMappingApp::LoadTextures()
 	std::vector<std::string> texNames =
 	{
 		"bricksDiffuseMap",
+		"bricksNormalMap",
 		"tileDiffuseMap",
+		"tileNormalMap",
 		"defaultDiffuseMap",
+		"defaultNormalMap",
 		"skyCubeMap"
 	};
 
 	std::vector<std::wstring> texFilenames =
 	{
 		L"../Textures/bricks2.dds",
+		L"../Textures/bricks2_nmap.dds",
 		L"../Textures/tile.dds",
+		L"../Textures/tile_nmap.dds",
 		L"../Textures/white1x1.dds",
-		L"../Textures/grasscube1024.dds"
-		//L"../Textures/skymap.dds"
-		// image source: https://www.cleanpng.com/png-skybox-texture-mapping-cube-mapping-desktop-wallpa-6020000/
+		L"../Textures/default_nmap.dds",
+		L"../Textures/snowcube1024.dds"
 	};
 
 	for (int i = 0; i < (int)texNames.size(); ++i)
@@ -649,6 +592,24 @@ void NormalMappingApp::LoadTextures()
 
 		m_Textures[texMap->Name] = std::move(texMap);
 	}
+
+	// png로 되있는 flat Normal Map도 가져온다.
+	std::unique_ptr<Texture> flatNmap = std::make_unique<Texture>();
+	flatNmap->Name = "flatNmap";
+	flatNmap->Filename = L"../Textures/flat_nmap.png";
+
+	ResourceUploadBatch upload(m_d3dDevice.Get());
+	upload.Begin();
+	ThrowIfFailed(CreateWICTextureFromFile(
+		m_d3dDevice.Get(),
+		upload,
+		flatNmap->Filename.c_str(),
+		flatNmap->Resource.GetAddressOf()
+	));
+
+	std::future<void> finish = upload.End(m_CommandQueue.Get());
+	finish.wait();
+	m_Textures[flatNmap->Name] = std::move(flatNmap);
 }
 
 
@@ -664,8 +625,9 @@ void NormalMappingApp::BuildRootSignature()
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
-	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 5개로 만들어 준다.
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 5, 1, 0); // space0 / t1 - texture 정보
+	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 10개로 만들어 준다. 
+	// 이제 노멀맵도 넘어간다.
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 1, 0); // space0 / t1 - texture 정보
 
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
@@ -713,11 +675,8 @@ void NormalMappingApp::BuildRootSignature()
 
 void NormalMappingApp::BuildDescriptorHeaps()
 {
-#if DYNAMIC_CUBE
-	const int textureDescriptorCount = 6;
-#else
-	const int textureDescriptorCount = 4;
-#endif
+	// Descriptor Count는 좀 넘겨도 된다. 부족한게 문제가 생기는 것이다.
+	const int textureDescriptorCount = 10;
 
 	int viewCount = 0;
 
@@ -732,70 +691,47 @@ void NormalMappingApp::BuildDescriptorHeaps()
 	CD3DX12_CPU_DESCRIPTOR_HANDLE viewHandle(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
 	// 텍스쳐 리소스를 얻은 다음
-	ID3D12Resource* bricksTex = m_Textures["bricksDiffuseMap"].get()->Resource.Get();
-	ID3D12Resource* tileTex = m_Textures["tileDiffuseMap"].get()->Resource.Get();
-	ID3D12Resource* whiteTex = m_Textures["defaultDiffuseMap"].get()->Resource.Get();
-	ID3D12Resource* skyTex = m_Textures["skyCubeMap"].get()->Resource.Get();
+	std::vector<ID3D12Resource*> tex2DList =
+	{
+		m_Textures["bricksDiffuseMap"]->Resource.Get(),
+		m_Textures["bricksNormalMap"]->Resource.Get(),
+		m_Textures["tileDiffuseMap"]->Resource.Get(),
+		m_Textures["tileNormalMap"]->Resource.Get(),
+		m_Textures["defaultDiffuseMap"]->Resource.Get(),
+		m_Textures["defaultNormalMap"]->Resource.Get(),
+		m_Textures["flatNmap"]->Resource.Get()
+	};
 
-	// view를 만들어주고
+	ID3D12Resource* skyCubeMap = m_Textures["skyCubeMap"]->Resource.Get();
+
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
 	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = bricksTex->GetDesc().Format;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	srvDesc.Texture2D.MostDetailedMip = 0;
-	srvDesc.Texture2D.MipLevels = -1;
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;
 
-	// view를 만들면서 연결해준다.
-	m_d3dDevice->CreateShaderResourceView(bricksTex, &srvDesc, viewHandle);
+	for (UINT i = 0; i < (UINT)tex2DList.size(); i++)
+	{
+		// view를 만들면서 연결해준다.
+		srvDesc.Format = tex2DList[i]->GetDesc().Format;
+		srvDesc.Texture2D.MipLevels = tex2DList[i]->GetDesc().MipLevels;
+		m_d3dDevice->CreateShaderResourceView(tex2DList[i], &srvDesc, viewHandle);
 
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	viewCount++;
-	srvDesc.Format = tileTex->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = tileTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(tileTex, &srvDesc, viewHandle);
-
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	viewCount++;
-	srvDesc.Format = whiteTex->GetDesc().Format;
-	srvDesc.Texture2D.MipLevels = whiteTex->GetDesc().MipLevels;
-	m_d3dDevice->CreateShaderResourceView(whiteTex, &srvDesc, viewHandle);
+		viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
+		viewCount++;
+	}
 
 	// TextureCube는 프로퍼티가 다르기때문에
 	// 수정해주고 Resource View를 생성한다.
-	viewHandle.Offset(1, m_CbvSrvUavDescriptorSize);
-	viewCount++;
 	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
-	srvDesc.TextureCube.MipLevels = skyTex->GetDesc().MipLevels;
+	srvDesc.TextureCube.MipLevels = skyCubeMap->GetDesc().MipLevels;
+	srvDesc.TextureCube.MostDetailedMip = 0;
 	srvDesc.TextureCube.ResourceMinLODClamp = 0.f;
-	srvDesc.Format = skyTex->GetDesc().Format;
+	srvDesc.Format = skyCubeMap->GetDesc().Format;
 
-	m_d3dDevice->CreateShaderResourceView(skyTex, &srvDesc, viewHandle);
+	m_d3dDevice->CreateShaderResourceView(skyCubeMap, &srvDesc, viewHandle);
+
 	m_SkyTexHeapIndex = viewCount;
-
-#if DYNAMIC_CUBE
-	m_DynamicTexHeapIndex = m_SkyTexHeapIndex + 1;
-
-	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuStart = m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuStart = m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
-	D3D12_CPU_DESCRIPTOR_HANDLE rtvCpuStart = m_RtvHeap->GetCPUDescriptorHandleForHeapStart();
-
-	// swap chain 다음에 6개가 추가로 달려있는 거에 대해
-	// view를 생성해준다.
-	int rtvOffset = SwapChainBufferCount;
-	// 핸들을 배열로 만들어 놓고
-	CD3DX12_CPU_DESCRIPTOR_HANDLE cubeRtvHandle[6];
-	for (int i = 0; i < 6; i++)
-	{
-		cubeRtvHandle[i] = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtvCpuStart, rtvOffset + i, m_RtvDescriptorSize);
-	}
-	// 함수로 한번에 6개 view를 만든다.
-	m_DynamicCubeMap->BuildDescriptors(
-		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_DynamicTexHeapIndex, m_CbvSrvUavDescriptorSize),
-		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_DynamicTexHeapIndex, m_CbvSrvUavDescriptorSize),
-		cubeRtvHandle
-	);
-#endif
 }
 
 void NormalMappingApp::BuildShadersAndInputLayout()
@@ -817,7 +753,8 @@ void NormalMappingApp::BuildShadersAndInputLayout()
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
 	};
 }
 
@@ -886,6 +823,7 @@ void NormalMappingApp::BuildStageGeometry()
 		vertices[k].Pos = box.Vertices[i].Position;
 		vertices[k].Normal = box.Vertices[i].Normal;
 		vertices[k].TexC = box.Vertices[i].TexC;
+		vertices[k].TangentU = box.Vertices[i].TangentU;
 	}
 
 	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
@@ -893,6 +831,7 @@ void NormalMappingApp::BuildStageGeometry()
 		vertices[k].Pos = grid.Vertices[i].Position;
 		vertices[k].Normal = grid.Vertices[i].Normal;
 		vertices[k].TexC = grid.Vertices[i].TexC;
+		vertices[k].TangentU = grid.Vertices[i].TangentU;
 	}
 
 	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
@@ -900,6 +839,7 @@ void NormalMappingApp::BuildStageGeometry()
 		vertices[k].Pos = sphere.Vertices[i].Position;
 		vertices[k].Normal = sphere.Vertices[i].Normal;
 		vertices[k].TexC = sphere.Vertices[i].TexC;
+		vertices[k].TangentU = sphere.Vertices[i].TangentU;
 	}
 
 	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
@@ -907,6 +847,7 @@ void NormalMappingApp::BuildStageGeometry()
 		vertices[k].Pos = cylinder.Vertices[i].Position;
 		vertices[k].Normal = cylinder.Vertices[i].Normal;
 		vertices[k].TexC = cylinder.Vertices[i].TexC;
+		vertices[k].TangentU = cylinder.Vertices[i].TangentU;
 	}
 
 	// 이제 index 정보도 한곳에 다 옮긴다.
@@ -963,7 +904,7 @@ void NormalMappingApp::BuildSkullGeometry()
 	vector<uint32_t> SkullIndices;
 
 	BoundingBox bounds;
-	Dorasima::Prac3VerticesNIndicies(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
+	Dorasima::GetMeshFromFile(L"..\\04_RenderSmoothly_Wave\\Skull.txt", SkullVertices, SkullIndices, bounds);
 
 	const UINT vbByteSize = (UINT)SkullVertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)SkullIndices.size() * sizeof(std::uint32_t);
@@ -1065,12 +1006,7 @@ void NormalMappingApp::BuildPSOs()
 
 void NormalMappingApp::BuildFrameResources()
 {
-#if DYNAMIC_CUBE
-	// 메인 1 + 다이나믹 큐브 생성 6
-	UINT passCBCount = 7;
-#else 
 	UINT passCBCount = 1;
-#endif
 
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1085,10 +1021,19 @@ void NormalMappingApp::BuildFrameResources()
 
 void NormalMappingApp::BuildMaterials()
 {
+	//0 m_Textures["bricksDiffuseMap"]
+	//1	m_Textures["bricksNormalMap"]
+	//2	m_Textures["tileDiffuseMap"]
+	//3	m_Textures["tileNormalMap"]
+	//4	m_Textures["defaultDiffuseMap"]
+	//5	m_Textures["defaultNormalMap"]
+	//6	m_Textures["flatNmap"]
+
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
 	brickMat->MatCBIndex = 0;
 	brickMat->DiffuseSrvHeapIndex = 0;
+	brickMat->NormalSrvHeapIndex = 1;
 	brickMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 	brickMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	brickMat->Roughness = 0.3f;
@@ -1096,23 +1041,26 @@ void NormalMappingApp::BuildMaterials()
 	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
 	tileMat->Name = "tileMat";
 	tileMat->MatCBIndex = 1;
-	tileMat->DiffuseSrvHeapIndex = 1;
+	tileMat->DiffuseSrvHeapIndex = 2;
+	tileMat->NormalSrvHeapIndex = 3;
 	tileMat->DiffuseAlbedo = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
 	tileMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
-	tileMat->Roughness = 0.3f;
+	tileMat->Roughness = 0.1f;
 
 	std::unique_ptr<Material> mirrorMat = std::make_unique<Material>();
 	mirrorMat->Name = "mirrorMat";
 	mirrorMat->MatCBIndex = 2;
-	mirrorMat->DiffuseSrvHeapIndex = 2;
-	mirrorMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.1f, 1.0f);
+	mirrorMat->DiffuseSrvHeapIndex = 4;
+	mirrorMat->NormalSrvHeapIndex = 6;
+	mirrorMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
 	mirrorMat->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
 	mirrorMat->Roughness = 0.1f;
 
 	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
 	whiteMat->Name = "whiteMat";
 	whiteMat->MatCBIndex = 3;
-	whiteMat->DiffuseSrvHeapIndex = 2;
+	whiteMat->DiffuseSrvHeapIndex = 4;
+	whiteMat->NormalSrvHeapIndex = 6;
 	whiteMat->DiffuseAlbedo = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
 	whiteMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	whiteMat->Roughness = 0.2f;
@@ -1120,7 +1068,8 @@ void NormalMappingApp::BuildMaterials()
 	std::unique_ptr<Material> skyMat = std::make_unique<Material>();
 	skyMat->Name = "skyMat";
 	skyMat->MatCBIndex = 4;
-	skyMat->DiffuseSrvHeapIndex = 3;
+	skyMat->DiffuseSrvHeapIndex = 4;
+	skyMat->NormalSrvHeapIndex = 6;
 	skyMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);;
 	skyMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	skyMat->Roughness = 1.0f;
@@ -1243,14 +1192,10 @@ void NormalMappingApp::BuildRenderItems()
 	}
 
 	std::unique_ptr<RenderItem> skullRenderItem = std::make_unique<RenderItem>();
-#if DYNAMIC_CUBE
-	skullRenderItem->WorldMat = MathHelper::Identity4x4();
-#else
 	XMMATRIX ScaleHalfMat = XMMatrixScaling(0.5f, 0.5f, 0.5f);
 	XMMATRIX TranslateDown5Units = XMMatrixTranslation(0.f, 1.f, 0.f);
 	XMMATRIX SkullWorldMat = ScaleHalfMat * TranslateDown5Units;
 	XMStoreFloat4x4(&skullRenderItem->WorldMat, SkullWorldMat);
-#endif
 	skullRenderItem->TexTransform = MathHelper::Identity4x4();
 	skullRenderItem->ObjCBIndex = objCBIndex++;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
@@ -1260,220 +1205,9 @@ void NormalMappingApp::BuildRenderItems()
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
 
-	m_SkullRitem = skullRenderItem.get();
-
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
-
-#if DYNAMIC_CUBE
-	// Dynamic Cube를 이용하는 미러볼을 생성한다.
-	std::unique_ptr<RenderItem>  globeRenderItem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&globeRenderItem->WorldMat, XMMatrixScaling(2.0f, 2.0f, 2.0f) * XMMatrixTranslation(0.0f, 2.0f, 0.0f));
-	XMStoreFloat4x4(&globeRenderItem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
-	globeRenderItem->ObjCBIndex = objCBIndex++;
-	globeRenderItem->Mat = m_Materials["mirrorMat"].get();
-	globeRenderItem->Geo = m_Geometries["shapeGeo"].get();
-	globeRenderItem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	globeRenderItem->IndexCount = globeRenderItem->Geo->DrawArgs["sphere"].IndexCount;
-	globeRenderItem->StartIndexLocation = globeRenderItem->Geo->DrawArgs["sphere"].StartIndexLocation;
-	globeRenderItem->BaseVertexLocation = globeRenderItem->Geo->DrawArgs["sphere"].BaseVertexLocation;
-
-	m_RenderItemLayer[(int)RenderLayer::OpaqueDynamicReflectors].push_back(globeRenderItem.get());
-	m_AllRenderItems.push_back(std::move(globeRenderItem));
-#endif
-}
-
-void NormalMappingApp::CreateRtvAndDsvDescriptorHeaps()
-{
-#if DYNAMIC_CUBE
-	// 랜더 타겟을 6개 더 만든다.
-	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc;
-	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 6;
-	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
-	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	rtvHeapDesc.NodeMask = 0;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
-		&rtvHeapDesc, IID_PPV_ARGS(m_RtvHeap.GetAddressOf())
-	));
-
-	// DepthStencil도 1개 더 만든다.
-	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc;
-	dsvHeapDesc.NumDescriptors = 2;
-	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
-	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-	dsvHeapDesc.NodeMask = 0;
-	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
-		&dsvHeapDesc, IID_PPV_ARGS(m_DsvHeap.GetAddressOf())
-	));
-	// app에서 미리 핸들을 가지고 있는다.
-	m_CubeDsvHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(
-		m_DsvHeap->GetCPUDescriptorHandleForHeapStart(),
-		1,
-		m_DsvDescriptorSize
-	);
-#else
-	__super::CreateRtvAndDsvDescriptorHeaps();
-#endif
-}
-
-void NormalMappingApp::UpdateCubeMapFacePassCB(const GameTimer& _gt)
-{
-	for (int i = 0; i < 6; ++i)
-	{
-		// 각 텍스쳐마다 카메라 방향이 다르기 때문에
-		// pass도 따로 넘겨줘야 한다.
-		PassConstants cubeFacePassCB = m_MainPassCB;
-
-		XMMATRIX ViewMat = m_CubeMapCamera[i].GetViewMat();
-		XMMATRIX ProjMat = m_CubeMapCamera[i].GetProjMat();
-
-		XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
-
-		XMVECTOR DetViewMat = XMMatrixDeterminant(ViewMat);
-		XMMATRIX InvViewMat = XMMatrixInverse(&DetViewMat, ViewMat);
-
-		XMVECTOR DetProjMat = XMMatrixDeterminant(ProjMat);
-		XMMATRIX InvProjMat = XMMatrixInverse(&DetProjMat, ProjMat);
-
-		XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
-		XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
-
-		XMStoreFloat4x4(&cubeFacePassCB.ViewMat, XMMatrixTranspose(ViewMat));
-		XMStoreFloat4x4(&cubeFacePassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
-		XMStoreFloat4x4(&cubeFacePassCB.ProjMat, XMMatrixTranspose(ProjMat));
-		XMStoreFloat4x4(&cubeFacePassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
-		XMStoreFloat4x4(&cubeFacePassCB.VPMat, XMMatrixTranspose(VPMat));
-		XMStoreFloat4x4(&cubeFacePassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
-		cubeFacePassCB.EyePosW = m_CubeMapCamera[i].GetPosition3f();
-		cubeFacePassCB.RenderTargetSize = XMFLOAT2((float)CubeMapSize, (float)CubeMapSize);
-		cubeFacePassCB.InvRenderTargetSize = XMFLOAT2(1.0f / CubeMapSize, 1.0f / CubeMapSize);
-
-		UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
-		// 오프셋에 맞춰서 넣어준다.
-		currPassCB->CopyData(1 + i, cubeFacePassCB);
-	}
-}
-
-void NormalMappingApp::BuildCubeDepthStencil()
-{
-	// DynamicTexture Cube용이다.
-	// 한 장면씩 그리기 때문에, 하나만 있어도 된다.
-	D3D12_RESOURCE_DESC depthStencilDesc;
-	depthStencilDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
-	depthStencilDesc.Alignment = 0;
-	depthStencilDesc.Width = CubeMapSize; // 사이즈를 맞춰추고
-	depthStencilDesc.Height = CubeMapSize;
-	depthStencilDesc.DepthOrArraySize = 1;
-	depthStencilDesc.MipLevels = 1;
-	depthStencilDesc.Format = m_DepthStencilFormat;
-	depthStencilDesc.SampleDesc.Count = 1;
-	depthStencilDesc.SampleDesc.Quality = 0;
-	depthStencilDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-	depthStencilDesc.Flags = D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
-
-	D3D12_CLEAR_VALUE optClear;
-	optClear.Format = m_DepthStencilFormat;
-	optClear.DepthStencil.Depth = 1.f;
-	optClear.DepthStencil.Stencil = 0;
-
-	// 리소스를 만들고
-	CD3DX12_HEAP_PROPERTIES defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
-	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
-		&defaultHeapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&depthStencilDesc,
-		D3D12_RESOURCE_STATE_COMMON,
-		&optClear,
-		IID_PPV_ARGS(m_CubeDepthStencilBuffer.GetAddressOf())
-	));
-	// 뷰를 만들어준다.
-	m_d3dDevice->CreateDepthStencilView(m_CubeDepthStencilBuffer.Get(), nullptr, m_CubeDsvHandle);
-	// 사용할 수 있도록 베리어를 바꿔준다.
-	CD3DX12_RESOURCE_BARRIER cubeDSV_COMM_WRITE = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_CubeDepthStencilBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-	m_CommandList->ResourceBarrier(1, &cubeDSV_COMM_WRITE);
-}
-
-void NormalMappingApp::DrawSceneToCubeMap()
-{
-	// 헬퍼 클래스로 관리하던, viewport와 scissorrRect 정보를 이용해서 세팅한다.
-	D3D12_VIEWPORT dynaCubeMapViewport = m_DynamicCubeMap->GetViewport();
-	D3D12_RECT dynaCubeMapScissorRect = m_DynamicCubeMap->GetScissorRect();
-	m_CommandList->RSSetViewports(1, &dynaCubeMapViewport);
-	m_CommandList->RSSetScissorRects(1, &dynaCubeMapScissorRect);
-
-	// 렌더 타겟도 클래스 인스턴스에 있는 친구로 설정한다.
-	CD3DX12_RESOURCE_BARRIER dynaCubeMap_READ_RT = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_DynamicCubeMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	m_CommandList->ResourceBarrier(1, &dynaCubeMap_READ_RT);
-
-	// 각 방향 별로 (상하전후좌우) 렌더링을 하기에, pass constanct도 그때마다 넘겨주는 것이다.
-	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
-
-	for (int i = 0; i < 6; i++)
-	{
-		// 백버퍼역할을 하는 친구와 뎁스버퍼를 초기화한다.
-		m_CommandList->ClearRenderTargetView(m_DynamicCubeMap->GetRtv(i), Colors::LightSteelBlue, 0, nullptr);
-		m_CommandList->ClearDepthStencilView(m_CubeDsvHandle, D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.f, 0, 0, nullptr);
-
-		// 렌더 타겟을 설정한다. (미리 가지고 있던, CubeMap 용 depth-stencil view도 설정한다.)
-		CD3DX12_CPU_DESCRIPTOR_HANDLE curRtv = m_DynamicCubeMap->GetRtv(i);
-		m_CommandList->OMSetRenderTargets(1, &curRtv, true, &m_CubeDsvHandle);
-
-		// 각 방향 마다 pass constant를 넘겨준다. (방향마다 camera 방향이 다르기 때문)
-		ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
-		D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = passCB->GetGPUVirtualAddress() + (1 + i) * passCBByteSize;
-		m_CommandList->SetGraphicsRootConstantBufferView(1, passCBAddress); // PassConstant는 1번
-
-		// 불투명한 친구 먼저
-		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-		// 그 다음에 하늘을 그려야 성능이 낭비가 안된다.
-		m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
-		DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
-
-		m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
-	}
-
-	// 이제 다 그린 텍스쳐를 사용할 수 있게 Read로 바꾼다.
-	CD3DX12_RESOURCE_BARRIER dynaCubeMap_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_DynamicCubeMap->GetResource(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
-	m_CommandList->ResourceBarrier(1, &dynaCubeMap_RT_READ);
-}
-
-void NormalMappingApp::BuildCubeFaceCamera(float _x, float _y, float _z)
-{
-	// 인자로 들어온 위치에서 6방향으로 카메라를 만든다.
-	XMFLOAT3 center(_x, _y, _z);
-	XMFLOAT3 worldUp(0.0f, 1.0f, 0.0f);
-
-	XMFLOAT3 targets[6] =
-	{
-		XMFLOAT3(_x + 1.0f, _y, _z), // +X
-		XMFLOAT3(_x - 1.0f, _y, _z), // -X
-		XMFLOAT3(_x, _y + 1.0f, _z), // +Y
-		XMFLOAT3(_x, _y - 1.0f, _z), // -Y
-		XMFLOAT3(_x, _y, _z + 1.0f), // +Z
-		XMFLOAT3(_x, _y, _z - 1.0f)  // -Z
-	};
-
-	// 카메라 위 아래를 볼때는, 업벡터를 +Z/-Z를 대신 사용한다.
-	XMFLOAT3 ups[6] =
-	{
-		XMFLOAT3(0.0f, 1.0f, 0.0f),  // +X
-		XMFLOAT3(0.0f, 1.0f, 0.0f),  // -X
-		XMFLOAT3(0.0f, 0.0f, -1.0f), // +Y
-		XMFLOAT3(0.0f, 0.0f, +1.0f), // -Y
-		XMFLOAT3(0.0f, 1.0f, 0.0f),	 // +Z
-		XMFLOAT3(0.0f, 1.0f, 0.0f)	 // -Z
-	};
-	// app에서 관리하도록 카메라를 생성한다.
-	for (int i = 0; i < 6; ++i)
-	{
-		m_CubeMapCamera[i].LookAt(center, targets[i], ups[i]);
-		m_CubeMapCamera[i].SetFrustum(0.5f * XM_PI, 1.0f, 0.1f, 1000.0f);
-		m_CubeMapCamera[i].UpdateViewMatrix();
-	}
 }
 
 void NormalMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)

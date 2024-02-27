@@ -6,12 +6,13 @@
 
 #include "Commons.hlsl"
 
-// 입력으로 Pos, Norm 을 받는다.
+// 입력으로 Pos, Norm, TexC, TangentU 을 받는다.
 struct VertexIn
 {
     float3 PosL : POSITION;
     float3 NormalL : NORMAL;
     float2 TexC : TEXCOORD;
+    float3 TangentU : TANGENT;
 };
 
 // 출력으로는 World Pos와 동차 (Homogeneous clip space) Pos로 나눈다.
@@ -20,6 +21,7 @@ struct VertexOut
     float4 PosH : SV_POSITION;
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
+    float3 TangentW : TANGENT;
     float2 TexC : TEXCOORD;
 };
 
@@ -38,6 +40,11 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     // (그렇지 않으면, 역전치 행렬을 사용해야 한다.)
     //vout.NormalW = mul(vin.NormalL, (float3x3) gWorld);
     vout.NormalW = mul(vin.NormalL, (float3x3) gInvWorldTranspose);
+    
+    // 탄젠트도 마찬가지로 역전치 행렬을 사용하여 월드로 변환한다.
+    // 행렬 곱이고, 기저 변환에 따라 이렇게 월드행렬을 먼저 곱해도 된다.
+    //vout.TangentW = mul(vin.TangentU, (float3x3) gWorld);
+    vout.TangentW = mul(vin.TangentU, (float3x3) gInvWorldTranspose);
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
 
@@ -59,18 +66,23 @@ float4 PS(VertexOut pin) : SV_Target
     float3 fresnelR0 = matData.FresnelR0;
     float roughness = matData.Roughness;
     uint diffuseTexIndex = matData.DiffuseMapIndex;
+    uint normalMatIndex = matData.NormalMapIndex;
+    
+    // TBN을 world로 바꾸기 위한 Vertex Normal, Tangent를 가져온다.
+    pin.NormalW = normalize(pin.NormalW);
+    // UV에 맞는 Texture Normal 값을 가져온다.
+    float4 normalMapSample = gTextureMaps[normalMatIndex].Sample(gSamAnisotropicWrap, pin.TexC);
+    float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.rgb, pin.NormalW, pin.TangentW);
+    
     
     // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
-    diffuseAlbedo *= gDiffuseMap[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
+    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
     clip(diffuseAlbedo.a - 0.1f);
 #endif
     
-// 일단 정규화를 한다.
-    pin.NormalW = normalize(pin.NormalW);
-
     // 표면에서 카메라 까지 벡터를 구한다.
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
@@ -85,7 +97,7 @@ float4 PS(VertexOut pin) : SV_Target
     float3 shadowFactor = 1.0f;
     // 이전에 정의 했던 식을 이용해서 넘긴다.
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
-        pin.NormalW, toEyeW, shadowFactor);
+        bumpedNormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
     
@@ -98,14 +110,14 @@ float4 PS(VertexOut pin) : SV_Target
     // # 주변 환경 반사를 한다.
     // 카메라 위치에서, 현재 픽셀이 위치한곳의 World 법선을 타고
     // 어떻게 뻗어나갈지 reflect()를 이용해 구한다.
-    float3 r = reflect(-toEyeW, pin.NormalW);
+    float3 r = reflect(-toEyeW, bumpedNormalW);
     // 이 벡터를 그대로 lookup vector로 사용하면 정확하지 않다. 
     // 카메라에서 쏘는 것처럼 lookup을 하기 때문이다.
     // 하늘은 구 형태이고 크기가 엄청 커서(1000) 어색함이 거의 없지만.
     // 방과 같은 평면을 가지는 공간이라면 어색함이 생길 수 있다.
     float4 reflectionColor = gCubeMap.Sample(gSamLinearWrap, r);
     // 반사광은 Fresnel을 사용하여 가저온다.
-    float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);
+    float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
 #endif

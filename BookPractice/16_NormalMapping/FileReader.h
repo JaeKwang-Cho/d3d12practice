@@ -32,7 +32,7 @@ namespace Dorasima
 		return uv;
 	}
 
-	void Prac3VerticesNIndicies(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices, BoundingBox& _outBounds)
+	void GetMeshFromFile(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices, BoundingBox& _outBounds)
 	{
 		ifstream fin;
 		fin.open(_Path);
@@ -72,8 +72,29 @@ namespace Dorasima
 				XMFLOAT3 pos(px, py, pz);
 				XMFLOAT3 norm(nx, ny, nz);
 				XMFLOAT2 uv = VertexToApproxSphericalRadian(pos);
+				XMFLOAT3 tanU;
+
+				XMVECTOR vPos = XMLoadFloat3(&pos);
+				XMVECTOR vNorm = XMLoadFloat3(&norm);
+
+				// skull 이 친구는 vertex도 많고, normal이 꽤나 잘 되어 있어서 따로 normal map을 사용하지 않는다. (diffuse map도 그냥 흰색 쓴다.)
+				// 대충 Normal과 수직인 친구만 구하면 되니깐 Up 벡터를 이용해서 TangentU를 구한다. 
+				// else는 Normal 너무 Up 벡터와 비슷해서 값을 제대로 구할 수 없을때 +z 벡터를 사용해서 TangentU를 구한다. 
+				XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+				if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+				{
+					XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+					XMStoreFloat3(&tanU, vTanU);
+				}
+				else
+				{
+					up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+					XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+					XMStoreFloat3(&tanU, vTanU);
+				}
+
 				//XMFLOAT2 uv(0.f, 0.f);
-				Vertex skullVert = { pos, norm, uv };
+				Vertex skullVert = { pos, norm, uv, tanU };
 				_outVertices.push_back(skullVert);
 
 				// XMVECTOR를 이용해서 성분별로 최대최소를 쉽게 구한다.
@@ -100,7 +121,7 @@ namespace Dorasima
 		fin.close();
 	}
 
-	void Prac3VerticesNIndicies(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices, BoundingSphere& _outBounds)
+	void GetMeshFromFile(const wstring& _Path, vector<Vertex>& _outVertices, vector<uint32_t>& _outIndices, BoundingSphere& _outBounds)
 	{
 		ifstream fin;
 		fin.open(_Path);
@@ -140,8 +161,29 @@ namespace Dorasima
 				XMFLOAT3 pos(px, py, pz);
 				XMFLOAT3 norm(nx, ny, nz);
 				XMFLOAT2 uv = VertexToApproxSphericalRadian(pos);
+				XMFLOAT3 tanU;
 				//XMFLOAT2 uv(0.f, 0.f);
-				Vertex skullVert = { pos, norm, uv };
+
+				XMVECTOR vPos = XMLoadFloat3(&pos);
+				XMVECTOR vNorm = XMLoadFloat3(&norm);
+
+				// skull 이 친구는 vertex도 많고, normal이 꽤나 잘 되어 있어서 따로 normal map을 사용하지 않는다. (diffuse map도 그냥 흰색 쓴다.)
+				// 대충 Normal과 수직인 친구만 구하면 되니깐 Up 벡터를 이용해서 TangentU를 구한다. 
+				// else는 Normal 너무 Up 벡터와 비슷해서 값을 제대로 구할 수 없을때 +z 벡터를 사용해서 TangentU를 구한다. 
+				XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+				if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+				{
+					XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+					XMStoreFloat3(&tanU, vTanU);
+				}
+				else
+				{
+					up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+					XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+					XMStoreFloat3(&tanU, vTanU);
+				}
+
+				Vertex skullVert = { pos, norm, uv, tanU };
 				_outVertices.push_back(skullVert);
 
 				// XMVECTOR를 이용해서 성분별로 최대최소를 쉽게 구한다.
