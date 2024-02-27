@@ -593,23 +593,47 @@ void NormalMappingApp::LoadTextures()
 		m_Textures[texMap->Name] = std::move(texMap);
 	}
 
-	// png로 되있는 flat Normal Map도 가져온다.
-	std::unique_ptr<Texture> flatNmap = std::make_unique<Texture>();
-	flatNmap->Name = "flatNmap";
-	flatNmap->Filename = L"../Textures/flat_nmap.png";
+	// png로 되있는 Map도 가져온다.
+	std::vector<std::string> texNamesPng =
+	{
+		"flatNmap",
+		"waterNmap"
+	};
 
-	ResourceUploadBatch upload(m_d3dDevice.Get());
-	upload.Begin();
-	ThrowIfFailed(CreateWICTextureFromFile(
-		m_d3dDevice.Get(),
-		upload,
-		flatNmap->Filename.c_str(),
-		flatNmap->Resource.GetAddressOf()
-	));
+	std::vector<std::wstring> texFilenamesPng =
+	{
+		L"../Textures/flat_nmap.png",
+		L"../Textures/water1_nmap.png"
+	};
 
-	std::future<void> finish = upload.End(m_CommandQueue.Get());
-	finish.wait();
-	m_Textures[flatNmap->Name] = std::move(flatNmap);
+	vector<std::future<void>> finishArr(2);
+	finishArr.resize(0);
+
+	for (int i = 0; i < texNamesPng.size(); i++)
+	{
+		std::unique_ptr<Texture> pngMap = std::make_unique<Texture>();
+		pngMap->Name = texNamesPng[i];
+		pngMap->Filename = texFilenamesPng[i];
+
+		ResourceUploadBatch upload(m_d3dDevice.Get());
+		upload.Begin();
+
+		ThrowIfFailed(CreateWICTextureFromFile(
+			m_d3dDevice.Get(),
+			upload,
+			pngMap->Filename.c_str(),
+			pngMap->Resource.GetAddressOf()
+		));
+
+		finishArr.push_back(upload.End(m_CommandQueue.Get()));
+
+		m_Textures[pngMap->Name] = std::move(pngMap);
+	}
+	vector<std::future<void>>::iterator iter = finishArr.begin();
+	for (; iter != finishArr.end(); iter++)
+	{
+		iter->wait();
+	}
 }
 
 
@@ -699,7 +723,8 @@ void NormalMappingApp::BuildDescriptorHeaps()
 		m_Textures["tileNormalMap"]->Resource.Get(),
 		m_Textures["defaultDiffuseMap"]->Resource.Get(),
 		m_Textures["defaultNormalMap"]->Resource.Get(),
-		m_Textures["flatNmap"]->Resource.Get()
+		m_Textures["flatNmap"]->Resource.Get(),
+		m_Textures["waterNmap"]->Resource.Get()
 	};
 
 	ID3D12Resource* skyCubeMap = m_Textures["skyCubeMap"]->Resource.Get();
@@ -1028,6 +1053,7 @@ void NormalMappingApp::BuildMaterials()
 	//4	m_Textures["defaultDiffuseMap"]
 	//5	m_Textures["defaultNormalMap"]
 	//6	m_Textures["flatNmap"]
+	//7	m_Textures["waterNormalMap"]
 
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
@@ -1056,14 +1082,14 @@ void NormalMappingApp::BuildMaterials()
 	mirrorMat->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
 	mirrorMat->Roughness = 0.1f;
 
-	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
-	whiteMat->Name = "whiteMat";
-	whiteMat->MatCBIndex = 3;
-	whiteMat->DiffuseSrvHeapIndex = 4;
-	whiteMat->NormalSrvHeapIndex = 6;
-	whiteMat->DiffuseAlbedo = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
-	whiteMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
-	whiteMat->Roughness = 0.2f;
+	std::unique_ptr<Material> skullMat = std::make_unique<Material>();
+	skullMat->Name = "skullMat";
+	skullMat->MatCBIndex = 3;
+	skullMat->DiffuseSrvHeapIndex = 4;
+	skullMat->NormalSrvHeapIndex = 7;
+	skullMat->DiffuseAlbedo = XMFLOAT4(0.8f, 0.8f, 0.8f, 1.0f);
+	skullMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	skullMat->Roughness = 0.2f;
 
 	std::unique_ptr<Material> skyMat = std::make_unique<Material>();
 	skyMat->Name = "skyMat";
@@ -1077,7 +1103,7 @@ void NormalMappingApp::BuildMaterials()
 	m_Materials["brickMat"] = std::move(brickMat);
 	m_Materials["mirrorMat"] = std::move(mirrorMat);
 	m_Materials["tileMat"] = std::move(tileMat);
-	m_Materials["whiteMat"] = std::move(whiteMat);
+	m_Materials["skullMat"] = std::move(skullMat);
 	m_Materials["skyMat"] = std::move(skyMat);
 }
 
@@ -1199,7 +1225,7 @@ void NormalMappingApp::BuildRenderItems()
 	skullRenderItem->TexTransform = MathHelper::Identity4x4();
 	skullRenderItem->ObjCBIndex = objCBIndex++;
 	skullRenderItem->Geo = m_Geometries["SkullGeo"].get();
-	skullRenderItem->Mat = m_Materials["whiteMat"].get();
+	skullRenderItem->Mat = m_Materials["skullMat"].get();
 	skullRenderItem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
