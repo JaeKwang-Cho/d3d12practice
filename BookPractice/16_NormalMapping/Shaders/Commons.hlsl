@@ -49,7 +49,7 @@ struct MaterialData
 TextureCube gCubeMap : register(t0);
 
 // 이제 노멀맵도 함께 사용할 것이기 때문에, 개수도 늘려주고, 일반적인 이름으로 바꿔준다.
-Texture2D gTextureMaps[10] : register(t1);
+Texture2D gTextureMaps[16] : register(t1);
 
 //StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
@@ -131,6 +131,28 @@ float3 NormalSampleToWorldSpace(float3 _normalMapSample, float3 _unitNormalW, fl
     float3x3 TBN = float3x3(T, B, N);
     // world 좌표계로 바꾼다.
     float3 bumpedNormalW = mul(normalT, TBN);
+    
+    return bumpedNormalW;
+}
+
+float3 WorldSpaceToTangentSpace(float3 _worldPos, float3 _unitNormalW, float3 tangentW)
+{
+    // TBN basis를 생성한다.
+    float3 N = _unitNormalW;
+    // tangentW는 보간되어 넘어온 값이기 때문에, T에서 N 성분을 제거해야, 서로 직교가 된다.
+    float3 T = normalize(tangentW - dot(tangentW, N) * N);
+    // 외적으로 B을 마저 구한다.
+    float3 B = cross(N, T);
+    
+    // World to Tangent 행렬은 Tangent to World의 역행렬이다.
+    // 근데 좌표계의 T, B, N은 각 축을 이루는 벡터고, 서로 직교한다.
+    // 직교행렬의 역행렬은? 그 행렬의 전치행렬이다.
+    float3 row0 = float3(T.r, B.r, N.r);
+    float3 row1 = float3(T.g, B.g, N.g);
+    float3 row2 = float3(T.b, B.b, N.b);
+    float3x3 invTBN = float3x3(row0, row1, row2);
+    // world 좌표계로 바꾼다.
+    float3 bumpedNormalW = mul(_worldPos, invTBN);
     
     return bumpedNormalW;
 }

@@ -567,6 +567,7 @@ void NormalMappingApp::LoadTextures()
 		"tileNormalMap",
 		"defaultDiffuseMap",
 		"defaultNormalMap",
+		"checkboard",
 		"skyCubeMap"
 	};
 
@@ -578,6 +579,7 @@ void NormalMappingApp::LoadTextures()
 		L"../Textures/tile_nmap.dds",
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
+		L"../Textures/checkboard.dds",
 		L"../Textures/snowcube1024.dds"
 	};
 
@@ -593,27 +595,31 @@ void NormalMappingApp::LoadTextures()
 		m_Textures[texMap->Name] = std::move(texMap);
 	}
 
-	// png로 되있는 Map도 가져온다.
-	std::vector<std::string> texNamesPng =
+	// wic로 되있는 Map도 가져온다.
+	std::vector<std::string> texNamesWIC =
 	{
 		"flatNmap",
-		"waterNmap"
+		"waterNmap",
+		"checkboardNmap",
+		"checkboardDistmap"
 	};
 
-	std::vector<std::wstring> texFilenamesPng =
+	std::vector<std::wstring> texFilenamesWIC =
 	{
 		L"../Textures/flat_nmap.png",
-		L"../Textures/water1_nmap.png"
+		L"../Textures/water1_nmap.png",
+		L"../Textures/checkboard_NRM.jpg",
+		L"../Textures/checkboard_DISP.jpg"
 	};
 
-	vector<std::future<void>> finishArr(2);
-	finishArr.resize(0);
+	vector<std::future<void>> finishArr;
+	finishArr.reserve(texNamesWIC.size());
 
-	for (int i = 0; i < texNamesPng.size(); i++)
+	for (int i = 0; i < texNamesWIC.size(); i++)
 	{
-		std::unique_ptr<Texture> pngMap = std::make_unique<Texture>();
-		pngMap->Name = texNamesPng[i];
-		pngMap->Filename = texFilenamesPng[i];
+		std::unique_ptr<Texture> wicMap = std::make_unique<Texture>();
+		wicMap->Name = texNamesWIC[i];
+		wicMap->Filename = texFilenamesWIC[i];
 
 		ResourceUploadBatch upload(m_d3dDevice.Get());
 		upload.Begin();
@@ -621,13 +627,13 @@ void NormalMappingApp::LoadTextures()
 		ThrowIfFailed(CreateWICTextureFromFile(
 			m_d3dDevice.Get(),
 			upload,
-			pngMap->Filename.c_str(),
-			pngMap->Resource.GetAddressOf()
+			wicMap->Filename.c_str(),
+			wicMap->Resource.GetAddressOf()
 		));
 
 		finishArr.push_back(upload.End(m_CommandQueue.Get()));
 
-		m_Textures[pngMap->Name] = std::move(pngMap);
+		m_Textures[wicMap->Name] = std::move(wicMap);
 	}
 	vector<std::future<void>>::iterator iter = finishArr.begin();
 	for (; iter != finishArr.end(); iter++)
@@ -651,7 +657,7 @@ void NormalMappingApp::BuildRootSignature()
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
 	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 10개로 만들어 준다. 
 	// 이제 노멀맵도 넘어간다.
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 1, 0); // space0 / t1 - texture 정보
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 16, 1, 0); // space0 / t1 - texture 정보
 
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
@@ -700,7 +706,7 @@ void NormalMappingApp::BuildRootSignature()
 void NormalMappingApp::BuildDescriptorHeaps()
 {
 	// Descriptor Count는 좀 넘겨도 된다. 부족한게 문제가 생기는 것이다.
-	const int textureDescriptorCount = 10;
+	const int textureDescriptorCount = 16;
 
 	int viewCount = 0;
 
@@ -724,7 +730,10 @@ void NormalMappingApp::BuildDescriptorHeaps()
 		m_Textures["defaultDiffuseMap"]->Resource.Get(),
 		m_Textures["defaultNormalMap"]->Resource.Get(),
 		m_Textures["flatNmap"]->Resource.Get(),
-		m_Textures["waterNmap"]->Resource.Get()
+		m_Textures["waterNmap"]->Resource.Get(),
+		m_Textures["checkboard"]->Resource.Get(),
+		m_Textures["checkboardNmap"]->Resource.Get(),
+		m_Textures["checkboardDistmap"]->Resource.Get(),
 	};
 
 	ID3D12Resource* skyCubeMap = m_Textures["skyCubeMap"]->Resource.Get();
@@ -1054,6 +1063,9 @@ void NormalMappingApp::BuildMaterials()
 	//5	m_Textures["defaultNormalMap"]
 	//6	m_Textures["flatNmap"]
 	//7	m_Textures["waterNormalMap"]
+	//8 m_Textures["checkboard"]
+	//9 m_Textures["checkboardNmap"]
+	//10 m_Textures["checkboardDistmap"]
 
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
@@ -1140,7 +1152,7 @@ void NormalMappingApp::BuildRenderItems()
 
 	// 그리드 아이템
 	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(8.0f, 8.0f, 1.0f));
+	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(6.0f, 9.0f, 1.0f));
 	gridRitem->WorldMat = MathHelper::Identity4x4();
 	gridRitem->ObjCBIndex = 2;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();

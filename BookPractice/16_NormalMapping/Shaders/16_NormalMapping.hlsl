@@ -89,24 +89,20 @@ float4 PS(VertexOut pin) : SV_Target
 	// 일단 냅다 간접광을 설정한다.
     float4 ambient = gAmbientLight * diffuseAlbedo;
 
-    // 광택을 설정하고
-    const float shininess = 1.0f - roughness;
+    // 광택을 설정하고 (a 채널에 shininess 값이 들어있는 경우도 있다.)
+    const float shininess = (1.0f - roughness) * normalMapSample.a;
     // 구조체를 채운 다음
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
     // (그림자는 나중에 할 것이다.)
     float3 shadowFactor = 1.0f;
-    // 이전에 정의 했던 식을 이용해서 넘긴다.
+#if 1
+    // 이전에 정의 했던 식을 이용해서 넘긴다.    
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
         bumpedNormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
     
-#ifdef PRAC3
-    float3 r = refract(-toEyeW, pin.NormalW, matData.Eta);
-    float4 refractionColor = gCubeMap.Sample(gSamLinearWrap, r);
-    float3 fresnelFactor = SchlickFresnel(fresnelR0, pin.NormalW, r);
-    litColor.rgb += shininess * fresnelFactor * refractionColor.rgb;
-#else
+
     // # 주변 환경 반사를 한다.
     // 카메라 위치에서, 현재 픽셀이 위치한곳의 World 법선을 타고
     // 어떻게 뻗어나갈지 reflect()를 이용해 구한다.
@@ -119,6 +115,30 @@ float4 PS(VertexOut pin) : SV_Target
     // 반사광은 Fresnel을 사용하여 가저온다.
     float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
     // 거칠기도 반영한다.
+    litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
+#else
+    float3 tanNormalW = WorldSpaceToTangentSpace(bumpedNormalW, pin.NormalW, pin.TangentW);
+    float3 tanEyePosW = WorldSpaceToTangentSpace(gEyePosW, pin.NormalW, pin.TangentW);
+    float3 tanPosW = WorldSpaceToTangentSpace(pin.PosW, pin.NormalW, pin.TangentW);
+    float3 tanToEye = normalize(tanEyePosW - tanPosW);
+    
+    Light tanLights[16];
+    tanLights[0] = gLights[0];
+    tanLights[0].Direction = WorldSpaceToTangentSpace(tanLights[0].Direction, pin.NormalW, pin.TangentW);
+    tanLights[1] = gLights[1];
+    tanLights[1].Direction = WorldSpaceToTangentSpace(tanLights[1].Direction, pin.NormalW, pin.TangentW);
+    tanLights[2] = gLights[2];
+    tanLights[2].Direction = WorldSpaceToTangentSpace(tanLights[2].Direction, pin.NormalW, pin.TangentW);
+    
+    // 이전에 정의 했던 식을 이용해서 넘긴다.    
+    float4 directLight = ComputeLighting(tanLights, mat, tanPosW,
+        tanNormalW, tanToEye, shadowFactor);
+    // 최종 색을 결정하고
+    float4 litColor = ambient + directLight;
+
+    float3 r = reflect(-tanToEye, tanNormalW);
+    float4 reflectionColor = gCubeMap.Sample(gSamLinearWrap, r);
+    float3 fresnelFactor = SchlickFresnel(fresnelR0, tanNormalW, r);
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
 #endif
 
