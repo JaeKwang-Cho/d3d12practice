@@ -42,6 +42,9 @@ struct MaterialData
     uint NormalMapIndex;
     uint DispMapIndex;
     uint MatPad0;
+#ifdef WAVE
+    float4x4 MaterialTransform1;
+#endif
 };
 
 // 6개의 Texture를 가지고 있고, 록업 벡터를 이용해서

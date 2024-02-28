@@ -115,7 +115,8 @@ struct DomainOut
     float3 PosW : POSITION;
     float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
-    float2 TexC : TEXCOORD;
+    float2 TexC0 : TEXCOORD0;
+    float2 TexC1 : TEXCOORD1;
 };
 
 // 헐 쉐이더에서 생성된 모든 정점마다 실행이 된다.
@@ -137,9 +138,9 @@ DomainOut DS(
     float2 tex2 = lerp(quad[2].TexC, quad[3].TexC, uv.x);
     float2 texC = lerp(tex1, tex2, uv.y);
     float4 texCf4 = mul(float4(texC, 0.f, 1.f), gTexTransform);
-    texC = mul(texCf4, matData.MaterialTransform).xy;
+    dout.TexC0 = mul(texCf4, matData.MaterialTransform).xy;
+    dout.TexC1 = mul(texCf4, matData.MaterialTransform1).xy;
     
-    dout.TexC = texC;
     
     //NormalW 
     float3 norm1 = lerp(quad[0].NormalL, quad[1].NormalL, uv.x);
@@ -159,9 +160,12 @@ DomainOut DS(
     float3 pos2 = lerp(quad[2].PosL, quad[3].PosL, uv.x);
     float3 pos = lerp(pos1, pos2, uv.y);
     
+    uint normalMapIndex = matData.NormalMapIndex;
     uint dispMapIndex = matData.DispMapIndex;
-    float4 dispValue = gTextureMaps[dispMapIndex].SampleLevel(gSamLinearWrap, texC, 0.f);
-    pos.y += dispValue.z * 0.1f;
+    float4 dispValue0 = gTextureMaps[normalMapIndex].SampleLevel(gSamLinearWrap, dout.TexC0, 0.f);
+    float4 dispValue1 = gTextureMaps[dispMapIndex].SampleLevel(gSamLinearWrap, dout.TexC1, 0.f);
+    pos.y += dispValue0.a * 0.1f;
+    pos.y += dispValue1.a * 0.1f;
     
     
     float4 posW = mul(float4(pos, 1.0f), gWorld);
@@ -183,16 +187,21 @@ float4 PS(DomainOut pin) : SV_Target
     float roughness = matData.Roughness;
     uint diffuseTexIndex = matData.DiffuseMapIndex;
     uint normalMatIndex = matData.NormalMapIndex;
+    uint dispMapIndex = matData.DispMapIndex;
     
     // TBN을 world로 바꾸기 위한 Vertex Normal, Tangent를 가져온다.
     pin.NormalW = normalize(pin.NormalW);
     // UV에 맞는 Texture Normal 값을 가져온다.
-    float4 normalMapSample = gTextureMaps[normalMatIndex].Sample(gSamAnisotropicWrap, pin.TexC);
-    float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.rgb, pin.NormalW, pin.TangentW);
+    float4 normalMapSample0 = gTextureMaps[normalMatIndex].Sample(gSamAnisotropicWrap, pin.TexC0);
+    float3 bumpedNormalW0 = NormalSampleToWorldSpace(normalMapSample0.rgb, pin.NormalW, pin.TangentW);
     
+    float4 normalMapSample1 = gTextureMaps[dispMapIndex].Sample(gSamAnisotropicWrap, pin.TexC1);
+    float3 bumpedNormalW1 = NormalSampleToWorldSpace(normalMapSample1.rgb, pin.NormalW, pin.TangentW);
+    
+    float3 bumpedNormalW = normalize(bumpedNormalW0 + bumpedNormalW1);
     
     // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
-    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
+    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC0);
     
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.
@@ -206,7 +215,7 @@ float4 PS(DomainOut pin) : SV_Target
     float4 ambient = gAmbientLight * diffuseAlbedo;
 
     // 광택을 설정하고 (a 채널에 shininess 값이 들어있는 경우도 있다.)
-    const float shininess = (1.0f - roughness) * normalMapSample.a;
+    const float shininess = (1.0f - roughness);
     // 구조체를 채운 다음
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
     // (그림자는 나중에 할 것이다.)

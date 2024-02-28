@@ -159,6 +159,10 @@ private:
 	float m_Phi = 1.24f * XM_PI;
 	float m_Theta = 0.42f * XM_PI;
 	float m_Radius = 20.f;
+
+#if WAVE
+	XMFLOAT4X4 m_wave2Transform = MathHelper::Identity4x4();
+#endif
 };
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
@@ -344,7 +348,7 @@ void NormalMappingApp::Draw(const GameTimer& _gt)
 	// drawcall을 걸어준다.
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-#if PRAC5
+#if PRAC5 || WAVE
 	m_CommandList->SetPipelineState(m_PSOs["displacement"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Displacement]);
 #endif
@@ -500,8 +504,10 @@ void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 			matData.NormalMapIndex = mat->NormalSrvHeapIndex;
 #if PRAC5
-			// 일단 임의의 값을 넣는다.
 			matData.DispMapIndex = mat->DisplacementSrvHeapIndex;
+#elif WAVE
+			matData.DispMapIndex = mat->DisplacementSrvHeapIndex;
+			matData.MaterialTransform1 = m_wave2Transform;
 #endif
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
@@ -560,6 +566,49 @@ void NormalMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 
 void NormalMappingApp::AnimateMaterials(const GameTimer& _gt)
 {
+#if WAVE
+	Material* waveMat = m_Materials["waveMat"].get();
+
+	// 3행 0열에 있는걸 가져온다.
+	float tu = waveMat->MatTransform(3, 0);
+	float tv = waveMat->MatTransform(3, 1);
+	// 이 위치는 Transform Matrix에서 Translate.xy 성분에 해당한다.
+	tu += 0.1f * _gt.GetDeltaTime();
+	tv += 0.02f * _gt.GetDeltaTime();
+
+	if (tu >= 1.f)
+	{
+		tu -= 1.f;
+	}
+	if (tv >= 1.f)
+	{
+		tv -= 1.f;
+	}
+
+	waveMat->MatTransform(3, 0) = tu;
+	waveMat->MatTransform(3, 1) = tv;
+	// dirty flag를 켜준다.
+	waveMat->NumFramesDirty = g_NumFrameResources;
+
+	// 다르게 움직이는 파도이다.
+	float tu2 = m_wave2Transform(3, 0);
+	float tv2 = m_wave2Transform(3, 1);
+
+	tu2 += 0.1f * _gt.GetDeltaTime();
+	tv2 += 0.02f * _gt.GetDeltaTime();
+
+	if (tu2 >= 1.f)
+	{
+		tu2 -= 1.f;
+	}
+	if (tv2 >= 1.f)
+	{
+		tv2 -= 1.f;
+	}
+
+	m_wave2Transform(3, 0) = tu2;
+	m_wave2Transform(3, 1) = tu2;
+#endif
 }
 
 
@@ -575,6 +624,8 @@ void NormalMappingApp::LoadTextures()
 		"defaultDiffuseMap",
 		"defaultNormalMap",
 		"checkboard",
+		"waves0",
+		"waves1",
 		"skyCubeMap"
 	};
 
@@ -587,6 +638,8 @@ void NormalMappingApp::LoadTextures()
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
 		L"../Textures/checkboard.dds",
+		L"../Textures/waves0.dds",
+		L"../Textures/waves1.dds",
 		L"../Textures/snowcube1024.dds"
 	};
 
@@ -742,6 +795,8 @@ void NormalMappingApp::BuildDescriptorHeaps()
 		m_Textures["checkboard"]->Resource.Get(),
 		m_Textures["checkboardNmap"]->Resource.Get(),
 		m_Textures["checkboardDistmap"]->Resource.Get(),
+		m_Textures["waves0"]->Resource.Get(),
+		m_Textures["waves1"]->Resource.Get(),
 	};
 
 	ID3D12Resource* skyCubeMap = m_Textures["skyCubeMap"]->Resource.Get();
@@ -784,17 +839,39 @@ void NormalMappingApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO waveDefines[] =
+	{
+		"WAVE", "1",
+		NULL, NULL
+	};
+
+#if WAVE
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", waveDefines, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", waveDefines, "PS", "ps_5_1");
+	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
+
+	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", waveDefines, "VS", "vs_5_1");
+	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", waveDefines, "PS", "ps_5_1");
+#else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", nullptr, "PS", "ps_5_1");
 	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
+#endif
+
+
 #if PRAC5
 	m_Shaders["dispVS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["dispHS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "HS", "hs_5_1");
 	m_Shaders["dispDS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "DS", "ds_5_1");
 	m_Shaders["dispPS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "PS", "ps_5_1");
+#elif WAVE
+	m_Shaders["dispVS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "VS", "vs_5_1");
+	m_Shaders["dispHS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "HS", "hs_5_1");
+	m_Shaders["dispDS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "DS", "ds_5_1");
+	m_Shaders["dispPS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "PS", "ps_5_1");
 #endif
 	m_InputLayout =
 	{
@@ -810,7 +887,7 @@ void NormalMappingApp::BuildStageGeometry()
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
 	GeometryGenerator geoGenerator;
 	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
-#if PRAC5
+#if PRAC5 || WAVE
 	GeometryGenerator::MeshData grid = geoGenerator.CreatePatchQuad(20.f, 30.f, 12, 8);
 #else
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
@@ -1052,7 +1129,7 @@ void NormalMappingApp::BuildPSOs()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
 
-#if PRAC5
+#if PRAC5 || WAVE
 	// displacement 용 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC displacementPSODesc = opaquePSODesc;
 	displacementPSODesc.VS =
@@ -1098,17 +1175,19 @@ void NormalMappingApp::BuildFrameResources()
 
 void NormalMappingApp::BuildMaterials()
 {
-	//0 m_Textures["bricksDiffuseMap"]
-	//1	m_Textures["bricksNormalMap"]
-	//2	m_Textures["tileDiffuseMap"]
-	//3	m_Textures["tileNormalMap"]
-	//4	m_Textures["defaultDiffuseMap"]
-	//5	m_Textures["defaultNormalMap"]
-	//6	m_Textures["flatNmap"]
-	//7	m_Textures["waterNormalMap"]
-	//8 m_Textures["checkboard"]
-	//9 m_Textures["checkboardNmap"]
-	//10 m_Textures["checkboardDistmap"]
+	//0		m_Textures["bricksDiffuseMap"]
+	//1		m_Textures["bricksNormalMap"]
+	//2		m_Textures["tileDiffuseMap"]
+	//3		m_Textures["tileNormalMap"]
+	//4		m_Textures["defaultDiffuseMap"]
+	//5		m_Textures["defaultNormalMap"]
+	//6		m_Textures["flatNmap"]
+	//7		m_Textures["waterNmap"]
+	//8 	m_Textures["checkboard"]
+	//9 	m_Textures["checkboardNmap"]
+	//10	m_Textures["checkboardDistmap"]
+	//11	m_Textures["waves0"]
+	//12	m_Textures["waves1"]
 
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
@@ -1125,7 +1204,7 @@ void NormalMappingApp::BuildMaterials()
 #if PRAC5
 	tileMat->DiffuseSrvHeapIndex = 8;
 	tileMat->NormalSrvHeapIndex = 9;
-	tileMat->DisplacementSrvHeapIndex0 = 10;
+	tileMat->DisplacementSrvHeapIndex = 10;
 #else
 	tileMat->DiffuseSrvHeapIndex = 2;
 	tileMat->NormalSrvHeapIndex = 3;
@@ -1161,6 +1240,20 @@ void NormalMappingApp::BuildMaterials()
 	skyMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	skyMat->Roughness = 1.0f;
 
+#if WAVE
+	std::unique_ptr<Material> waveMat = std::make_unique<Material>();
+	waveMat->Name = "waveMat";
+	waveMat->MatCBIndex = 5;
+	waveMat->DiffuseSrvHeapIndex = 4;
+	waveMat->NormalSrvHeapIndex = 11;
+	waveMat->DisplacementSrvHeapIndex = 12;
+	waveMat->DiffuseAlbedo = XMFLOAT4(0.1f, 0.1f, 0.9f, 1.0f);
+	waveMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
+	waveMat->Roughness = 0.1f;
+
+	m_Materials["waveMat"] = std::move(waveMat);
+#endif
+
 	m_Materials["brickMat"] = std::move(brickMat);
 	m_Materials["mirrorMat"] = std::move(mirrorMat);
 	m_Materials["tileMat"] = std::move(tileMat);
@@ -1170,10 +1263,11 @@ void NormalMappingApp::BuildMaterials()
 
 void NormalMappingApp::BuildRenderItems()
 {
+	UINT objCBIndex = 0;
 	std::unique_ptr<RenderItem> skyRitem = std::make_unique<RenderItem>();
 	XMStoreFloat4x4(&skyRitem->WorldMat, XMMatrixScaling(5000.0f, 5000.0f, 5000.0f));
 	skyRitem->TexTransform = MathHelper::Identity4x4();
-	skyRitem->ObjCBIndex = 0;
+	skyRitem->ObjCBIndex = objCBIndex++;
 	skyRitem->Mat = m_Materials["skyMat"].get();
 	skyRitem->Geo = m_Geometries["shapeGeo"].get();
 	skyRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -1188,7 +1282,7 @@ void NormalMappingApp::BuildRenderItems()
 
 	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
 	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
-	boxRitem->ObjCBIndex = 1;
+	boxRitem->ObjCBIndex = objCBIndex++;
 	boxRitem->Geo = m_Geometries["shapeGeo"].get();
 	boxRitem->Mat = m_Materials["brickMat"].get();
 	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -1203,10 +1297,14 @@ void NormalMappingApp::BuildRenderItems()
 	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
 	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(6.0f, 9.0f, 1.0f));
 	gridRitem->WorldMat = MathHelper::Identity4x4();
-	gridRitem->ObjCBIndex = 2;
+	gridRitem->ObjCBIndex = objCBIndex++;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();
+#if WAVE
+	gridRitem->Mat = m_Materials["waveMat"].get();
+#else
 	gridRitem->Mat = m_Materials["tileMat"].get();
-#if PRAC5
+#endif
+#if PRAC5 || WAVE
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;
 #else
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -1214,7 +1312,7 @@ void NormalMappingApp::BuildRenderItems()
 	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
-#if PRAC5
+#if PRAC5 || WAVE
 	m_RenderItemLayer[(int)RenderLayer::Displacement].push_back(gridRitem.get());
 #else
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
@@ -1222,7 +1320,6 @@ void NormalMappingApp::BuildRenderItems()
 	m_AllRenderItems.push_back(std::move(gridRitem));
 
 	// 원기둥과 구 5개씩 2줄
-	UINT objCBIndex = 3;
 	for (int i = 0; i < 5; ++i)
 	{
 		std::unique_ptr<RenderItem> leftCylRitem = std::make_unique<RenderItem>();
