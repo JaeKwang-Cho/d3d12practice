@@ -645,6 +645,70 @@ GeometryGenerator::MeshData GeometryGenerator::CreateGrid(float _width, float _d
     return meshData;
 }
 
+GeometryGenerator::MeshData GeometryGenerator::CreatePatchQuad(float _width, float _depth, uint32 _m, uint32 _n)
+{
+	MeshData meshData;
+
+	// 점개수와
+	uint32 vertexCount = _m * _n;
+	// 면 개수를 구한다.
+	// 사각형 하나에 인덱스 4개씩 보낼 것이다.
+	uint32 faceCount = (_m - 1) * (_n - 1);
+
+	//  중간을 구한다.
+	float halfWidth = 0.5f * _width;
+	float halfDepth = 0.5f * _depth;
+
+	// 부분의 크기를 구한다.
+	// n이 x 축, m이 z 축이다.
+	float dx = _width / (_n - 1);
+	float dz = _depth / (_m - 1);
+	// TexCoords의 부분 크기를 구한다.
+	float du = 1.0f / (_n - 1);
+	float dv = 1.0f / (_m - 1);
+
+	meshData.Vertices.resize(vertexCount);
+	for (uint32 i = 0; i < _m; ++i)
+	{
+		// z는 안쪽(+) 부터
+		float z = halfDepth - i * dz;
+		for (uint32 j = 0; j < _n; ++j)
+		{
+			// x는 왼쪽(-) 부터
+			float x = -halfWidth + j * dx;
+
+			meshData.Vertices[i * _n + j].Position = XMFLOAT3(x, 0.0f, z);
+			meshData.Vertices[i * _n + j].Normal = XMFLOAT3(0.0f, 1.0f, 0.0f);
+			meshData.Vertices[i * _n + j].TangentU = XMFLOAT3(1.0f, 0.0f, 0.0f);
+
+			// TexCoords를 펼쳐서 삽입한다.
+			meshData.Vertices[i * _n + j].TexC.x = j * du;
+			meshData.Vertices[i * _n + j].TexC.y = i * dv;
+		}
+	}
+
+	// 인덱스를 설정한다.
+	meshData.Indices32.resize(faceCount * 4);
+
+	// 칸마다 돌아다니면서 index를 계산한다.
+	uint32 k = 0;
+	for (uint32 i = 0; i < _m - 1; ++i)
+	{
+		for (uint32 j = 0; j < _n - 1; ++j)
+		{
+			// 그냥 냅다 4개를 그어 버린다.
+			meshData.Indices32[k] = i * _n + j;
+			meshData.Indices32[k + 1] = i * _n + j + 1;
+			meshData.Indices32[k + 2] = (i + 1) * _n + j;
+			meshData.Indices32[k + 3] = (i + 1) * _n + j + 1;
+
+			k += 4; // 다음 칸
+		}
+	}
+
+	return meshData;
+}
+
 GeometryGenerator::MeshData GeometryGenerator::CreateQuad(float _x, float _y, float _w, float _h, float _depth)
 {
     MeshData meshData;

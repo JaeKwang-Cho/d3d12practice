@@ -161,7 +161,7 @@ DomainOut DS(
     
     uint dispMapIndex = matData.DispMapIndex;
     float4 dispValue = gTextureMaps[dispMapIndex].SampleLevel(gSamLinearWrap, texC, 0.f);
-    pos.y += dispValue.z * 0.5f;
+    pos.y += dispValue.z * 0.1f;
     
     
     float4 posW = mul(float4(pos, 1.0f), gWorld);

@@ -104,10 +104,16 @@ public:
     MeshData CreateCylinder(float _bottomRadius, float _topRadius, float _height, uint32 _sliceCount, uint32 _stackCount);
 
 	///<summary>
-	/// XZ 평면을 주어진 속성에 대해 만든다.
+	/// XZ 평면을 주어진 속성으로 사각형을 만든다.
 	/// 가로, 세로, 가로 부분, 세로 부분
 	///</summary>
     MeshData CreateGrid(float _width, float _depth, uint32 _m, uint32 _n);
+
+	///<summary>
+	/// XZ 평면을 주어진 속성으로 테셀레이션 용 패치를 만든다.
+	/// 가로, 세로, 가로 부분, 세로 부분
+	///</summary>
+	MeshData CreatePatchQuad(float _width, float _depth, uint32 _m, uint32 _n);
 
 	///<summary>
 	/// 화면에 정렬되는 사각형을 그린다.

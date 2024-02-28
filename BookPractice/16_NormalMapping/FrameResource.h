@@ -3,7 +3,7 @@
 #include "../Common/UploadBuffer.h"
 #include "../Common/MathHelper.h"
 
-#define PRAC5 (0)
+#define PRAC5 (1)
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;

@@ -811,8 +811,7 @@ void NormalMappingApp::BuildStageGeometry()
 	GeometryGenerator geoGenerator;
 	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
 #if PRAC5
-	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 2, 2);
-	std::vector<uint16_t> tessgridIndices = { 0, 1, 2, 3 };
+	GeometryGenerator::MeshData grid = geoGenerator.CreatePatchQuad(20.f, 30.f, 12, 8);
 #else
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
 #endif	
@@ -832,7 +831,7 @@ void NormalMappingApp::BuildStageGeometry()
 	UINT boxIndexOffset = 0;
 	UINT gridIndexOffset = (UINT)box.Indices32.size();
 #if PRAC5
-	UINT sphereIndexOffset = gridIndexOffset + (UINT)tessgridIndices.size();
+	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
 #else
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
 #endif
@@ -847,7 +846,7 @@ void NormalMappingApp::BuildStageGeometry()
 
 	SubmeshGeometry gridSubmesh;
 #if PRAC5
-	gridSubmesh.IndexCount = 4;
+	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
 #else
 	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
 #endif
@@ -912,7 +911,7 @@ void NormalMappingApp::BuildStageGeometry()
 	std::vector<std::uint16_t> indices;
 	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
 #if PRAC5
-	indices.insert(indices.end(), std::begin(tessgridIndices), std::end(tessgridIndices));
+	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
 #else
 	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
 #endif
