@@ -85,5 +85,8 @@
     <None Include="Shaders\Commons.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\displacement.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

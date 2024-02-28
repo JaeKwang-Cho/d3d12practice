@@ -57,7 +57,7 @@ struct RenderItem
 enum class RenderLayer : int
 {
 	Opaque = 0,
-	OpaqueDynamicReflectors,
+	Displacement,
 	Sky, 
 	Count
 };
@@ -344,7 +344,10 @@ void NormalMappingApp::Draw(const GameTimer& _gt)
 	// drawcall을 걸어준다.
 	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-
+#if PRAC5
+	m_CommandList->SetPipelineState(m_PSOs["displacement"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Displacement]);
+#endif
 	// 하늘을 맨 마지막에 출력해주는 것이 depth test 성능상 좋다고 한다. 
 	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
@@ -496,6 +499,10 @@ void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			// Texture 인덱스를 넣어준다.
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 			matData.NormalMapIndex = mat->NormalSrvHeapIndex;
+#if PRAC5
+			// 일단 임의의 값을 넣는다.
+			matData.DispMapIndex = 10;
+#endif
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
 			mat->NumFramesDirty--;
@@ -663,8 +670,9 @@ void NormalMappingApp::BuildRootSignature()
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
 	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
 	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
-	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t0 - TextureCube
-	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t1 - Texture2D Array
+	// D3D12_SHADER_VISIBILITY_ALL로 해줘야 모든 쉐이더에서 볼 수 있다.
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_ALL); // space0, t0 - TextureCube
+	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_ALL); // space0, t1 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
 	// Static Sampler 방법이다. 최대 2000개 생성 가능
@@ -782,13 +790,18 @@ void NormalMappingApp::BuildShadersAndInputLayout()
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
-
+#if PRAC5
+	m_Shaders["dispVS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["dispHS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "HS", "hs_5_1");
+	m_Shaders["dispDS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "DS", "ds_5_1");
+	m_Shaders["dispPS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "PS", "ps_5_1");
+#endif
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
 	};
 }
 
@@ -797,7 +810,12 @@ void NormalMappingApp::BuildStageGeometry()
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
 	GeometryGenerator geoGenerator;
 	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
+#if PRAC5
+	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 2, 2);
+	std::vector<uint16_t> tessgridIndices = { 0, 1, 2, 3 };
+#else
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
+#endif	
 	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 
@@ -813,7 +831,11 @@ void NormalMappingApp::BuildStageGeometry()
 	// index offset
 	UINT boxIndexOffset = 0;
 	UINT gridIndexOffset = (UINT)box.Indices32.size();
+#if PRAC5
+	UINT sphereIndexOffset = gridIndexOffset + (UINT)tessgridIndices.size();
+#else
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
+#endif
 	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
 
 	// 한방에 할꺼라서 MeshGeometry에 넣을
@@ -823,12 +845,14 @@ void NormalMappingApp::BuildStageGeometry()
 	boxSubmesh.StartIndexLocation = boxIndexOffset;
 	boxSubmesh.BaseVertexLocation = boxVertexOffset;
 
-
 	SubmeshGeometry gridSubmesh;
+#if PRAC5
+	gridSubmesh.IndexCount = 4;
+#else
 	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
+#endif
 	gridSubmesh.StartIndexLocation = gridIndexOffset;
 	gridSubmesh.BaseVertexLocation = gridVertexOffset;
-
 
 	SubmeshGeometry sphereSubmesh;
 	sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
@@ -887,7 +911,11 @@ void NormalMappingApp::BuildStageGeometry()
 	// 이제 index 정보도 한곳에 다 옮긴다.
 	std::vector<std::uint16_t> indices;
 	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
+#if PRAC5
+	indices.insert(indices.end(), std::begin(tessgridIndices), std::end(tessgridIndices));
+#else
 	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
+#endif
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
 	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
 
@@ -1036,6 +1064,34 @@ void NormalMappingApp::BuildPSOs()
 		m_Shaders["skyPS"]->GetBufferSize()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
+
+#if PRAC5
+	// displacement 용 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC displacementPSODesc = opaquePSODesc;
+	displacementPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["dispVS"]->GetBufferPointer()),
+		m_Shaders["dispVS"]->GetBufferSize()
+	};
+	displacementPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["dispPS"]->GetBufferPointer()),
+		m_Shaders["dispPS"]->GetBufferSize()
+	};
+	displacementPSODesc.HS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["dispHS"]->GetBufferPointer()),
+		m_Shaders["dispHS"]->GetBufferSize()
+	};
+	displacementPSODesc.DS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["dispDS"]->GetBufferPointer()),
+		m_Shaders["dispDS"]->GetBufferSize()
+	};
+	displacementPSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
+	//displacementPSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&displacementPSODesc, IID_PPV_ARGS(&m_PSOs["displacement"])));
+#endif
 }
 
 void NormalMappingApp::BuildFrameResources()
@@ -1079,8 +1135,13 @@ void NormalMappingApp::BuildMaterials()
 	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
 	tileMat->Name = "tileMat";
 	tileMat->MatCBIndex = 1;
+#if PRAC5
+	tileMat->DiffuseSrvHeapIndex = 8;
+	tileMat->NormalSrvHeapIndex = 9;
+#else
 	tileMat->DiffuseSrvHeapIndex = 2;
 	tileMat->NormalSrvHeapIndex = 3;
+#endif
 	tileMat->DiffuseAlbedo = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
 	tileMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	tileMat->Roughness = 0.1f;
@@ -1157,12 +1218,19 @@ void NormalMappingApp::BuildRenderItems()
 	gridRitem->ObjCBIndex = 2;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();
 	gridRitem->Mat = m_Materials["tileMat"].get();
+#if PRAC5
+	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;
+#else
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+#endif
 	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
-
+#if PRAC5
+	m_RenderItemLayer[(int)RenderLayer::Displacement].push_back(gridRitem.get());
+#else
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
+#endif
 	m_AllRenderItems.push_back(std::move(gridRitem));
 
 	// 원기둥과 구 5개씩 2줄

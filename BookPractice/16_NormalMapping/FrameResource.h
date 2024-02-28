@@ -3,6 +3,8 @@
 #include "../Common/UploadBuffer.h"
 #include "../Common/MathHelper.h"
 
+#define PRAC5 (0)
+
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
@@ -82,7 +84,11 @@ struct MaterialData
 
 	UINT DiffuseMapIndex = 0;
 	UINT NormalMapIndex = 0;
+#if PRAC5
+	UINT DispMapIndex = 0;
+#else
 	UINT MaterialPad0;
+#endif
 	UINT MaterialPad1;
 };
 

@@ -203,7 +203,7 @@ void Camera::Ascend(float d)
 {
 	// m_Position += d*m_Up
 	XMVECTOR s = XMVectorReplicate(d);
-	XMVECTOR l = XMLoadFloat3(&m_Up);
+	XMVECTOR l = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 	XMVECTOR p = XMLoadFloat3(&m_Position);
 	XMStoreFloat3(&m_Position, XMVectorMultiplyAdd(s, l, p));
 
