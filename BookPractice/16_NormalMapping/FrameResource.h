@@ -84,12 +84,8 @@ struct MaterialData
 
 	UINT DiffuseMapIndex = 0;
 	UINT NormalMapIndex = 0;
-#if PRAC5
 	UINT DispMapIndex = 0;
-#else
 	UINT MaterialPad0;
-#endif
-	UINT MaterialPad1;
 };
 
 // 사용할 Vertex 정보

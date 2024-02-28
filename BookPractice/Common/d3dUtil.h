@@ -247,6 +247,7 @@ struct Material
 	float Roughness = .25f;
 	DirectX::XMFLOAT4X4 MatTransform = MathHelper::Identity4x4();
 	float ETA = 1.f;
+	int DisplacementSrvHeapIndex = 0;
 };
 
 struct Texture

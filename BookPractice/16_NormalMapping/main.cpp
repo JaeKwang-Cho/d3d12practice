@@ -501,7 +501,7 @@ void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			matData.NormalMapIndex = mat->NormalSrvHeapIndex;
 #if PRAC5
 			// 일단 임의의 값을 넣는다.
-			matData.DispMapIndex = 10;
+			matData.DispMapIndex = mat->DisplacementSrvHeapIndex;
 #endif
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
@@ -830,11 +830,7 @@ void NormalMappingApp::BuildStageGeometry()
 	// index offset
 	UINT boxIndexOffset = 0;
 	UINT gridIndexOffset = (UINT)box.Indices32.size();
-#if PRAC5
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
-#else
-	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
-#endif
 	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
 
 	// 한방에 할꺼라서 MeshGeometry에 넣을
@@ -845,11 +841,7 @@ void NormalMappingApp::BuildStageGeometry()
 	boxSubmesh.BaseVertexLocation = boxVertexOffset;
 
 	SubmeshGeometry gridSubmesh;
-#if PRAC5
 	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
-#else
-	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
-#endif
 	gridSubmesh.StartIndexLocation = gridIndexOffset;
 	gridSubmesh.BaseVertexLocation = gridVertexOffset;
 
@@ -910,11 +902,7 @@ void NormalMappingApp::BuildStageGeometry()
 	// 이제 index 정보도 한곳에 다 옮긴다.
 	std::vector<std::uint16_t> indices;
 	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
-#if PRAC5
 	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
-#else
-	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
-#endif
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
 	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
 
@@ -1137,6 +1125,7 @@ void NormalMappingApp::BuildMaterials()
 #if PRAC5
 	tileMat->DiffuseSrvHeapIndex = 8;
 	tileMat->NormalSrvHeapIndex = 9;
+	tileMat->DisplacementSrvHeapIndex0 = 10;
 #else
 	tileMat->DiffuseSrvHeapIndex = 2;
 	tileMat->NormalSrvHeapIndex = 3;
