@@ -1,5 +1,5 @@
 ﻿//***************************************************************************************
-// NormalMappingApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
+// ShadowMappingApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
 
 
@@ -11,8 +11,6 @@
 #include <iomanip>
 #include "FileReader.h"
 #include "../Common/Camera.h"
-#include "WICTextureLoader.h"
-#include "ResourceUploadBatch.h"
 
 const int g_NumFrameResources = 3;
 const UINT CubeMapSize = 512;
@@ -61,14 +59,14 @@ enum class RenderLayer : int
 	Count
 };
 
-class NormalMappingApp : public D3DApp
+class ShadowMappingApp : public D3DApp
 {
 public:
-	NormalMappingApp(HINSTANCE hInstance);
-	~NormalMappingApp();
+	ShadowMappingApp(HINSTANCE hInstance);
+	~ShadowMappingApp();
 
-	NormalMappingApp(const NormalMappingApp& _other) = delete;
-	NormalMappingApp& operator=(const NormalMappingApp& _other) = delete;
+	ShadowMappingApp(const ShadowMappingApp& _other) = delete;
+	ShadowMappingApp& operator=(const ShadowMappingApp& _other) = delete;
 
 	virtual bool Initialize() override;
 
@@ -174,7 +172,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 	try
 	{
-		NormalMappingApp theApp(hInstance);
+		ShadowMappingApp theApp(hInstance);
 		if (!theApp.Initialize())
 			return 0;
 		return theApp.Run();
@@ -186,12 +184,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 	}
 }
 
-NormalMappingApp::NormalMappingApp(HINSTANCE hInstance)
+ShadowMappingApp::ShadowMappingApp(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 {
 }
 
-NormalMappingApp::~NormalMappingApp()
+ShadowMappingApp::~ShadowMappingApp()
 {
 	if (m_d3dDevice != nullptr)
 	{
@@ -199,7 +197,7 @@ NormalMappingApp::~NormalMappingApp()
 	}
 }
 
-bool NormalMappingApp::Initialize()
+bool ShadowMappingApp::Initialize()
 {
 	if (!D3DApp::Initialize())
 		return false;
@@ -235,14 +233,14 @@ bool NormalMappingApp::Initialize()
 	return true;
 }
 
-void NormalMappingApp::OnResize()
+void ShadowMappingApp::OnResize()
 {
 	D3DApp::OnResize();
 
 	m_Camera.SetFrustum(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
 }
 
-void NormalMappingApp::Update(const GameTimer& _gt)
+void ShadowMappingApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
@@ -274,7 +272,7 @@ void NormalMappingApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 }
 
-void NormalMappingApp::Draw(const GameTimer& _gt)
+void ShadowMappingApp::Draw(const GameTimer& _gt)
 {
 	// 현재 FrameResource가 가지고 있는 allocator를 가지고 와서 초기화 한다.
 	ComPtr<ID3D12CommandAllocator> CurrCommandAllocator = m_CurrFrameResource->CmdListAlloc;
@@ -382,7 +380,7 @@ void NormalMappingApp::Draw(const GameTimer& _gt)
 	m_CommandQueue->Signal(m_Fence.Get(), m_CurrentFence);
 }
 
-void NormalMappingApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
+void ShadowMappingApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 {
 	if ((_btnState & MK_LBUTTON) != 0)
 	{
@@ -394,13 +392,13 @@ void NormalMappingApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 	}
 }
 
-void NormalMappingApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
+void ShadowMappingApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
 }
 
-void NormalMappingApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
+void ShadowMappingApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 {
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
@@ -425,7 +423,7 @@ void NormalMappingApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void NormalMappingApp::OnKeyboardInput(const GameTimer _gt)
+void ShadowMappingApp::OnKeyboardInput(const GameTimer _gt)
 {
 	const float dt = _gt.GetDeltaTime();
 
@@ -450,7 +448,7 @@ void NormalMappingApp::OnKeyboardInput(const GameTimer _gt)
 	m_Camera.UpdateViewMatrix();
 }
 
-void NormalMappingApp::UpdateObjectCBs(const GameTimer& _gt)
+void ShadowMappingApp::UpdateObjectCBs(const GameTimer& _gt)
 {
 	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
 	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
@@ -483,7 +481,7 @@ void NormalMappingApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
-void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
+void ShadowMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 {
 	UploadBuffer<MaterialData>* currMaterialCB = m_CurrFrameResource->MaterialBuffer.get();	
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
@@ -515,7 +513,7 @@ void NormalMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 	}
 }
 
-void NormalMappingApp::UpdateMainPassCB(const GameTimer& _gt)
+void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = m_Camera.GetViewMat();
 	XMMATRIX ProjMat = m_Camera.GetProjMat();
@@ -563,55 +561,12 @@ void NormalMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void NormalMappingApp::AnimateMaterials(const GameTimer& _gt)
+void ShadowMappingApp::AnimateMaterials(const GameTimer& _gt)
 {
-#if WAVE
-	Material* waveMat = m_Materials["waveMat"].get();
-
-	// 3행 0열에 있는걸 가져온다.
-	float tu = waveMat->MatTransform(3, 0);
-	float tv = waveMat->MatTransform(3, 1);
-	// 이 위치는 Transform Matrix에서 Translate.xy 성분에 해당한다.
-	tu += 0.1f * _gt.GetDeltaTime();
-	tv += 0.02f * _gt.GetDeltaTime();
-
-	if (tu >= 1.f)
-	{
-		tu -= 1.f;
-	}
-	if (tv >= 1.f)
-	{
-		tv -= 1.f;
-	}
-
-	waveMat->MatTransform(3, 0) = tu;
-	waveMat->MatTransform(3, 1) = tv;
-	// dirty flag를 켜준다.
-	waveMat->NumFramesDirty = g_NumFrameResources;
-
-	// 다르게 움직이는 파도이다.
-	float tu2 = m_wave2Transform(3, 0);
-	float tv2 = m_wave2Transform(3, 1);
-
-	tu2 += 0.1f * _gt.GetDeltaTime();
-	tv2 += 0.02f * _gt.GetDeltaTime();
-
-	if (tu2 >= 1.f)
-	{
-		tu2 -= 1.f;
-	}
-	if (tv2 >= 1.f)
-	{
-		tv2 -= 1.f;
-	}
-
-	m_wave2Transform(3, 0) = tu2;
-	m_wave2Transform(3, 1) = tu2;
-#endif
 }
 
 
-void NormalMappingApp::LoadTextures()
+void ShadowMappingApp::LoadTextures()
 {
 	// 진작에 이렇게 할걸
 	std::vector<std::string> texNames =
@@ -622,9 +577,6 @@ void NormalMappingApp::LoadTextures()
 		"tileNormalMap",
 		"defaultDiffuseMap",
 		"defaultNormalMap",
-		"checkboard",
-		"waves0",
-		"waves1",
 		"skyCubeMap"
 	};
 
@@ -636,9 +588,6 @@ void NormalMappingApp::LoadTextures()
 		L"../Textures/tile_nmap.dds",
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
-		L"../Textures/checkboard.dds",
-		L"../Textures/waves0.dds",
-		L"../Textures/waves1.dds",
 		L"../Textures/snowcube1024.dds"
 	};
 
@@ -653,56 +602,10 @@ void NormalMappingApp::LoadTextures()
 
 		m_Textures[texMap->Name] = std::move(texMap);
 	}
-
-	// wic로 되있는 Map도 가져온다.
-	std::vector<std::string> texNamesWIC =
-	{
-		"flatNmap",
-		"waterNmap",
-		"checkboardNmap",
-		"checkboardDistmap"
-	};
-
-	std::vector<std::wstring> texFilenamesWIC =
-	{
-		L"../Textures/flat_nmap.png",
-		L"../Textures/water1_nmap.png",
-		L"../Textures/checkboard_NRM.jpg",
-		L"../Textures/checkboard_DISP.jpg"
-	};
-
-	vector<std::future<void>> finishArr;
-	finishArr.reserve(texNamesWIC.size());
-
-	for (int i = 0; i < texNamesWIC.size(); i++)
-	{
-		std::unique_ptr<Texture> wicMap = std::make_unique<Texture>();
-		wicMap->Name = texNamesWIC[i];
-		wicMap->Filename = texFilenamesWIC[i];
-
-		ResourceUploadBatch upload(m_d3dDevice.Get());
-		upload.Begin();
-
-		ThrowIfFailed(CreateWICTextureFromFile(
-			m_d3dDevice.Get(),
-			upload,
-			wicMap->Filename.c_str(),
-			wicMap->Resource.GetAddressOf()
-		));
-
-		finishArr.push_back(upload.End(m_CommandQueue.Get()));
-
-		m_Textures[wicMap->Name] = std::move(wicMap);
-	}
-	vector<std::future<void>>::iterator iter = finishArr.begin();
-	for (; iter != finishArr.end(); iter++)
-	{
-		iter->wait();
-	}
 }
 
 
-void NormalMappingApp::BuildRootSignature()
+void ShadowMappingApp::BuildRootSignature()
 {	
 	// Table도 쓸거고, Constant도 쓸거다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
@@ -763,7 +666,7 @@ void NormalMappingApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
-void NormalMappingApp::BuildDescriptorHeaps()
+void ShadowMappingApp::BuildDescriptorHeaps()
 {
 	// Descriptor Count는 좀 넘겨도 된다. 부족한게 문제가 생기는 것이다.
 	const int textureDescriptorCount = 16;
@@ -789,13 +692,6 @@ void NormalMappingApp::BuildDescriptorHeaps()
 		m_Textures["tileNormalMap"]->Resource.Get(),
 		m_Textures["defaultDiffuseMap"]->Resource.Get(),
 		m_Textures["defaultNormalMap"]->Resource.Get(),
-		m_Textures["flatNmap"]->Resource.Get(),
-		m_Textures["waterNmap"]->Resource.Get(),
-		m_Textures["checkboard"]->Resource.Get(),
-		m_Textures["checkboardNmap"]->Resource.Get(),
-		m_Textures["checkboardDistmap"]->Resource.Get(),
-		m_Textures["waves0"]->Resource.Get(),
-		m_Textures["waves1"]->Resource.Get(),
 	};
 
 	ID3D12Resource* skyCubeMap = m_Textures["skyCubeMap"]->Resource.Get();
@@ -830,7 +726,7 @@ void NormalMappingApp::BuildDescriptorHeaps()
 	m_SkyTexHeapIndex = viewCount;
 }
 
-void NormalMappingApp::BuildShadersAndInputLayout()
+void ShadowMappingApp::BuildShadersAndInputLayout()
 {
 	const D3D_SHADER_MACRO alphaTestDefines[] =
 	{
@@ -838,40 +734,13 @@ void NormalMappingApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
-	const D3D_SHADER_MACRO waveDefines[] =
-	{
-		"WAVE", "1",
-		NULL, NULL
-	};
-
-#if WAVE
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", waveDefines, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", waveDefines, "PS", "ps_5_1");
-	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
-
-	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", waveDefines, "VS", "vs_5_1");
-	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", waveDefines, "PS", "ps_5_1");
-#else
-	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "PS", "ps_5_1");
 	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
-#endif
 
-
-#if PRAC5
-	m_Shaders["dispVS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["dispHS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "HS", "hs_5_1");
-	m_Shaders["dispDS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "DS", "ds_5_1");
-	m_Shaders["dispPS"] = d3dUtil::CompileShader(L"Shaders\\displacement.hlsl", nullptr, "PS", "ps_5_1");
-#elif WAVE
-	m_Shaders["dispVS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "VS", "vs_5_1");
-	m_Shaders["dispHS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "HS", "hs_5_1");
-	m_Shaders["dispDS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "DS", "ds_5_1");
-	m_Shaders["dispPS"] = d3dUtil::CompileShader(L"Shaders\\wave_disp.hlsl", waveDefines, "PS", "ps_5_1");
-#endif
 	m_InputLayout =
 	{
 		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -881,16 +750,12 @@ void NormalMappingApp::BuildShadersAndInputLayout()
 	};
 }
 
-void NormalMappingApp::BuildStageGeometry()
+void ShadowMappingApp::BuildStageGeometry()
 {
 	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
 	GeometryGenerator geoGenerator;
 	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
-#if PRAC5 || WAVE
-	GeometryGenerator::MeshData grid = geoGenerator.CreatePatchQuad(20.f, 30.f, 12, 8);
-#else
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
-#endif	
 	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 
@@ -1023,7 +888,7 @@ void NormalMappingApp::BuildStageGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void NormalMappingApp::BuildSkullGeometry()
+void ShadowMappingApp::BuildSkullGeometry()
 {
 	vector<Vertex> SkullVertices;
 	vector<uint32_t> SkullIndices;
@@ -1076,7 +941,7 @@ void NormalMappingApp::BuildSkullGeometry()
 	m_Geometries["SkullGeo"] = std::move(geo);
 }
 
-void NormalMappingApp::BuildPSOs()
+void ShadowMappingApp::BuildPSOs()
 {
 	// 불투명 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
@@ -1127,37 +992,9 @@ void NormalMappingApp::BuildPSOs()
 		m_Shaders["skyPS"]->GetBufferSize()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
-
-#if PRAC5 || WAVE
-	// displacement 용 PSO
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC displacementPSODesc = opaquePSODesc;
-	displacementPSODesc.VS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["dispVS"]->GetBufferPointer()),
-		m_Shaders["dispVS"]->GetBufferSize()
-	};
-	displacementPSODesc.PS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["dispPS"]->GetBufferPointer()),
-		m_Shaders["dispPS"]->GetBufferSize()
-	};
-	displacementPSODesc.HS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["dispHS"]->GetBufferPointer()),
-		m_Shaders["dispHS"]->GetBufferSize()
-	};
-	displacementPSODesc.DS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["dispDS"]->GetBufferPointer()),
-		m_Shaders["dispDS"]->GetBufferSize()
-	};
-	displacementPSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH;
-	//displacementPSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&displacementPSODesc, IID_PPV_ARGS(&m_PSOs["displacement"])));
-#endif
 }
 
-void NormalMappingApp::BuildFrameResources()
+void ShadowMappingApp::BuildFrameResources()
 {
 	UINT passCBCount = 1;
 
@@ -1172,21 +1009,14 @@ void NormalMappingApp::BuildFrameResources()
 	}
 }
 
-void NormalMappingApp::BuildMaterials()
+void ShadowMappingApp::BuildMaterials()
 {
-	//0		m_Textures["bricksDiffuseMap"]
-	//1		m_Textures["bricksNormalMap"]
-	//2		m_Textures["tileDiffuseMap"]
-	//3		m_Textures["tileNormalMap"]
-	//4		m_Textures["defaultDiffuseMap"]
-	//5		m_Textures["defaultNormalMap"]
-	//6		m_Textures["flatNmap"]
-	//7		m_Textures["waterNmap"]
-	//8 	m_Textures["checkboard"]
-	//9 	m_Textures["checkboardNmap"]
-	//10	m_Textures["checkboardDistmap"]
-	//11	m_Textures["waves0"]
-	//12	m_Textures["waves1"]
+	//0		m_Textures["bricksDiffuseMap"]->Resource.Get(),
+	//1		m_Textures["bricksNormalMap"]->Resource.Get(),
+	//2		m_Textures["tileDiffuseMap"]->Resource.Get(),
+	//3		m_Textures["tileNormalMap"]->Resource.Get(),
+	//4		m_Textures["defaultDiffuseMap"]->Resource.Get(),
+	//5		m_Textures["defaultNormalMap"]->Resource.Get(),
 
 	std::unique_ptr<Material> brickMat = std::make_unique<Material>();
 	brickMat->Name = "brickMat";
@@ -1200,14 +1030,8 @@ void NormalMappingApp::BuildMaterials()
 	std::unique_ptr<Material> tileMat = std::make_unique<Material>();
 	tileMat->Name = "tileMat";
 	tileMat->MatCBIndex = 1;
-#if PRAC5
-	tileMat->DiffuseSrvHeapIndex = 8;
-	tileMat->NormalSrvHeapIndex = 9;
-	tileMat->DisplacementSrvHeapIndex = 10;
-#else
 	tileMat->DiffuseSrvHeapIndex = 2;
 	tileMat->NormalSrvHeapIndex = 3;
-#endif
 	tileMat->DiffuseAlbedo = XMFLOAT4(0.9f, 0.9f, 0.9f, 1.0f);
 	tileMat->FresnelR0 = XMFLOAT3(0.2f, 0.2f, 0.2f);
 	tileMat->Roughness = 0.1f;
@@ -1216,7 +1040,7 @@ void NormalMappingApp::BuildMaterials()
 	mirrorMat->Name = "mirrorMat";
 	mirrorMat->MatCBIndex = 2;
 	mirrorMat->DiffuseSrvHeapIndex = 4;
-	mirrorMat->NormalSrvHeapIndex = 6;
+	mirrorMat->NormalSrvHeapIndex = 5;
 	mirrorMat->DiffuseAlbedo = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
 	mirrorMat->FresnelR0 = XMFLOAT3(0.98f, 0.97f, 0.95f);
 	mirrorMat->Roughness = 0.1f;
@@ -1225,7 +1049,7 @@ void NormalMappingApp::BuildMaterials()
 	skullMat->Name = "skullMat";
 	skullMat->MatCBIndex = 3;
 	skullMat->DiffuseSrvHeapIndex = 4;
-	skullMat->NormalSrvHeapIndex = 7;
+	skullMat->NormalSrvHeapIndex = 5;
 	skullMat->DiffuseAlbedo = XMFLOAT4(0.3f, 0.3f, 0.3f, 1.0f);
 	skullMat->FresnelR0 = XMFLOAT3(0.7f, 0.7f, 0.7f);
 	skullMat->Roughness = 0.2f;
@@ -1234,24 +1058,10 @@ void NormalMappingApp::BuildMaterials()
 	skyMat->Name = "skyMat";
 	skyMat->MatCBIndex = 4;
 	skyMat->DiffuseSrvHeapIndex = 4;
-	skyMat->NormalSrvHeapIndex = 6;
+	skyMat->NormalSrvHeapIndex = 5;
 	skyMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);;
 	skyMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	skyMat->Roughness = 1.0f;
-
-#if WAVE
-	std::unique_ptr<Material> waveMat = std::make_unique<Material>();
-	waveMat->Name = "waveMat";
-	waveMat->MatCBIndex = 5;
-	waveMat->DiffuseSrvHeapIndex = 4;
-	waveMat->NormalSrvHeapIndex = 11;
-	waveMat->DisplacementSrvHeapIndex = 12;
-	waveMat->DiffuseAlbedo = XMFLOAT4(0.05f, 0.1f, 0.4f, 1.0f);
-	waveMat->FresnelR0 = XMFLOAT3(0.8f, 0.8f, 0.8f);
-	waveMat->Roughness = 0.1f;
-
-	m_Materials["waveMat"] = std::move(waveMat);
-#endif
 
 	m_Materials["brickMat"] = std::move(brickMat);
 	m_Materials["mirrorMat"] = std::move(mirrorMat);
@@ -1260,7 +1070,7 @@ void NormalMappingApp::BuildMaterials()
 	m_Materials["skyMat"] = std::move(skyMat);
 }
 
-void NormalMappingApp::BuildRenderItems()
+void ShadowMappingApp::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
 	std::unique_ptr<RenderItem> skyRitem = std::make_unique<RenderItem>();
@@ -1298,24 +1108,12 @@ void NormalMappingApp::BuildRenderItems()
 	gridRitem->WorldMat = MathHelper::Identity4x4();
 	gridRitem->ObjCBIndex = objCBIndex++;
 	gridRitem->Geo = m_Geometries["shapeGeo"].get();
-#if WAVE
-	gridRitem->Mat = m_Materials["waveMat"].get();
-#else
 	gridRitem->Mat = m_Materials["tileMat"].get();
-#endif
-#if PRAC5 || WAVE
-	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST;
-#else
 	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-#endif
 	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
 	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
 	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
-#if PRAC5 || WAVE
-	m_RenderItemLayer[(int)RenderLayer::Displacement].push_back(gridRitem.get());
-#else
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
-#endif
 	m_AllRenderItems.push_back(std::move(gridRitem));
 
 	// 원기둥과 구 5개씩 2줄
@@ -1400,7 +1198,7 @@ void NormalMappingApp::BuildRenderItems()
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
 }
 
-void NormalMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
+void ShadowMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 
@@ -1438,12 +1236,12 @@ void NormalMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, cons
 	}
 }
 
-float NormalMappingApp::GetHillsHeight(float _x, float _z) const
+float ShadowMappingApp::GetHillsHeight(float _x, float _z) const
 {
 	return 0.3f * (_z * sinf(0.1f * _x) + _x * cosf(0.1f * _z));
 }
 
-XMFLOAT3 NormalMappingApp::GetHillsNormal(float _x, float _z) const
+XMFLOAT3 ShadowMappingApp::GetHillsNormal(float _x, float _z) const
 {
 	// n = (-df/dx, 1, -df/dz)
 	// 이게 왜그러냐면
@@ -1461,7 +1259,7 @@ XMFLOAT3 NormalMappingApp::GetHillsNormal(float _x, float _z) const
 	return n;
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> NormalMappingApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
 	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.

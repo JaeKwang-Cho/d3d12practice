@@ -3,9 +3,6 @@
 #include "../Common/UploadBuffer.h"
 #include "../Common/MathHelper.h"
 
-#define PRAC5 (0)
-#define WAVE (1)
-
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
@@ -87,10 +84,6 @@ struct MaterialData
 	UINT NormalMapIndex = 0;
 	UINT DispMapIndex = 0;
 	UINT MaterialPad0;
-
-#if WAVE
-	DirectX::XMFLOAT4X4 MaterialTransform1 = MathHelper::Identity4x4();
-#endif
 };
 
 // 사용할 Vertex 정보

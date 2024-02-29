@@ -19,32 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Common\Camera.cpp" />
-    <ClCompile Include="..\Common\d3dApp.cpp" />
-    <ClCompile Include="..\Common\d3dUtil.cpp" />
-    <ClCompile Include="..\Common\DDSTextureLoader.cpp" />
-    <ClCompile Include="..\Common\GameTimer.cpp" />
-    <ClCompile Include="..\Common\GeometryGenerator.cpp" />
-    <ClCompile Include="..\Common\MathHelper.cpp" />
-    <ClCompile Include="FrameResource.cpp" />
-    <ClCompile Include="main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="..\Common\Camera.h" />
-    <ClInclude Include="..\Common\d3dApp.h" />
-    <ClInclude Include="..\Common\d3dUtil.h" />
-    <ClInclude Include="..\Common\d3dx12.h" />
-    <ClInclude Include="..\Common\DDSTextureLoader.h" />
-    <ClInclude Include="..\Common\GameTimer.h" />
-    <ClInclude Include="..\Common\GeometryGenerator.h" />
-    <ClInclude Include="..\Common\MathHelper.h" />
-    <ClInclude Include="..\Common\UploadBuffer.h" />
-    <ClInclude Include="FileReader.h" />
-    <ClInclude Include="FrameResource.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
-    <None Include="Shaders\16_NormalMapping.hlsl">
+    <None Include="Shaders\17_ShadowMapping.hlsl">
       <FileType>Document</FileType>
     </None>
     <None Include="Shaders\Commons.hlsl">
@@ -58,20 +33,36 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\displacement.hlsl">
-      <FileType>Document</FileType>
-    </None>
+    <ClInclude Include="..\Common\Camera.h" />
+    <ClInclude Include="..\Common\d3dApp.h" />
+    <ClInclude Include="..\Common\d3dUtil.h" />
+    <ClInclude Include="..\Common\d3dx12.h" />
+    <ClInclude Include="..\Common\DDSTextureLoader.h" />
+    <ClInclude Include="..\Common\GameTimer.h" />
+    <ClInclude Include="..\Common\GeometryGenerator.h" />
+    <ClInclude Include="..\Common\MathHelper.h" />
+    <ClInclude Include="..\Common\UploadBuffer.h" />
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="ShadowMap.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\wave_disp.hlsl">
-      <FileType>Document</FileType>
-    </None>
+    <ClCompile Include="..\Common\Camera.cpp" />
+    <ClCompile Include="..\Common\d3dApp.cpp" />
+    <ClCompile Include="..\Common\d3dUtil.cpp" />
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp" />
+    <ClCompile Include="..\Common\GameTimer.cpp" />
+    <ClCompile Include="..\Common\GeometryGenerator.cpp" />
+    <ClCompile Include="..\Common\MathHelper.cpp" />
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ShadowMap.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{e2d38dff-864a-47c2-b191-7db788b33a4d}</ProjectGuid>
-    <RootNamespace>My16NormalMapping</RootNamespace>
+    <ProjectGuid>{bc0903ea-14e7-4589-ba09-82ecd5be1968}</ProjectGuid>
+    <RootNamespace>My17ShadowMapping</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -177,12 +168,5 @@
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="..\packages\directxtk12_desktop_2019.2024.2.22.1\build\native\directxtk12_desktop_2019.targets" Condition="Exists('..\packages\directxtk12_desktop_2019.2024.2.22.1\build\native\directxtk12_desktop_2019.targets')" />
   </ImportGroup>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>이 프로젝트는 이 컴퓨터에 없는 NuGet 패키지를 참조합니다. 해당 패키지를 다운로드하려면 NuGet 패키지 복원을 사용하십시오. 자세한 내용은 http://go.microsoft.com/fwlink/?LinkID=322105를 참조하십시오. 누락된 파일은 {0}입니다.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('..\packages\directxtk12_desktop_2019.2024.2.22.1\build\native\directxtk12_desktop_2019.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\directxtk12_desktop_2019.2024.2.22.1\build\native\directxtk12_desktop_2019.targets'))" />
-  </Target>
 </Project>

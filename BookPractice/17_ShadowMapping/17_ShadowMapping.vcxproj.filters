@@ -10,37 +10,29 @@
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
     <Filter Include="Shaders">
-      <UniqueIdentifier>{6231aa5e-0578-46ec-b367-ef5b9960dcb4}</UniqueIdentifier>
+      <UniqueIdentifier>{74f70dbb-9941-44af-87e5-ea8e43b09207}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="FrameResource.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="..\Common\Camera.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\d3dApp.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\d3dUtil.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\GameTimer.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\GeometryGenerator.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\MathHelper.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
+    <FxCompile Include="Shaders\Commons.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\Sky.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="FileReader.h" />
+    <None Include="Shaders\17_ShadowMapping.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="ShadowMap.h" />
     <ClInclude Include="..\Common\Camera.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
@@ -70,24 +62,29 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Shaders\16_NormalMapping.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="packages.config" />
-    <None Include="Shaders\Sky.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\Commons.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\displacement.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="Shaders\wave_disp.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
+    <ClCompile Include="ShadowMap.cpp" />
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\Common\Camera.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dApp.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dUtil.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GameTimer.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GeometryGenerator.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
