@@ -58,6 +58,16 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ShadowMap.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Shadow.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\ShadowDebug.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>

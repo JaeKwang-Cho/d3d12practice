@@ -42,17 +42,16 @@ struct MaterialData
     uint NormalMapIndex;
     uint DispMapIndex;
     uint MatPad0;
-#ifdef WAVE
-    float4x4 MaterialTransform1;
-#endif
 };
 
 // 6개의 Texture를 가지고 있고, 록업 벡터를 이용해서
 // 픽셀 값을 참조하는 리소스이다.
 TextureCube gCubeMap : register(t0);
+// 광원 시점에서 그린 깊이맵이다.
+Texture2D gShadowMap : register(t1);
 
 // 이제 노멀맵도 함께 사용할 것이기 때문에, 개수도 늘려주고, 일반적인 이름으로 바꿔준다.
-Texture2D gTextureMaps[16] : register(t1);
+Texture2D gTextureMaps[10] : register(t2);
 
 //StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
@@ -67,6 +66,7 @@ SamplerState gSamLinearMirror : register(s6);
 SamplerState gSamLinearBorder : register(s7);
 SamplerState gSamAnisotropicWrap : register(s8);
 SamplerState gSamAnisotropicClamp : register(s9);
+SamplerComparisonState gsamShadow : register(s10);
 
 // 물체마다 가지고 있는 Constant Buffer
 cbuffer cbPerObject : register(b0)
@@ -89,6 +89,9 @@ cbuffer cbPass : register(b1)
     float4x4 gInvProj;
     float4x4 gViewProj;
     float4x4 gInvViewProj;
+    // App에서 갱신한 광원의 위치로 갱신해서 
+    // passCB로 넘겨준다.
+    float4x4 gShadowTransform;
     
     float3 gEyePosW;
     float cbPerPassad1;
@@ -158,4 +161,39 @@ float3 WorldSpaceToTangentSpace(float3 _worldPos, float3 _unitNormalW, float3 ta
     float3 bumpedNormalW = mul(_worldPos, invTBN);
     
     return bumpedNormalW;
+}
+
+// LightingUtil.hlsl 에서 사용하는 ShadowFactor를 생성하는 함수이다.
+float CaclcShadowFactor(float4 shadowPosH)
+{
+    // 일단 호모공간의 점을 w로 나눠서 투영을 완료한다.
+    // Homogeneous clip space -> NDC
+    shadowPosH.xyz /= shadowPosH.w;
+    
+    float depth = shadowPosH.z;
+    uint width, height, numMips;
+    // 텍스쳐 정보 가져오기
+    gShadowMap.GetDimensions(0, width, height, numMips);
+
+    // Texel 크기.
+    float dx = 1.0f / (float) width;
+
+    float percentLit = 0.0f;
+    const float2 offsets[9] =
+    {
+        float2(-dx, -dx), float2(0.0f, -dx), float2(dx, -dx),
+        float2(-dx, 0.0f), float2(0.0f, 0.0f), float2(dx, 0.0f),
+        float2(-dx, +dx), float2(0.0f, +dx), float2(dx, +dx)
+    };
+
+    [unroll]
+    for (int i = 0; i < 9; ++i)
+    {
+        // 최상위 밉맵 (level 0)에서
+        // 4 표본 PCF를 수행해주는 GPU 제공 코드이다.
+        percentLit += gShadowMap.SampleCmpLevelZero(gsamShadow,
+            shadowPosH.xy + offsets[i], depth).r;
+    }
+    
+    return percentLit / 9.0f;
 }

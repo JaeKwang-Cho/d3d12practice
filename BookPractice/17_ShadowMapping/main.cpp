@@ -10,6 +10,7 @@
 #include <DirectXColors.h>
 #include <iomanip>
 #include "FileReader.h"
+#include "ShadowMap.h"
 #include "../Common/Camera.h"
 
 const int g_NumFrameResources = 3;
@@ -54,7 +55,7 @@ struct RenderItem
 enum class RenderLayer : int
 {
 	Opaque = 0,
-	Displacement,
+	Debug,
 	Sky, 
 	Count
 };
@@ -78,13 +79,18 @@ private:
 	virtual void OnMouseDown(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseUp(WPARAM _btnState, int _x, int _y) override;
 	virtual void OnMouseMove(WPARAM _btnState, int _x, int _y) override;
+
+	virtual void CreateRtvAndDsvDescriptorHeaps() override;
 	
 	// ==== Update ====
 	void OnKeyboardInput(const GameTimer _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
+	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
+	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
 	void AnimateMaterials(const GameTimer& _gt);
+
 
 	// ==== Init ====
 	void LoadTextures();
@@ -100,6 +106,7 @@ private:
 
 	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
+	void DrawSceneToShadowMap(); // 디버깅용 그림자 화면을 그려주는 함수이다.
 
 	// 지형의 높이와 노멀을 계산하는 함수다.
 	float GetHillsHeight(float _x, float _z) const;
@@ -143,23 +150,47 @@ private:
 
 	// Object 관계 없이, Render Pass 전체가 공유하는 값이다.
 	PassConstants m_MainPassCB;
+	// 디버깅용 화면에 쓰이는 PassCB이다.
+	PassConstants m_ShadowPassCB;
 
 	POINT m_LastMousePos = {};
 
 	// Camera
 	Camera m_Camera;
 	Camera m_CubeMapCamera[6];
+	
+	// 쉐도우 맵을 관리해주는 클래스 인스턴스다.
+	std::unique_ptr<ShadowMap> m_ShadowMap;
+	// 필요한 부분에만 그림자를 그리도록 하는 BoundingSphere다.
+	BoundingSphere m_SceneBounds;
 
 	// Sky Texture가 위치한 view Handle Offset을 저장해 놓는다.
 	UINT m_SkyTexHeapIndex = 0;
+	// Shadow Texture가 위치한 view handle offset을 저장해 놓는다.
+	UINT m_ShadowMapHeapIndex = 0;
+	// 디버깅용 큐브와 텍스쳐가 위치한 view handle offset을 저장해 놓는다.
+	UINT m_NullCubeSrvIndex = 0;
+	UINT m_NullTexSrvIndex = 0;
 
-	float m_Phi = 1.24f * XM_PI;
-	float m_Theta = 0.42f * XM_PI;
-	float m_Radius = 20.f;
-
-#if WAVE
-	XMFLOAT4X4 m_wave2Transform = MathHelper::Identity4x4();
-#endif
+	// 그림자 투영을 하기 위해 필요한 속성들이다.
+	// viewport 속성
+	float m_LightNearZ = 0.0f;
+	float m_LightFarZ = 0.0f;
+	// 광원 위치
+	XMFLOAT3 m_LightPosW;
+	// 그걸로 만든 행렬들
+	XMFLOAT4X4 m_LightView = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_LightProj = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_ShadowTransform = MathHelper::Identity4x4();
+	
+	float m_LightRotationAngle = 0.0f;
+	// 그림자는 첫번째 광원에 대해서만 만든다.
+	XMFLOAT3 m_BaseLightDirections[3] = {
+		XMFLOAT3(0.57735f, -0.57735f, 0.57735f),
+		XMFLOAT3(-0.57735f, -0.57735f, 0.57735f),
+		XMFLOAT3(0.0f, -0.707f, -0.707f)
+	};
+	XMFLOAT3 m_RotatedLightDirections[3];
 };
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
@@ -187,6 +218,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 ShadowMappingApp::ShadowMappingApp(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 {
+	// 어떤 레벨이 들어갈지 우리는 이미 알고 있으니, 
+	// 생성자에서 BoundingSphere를 초기화 한다.
+	m_SceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	m_SceneBounds.Radius = sqrtf(10.0f * 10.0f + 15.0f * 15.0f);
 }
 
 ShadowMappingApp::~ShadowMappingApp()
@@ -207,6 +242,9 @@ bool ShadowMappingApp::Initialize()
 	ThrowIfFailed(m_CommandList->Reset(m_CommandAllocator.Get(), nullptr));
 
 	m_Camera.SetPosition(0.0f, 2.0f, -15.0f);
+	// 사용할 shadow map의 해상도는 2048 * 2048으로 한다.
+	m_ShadowMap = std::make_unique<ShadowMap>(
+		m_d3dDevice.Get(), 2048, 2048);
 
 	// ======== 초기화 ==========
 	LoadTextures();

@@ -19,7 +19,8 @@ struct VertexIn
 struct VertexOut
 {
     float4 PosH : SV_POSITION;
-    float3 PosW : POSITION;
+    float4 ShadowPosH : POSITION0;
+    float3 PosW : POSITION1;
     float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
     float2 TexC : TEXCOORD;
@@ -47,13 +48,16 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     vout.TangentW = mul(vin.TangentU, (float3x3) gInvWorldTranspose);
 
     // Render(Homogeneous clip space) Pos로 바꾼다.
-
     vout.PosH = mul(posW, gViewProj);
     
     // Texture에게 주어진 Transform을 적용시킨 다음
     float4 texC = mul(float4(vin.TexC, 0.f, 1.f), gTexTransform);
     // World를 곱해서 PS로 넘겨준다.
     vout.TexC = mul(texC, matData.MaterialTransform).xy;
+    
+    // PassCB에서 넘겨준 행렬로, 투영공간으로 변환한다.
+    vout.ShadowPosH = mul(float4(vin.PosL, 1.f), gShadowTransform);
+    
     return vout;
 }
 
@@ -68,34 +72,35 @@ float4 PS(VertexOut pin) : SV_Target
     uint diffuseTexIndex = matData.DiffuseMapIndex;
     uint normalMatIndex = matData.NormalMapIndex;
     
+    // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
+    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
+        
+#ifdef ALPHA_TEST
+    // 알파 값이 일정값 이하면 그냥 잘라버린다.
+    clip(diffuseAlbedo.a - 0.1f);
+#endif
+    
     // TBN을 world로 바꾸기 위한 Vertex Normal, Tangent를 가져온다.
     pin.NormalW = normalize(pin.NormalW);
     // UV에 맞는 Texture Normal 값을 가져온다.
     float4 normalMapSample = gTextureMaps[normalMatIndex].Sample(gSamAnisotropicWrap, pin.TexC);
     float3 bumpedNormalW = NormalSampleToWorldSpace(normalMapSample.rgb, pin.NormalW, pin.TangentW);
     
-    
-    // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
-    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
-    
-#ifdef ALPHA_TEST
-    // 알파 값이 일정값 이하면 그냥 잘라버린다.
-    clip(diffuseAlbedo.a - 0.1f);
-#endif
-    
     // 표면에서 카메라 까지 벡터를 구한다.
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
 	// 일단 냅다 간접광을 설정한다.
     float4 ambient = gAmbientLight * diffuseAlbedo;
+    
+    // 일단은 첫번째 광원에 대해서만, 그림자를 설정한다.
+    float3 shadowFactor = float3(1.f, 1.f, 1.f);
+    shadowFactor[0] = CaclcShadowFactor(pin.ShadowPosH);
 
     // 광택을 설정하고 (a 채널에 shininess 값이 들어있는 경우도 있다.)
     const float shininess = (1.0f - roughness) * normalMapSample.a;
     // 구조체를 채운 다음
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
-    // (그림자는 나중에 할 것이다.)
-    float3 shadowFactor = 1.0f;
-#if 1
+    
     // 이전에 정의 했던 식을 이용해서 넘긴다.    
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
         bumpedNormalW, toEyeW, shadowFactor);
@@ -116,31 +121,6 @@ float4 PS(VertexOut pin) : SV_Target
     float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
-#else
-    float3 tanNormalW = WorldSpaceToTangentSpace(bumpedNormalW, pin.NormalW, pin.TangentW);
-    float3 tanEyePosW = WorldSpaceToTangentSpace(gEyePosW, pin.NormalW, pin.TangentW);
-    float3 tanPosW = WorldSpaceToTangentSpace(pin.PosW, pin.NormalW, pin.TangentW);
-    float3 tanToEye = normalize(tanEyePosW - tanPosW);
-    
-    Light tanLights[16];
-    tanLights[0] = gLights[0];
-    tanLights[0].Direction = WorldSpaceToTangentSpace(tanLights[0].Direction, pin.NormalW, pin.TangentW);
-    tanLights[1] = gLights[1];
-    tanLights[1].Direction = WorldSpaceToTangentSpace(tanLights[1].Direction, pin.NormalW, pin.TangentW);
-    tanLights[2] = gLights[2];
-    tanLights[2].Direction = WorldSpaceToTangentSpace(tanLights[2].Direction, pin.NormalW, pin.TangentW);
-    
-    // 이전에 정의 했던 식을 이용해서 넘긴다.    
-    float4 directLight = ComputeLighting(tanLights, mat, tanPosW,
-        tanNormalW, tanToEye, shadowFactor);
-    // 최종 색을 결정하고
-    float4 litColor = ambient + directLight;
-
-    float3 r = reflect(-tanToEye, tanNormalW);
-    float4 reflectionColor = gCubeMap.Sample(gSamLinearWrap, r);
-    float3 fresnelFactor = SchlickFresnel(fresnelR0, tanNormalW, r);
-    litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
-#endif
 
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;
