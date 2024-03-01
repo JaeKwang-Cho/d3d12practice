@@ -66,7 +66,8 @@ SamplerState gSamLinearMirror : register(s6);
 SamplerState gSamLinearBorder : register(s7);
 SamplerState gSamAnisotropicWrap : register(s8);
 SamplerState gSamAnisotropicClamp : register(s9);
-SamplerComparisonState gsamShadow : register(s10);
+// 내부적으로 PCF를 하게 해주는 SampleCmp 함수를 사용할 때 필요한 샘플러 타입이다.
+SamplerComparisonState gSamShadow : register(s10); 
 
 // 물체마다 가지고 있는 Constant Buffer
 cbuffer cbPerObject : register(b0)
@@ -191,7 +192,7 @@ float CaclcShadowFactor(float4 shadowPosH)
     {
         // 최상위 밉맵 (level 0)에서
         // 4 표본 PCF를 수행해주는 GPU 제공 코드이다.
-        percentLit += gShadowMap.SampleCmpLevelZero(gsamShadow,
+        percentLit += gShadowMap.SampleCmpLevelZero(gSamShadow,
             shadowPosH.xy + offsets[i], depth).r;
     }
     

@@ -84,12 +84,13 @@ private:
 	
 	// ==== Update ====
 	void OnKeyboardInput(const GameTimer _gt);
+	void AnimateMaterials(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
 	void UpdateMaterialCBs(const GameTimer& _gt);
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
-	void AnimateMaterials(const GameTimer& _gt);
+	
 
 
 	// ==== Init ====
@@ -171,6 +172,9 @@ private:
 	// 디버깅용 큐브와 텍스쳐가 위치한 view handle offset을 저장해 놓는다.
 	UINT m_NullCubeSrvIndex = 0;
 	UINT m_NullTexSrvIndex = 0;
+	// 렌더타겟없이 뎁스 스텐실 뷰만 있는 Srv이다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE m_NullSrv;
+
 
 	// 그림자 투영을 하기 위해 필요한 속성들이다.
 	// viewport 속성
@@ -179,12 +183,12 @@ private:
 	// 광원 위치
 	XMFLOAT3 m_LightPosW;
 	// 그걸로 만든 행렬들
-	XMFLOAT4X4 m_LightView = MathHelper::Identity4x4();
-	XMFLOAT4X4 m_LightProj = MathHelper::Identity4x4();
-	XMFLOAT4X4 m_ShadowTransform = MathHelper::Identity4x4();
-	
+	XMFLOAT4X4 m_LightViewMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_LightProjMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_ShadowMat = MathHelper::Identity4x4();
+
+	// 업데이트 하기 위해서 맴버로 가지고 있는다.
 	float m_LightRotationAngle = 0.0f;
-	// 그림자는 첫번째 광원에 대해서만 만든다.
 	XMFLOAT3 m_BaseLightDirections[3] = {
 		XMFLOAT3(0.57735f, -0.57735f, 0.57735f),
 		XMFLOAT3(-0.57735f, -0.57735f, 0.57735f),
@@ -230,6 +234,35 @@ ShadowMappingApp::~ShadowMappingApp()
 	{
 		FlushCommandQueue();
 	}
+}
+
+void ShadowMappingApp::CreateRtvAndDsvDescriptorHeaps()
+{
+	// __super::CreateRtvAndDsvDescriptorHeaps();
+
+	// 렌더타겟 힙
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+
+	rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	rtvHeapDesc.NodeMask = 0;
+
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&rtvHeapDesc,
+		IID_PPV_ARGS(m_RtvHeap.GetAddressOf())
+	));
+
+	// 뎁스 스텐실 힙
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	// 쉐도우 맵을 만드는 깊이 버퍼를 하나 더 만든다.
+	dsvHeapDesc.NumDescriptors = 2;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	dsvHeapDesc.NodeMask = 0;
+
+	ThrowIfFailed(m_d3dDevice->CreateDescriptorHeap(
+		&dsvHeapDesc, IID_PPV_ARGS(m_DsvHeap.GetAddressOf())));
 }
 
 bool ShadowMappingApp::Initialize()
@@ -304,10 +337,24 @@ void ShadowMappingApp::Update(const GameTimer& _gt)
 		}
 	}
 
+	// 광원이 빙글빙글 돌게 만든다.
+	m_LightRotationAngle += 0.1f * _gt.GetDeltaTime();
+
+	XMMATRIX R = XMMatrixRotationY(m_LightRotationAngle);
+	for (int i = 0; i < 3; i++)
+	{
+		XMVECTOR lightDir = XMLoadFloat3(&m_BaseLightDirections[i]);
+		lightDir = XMVector3TransformNormal(lightDir, R);
+		XMStoreFloat3(&m_RotatedLightDirections[i], lightDir);
+	}
+
 	AnimateMaterials(_gt);
 	UpdateObjectCBs(_gt);
 	UpdateMaterialCBs(_gt);
+	// PassCB에 Shadow Transform이 담기니까, 순서를 잘 맞춰줘야 한다.
+	UpdateShadowTransform(_gt);
 	UpdateMainPassCB(_gt);
+	UpdateShadowPassCB(_gt);
 }
 
 void ShadowMappingApp::Draw(const GameTimer& _gt)
@@ -343,6 +390,13 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	CD3DX12_GPU_DESCRIPTOR_HANDLE skyTexDescriptor(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	skyTexDescriptor.Offset(m_SkyTexHeapIndex, m_CbvSrvUavDescriptorSize);
 
+	// ==== 광원 입장에서 그림자 뎁스 그리기 ====
+	
+	// 3번에 Render Target이 nullptr인 Srv를 세팅한다.
+	m_CommandList->SetGraphicsRootDescriptorTable(3, m_NullSrv);
+	// 클래스 인스턴스 맴버인 텍스쳐에 그린다.
+	DrawSceneToShadowMap();
+
 	// ==== 화면 그리기 ====
 
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
@@ -377,17 +431,18 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
-	// SkyMap을 그릴 TextureCube를 바인드해준다.
+	// SkyMap을 그릴 TextureCube를 3번에 바인드해준다.
 	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
 
 	// drawcall을 걸어준다.
-	// 일단 불투명한 애들을 먼저 싹 출력을 해준다.
+	// 일단 불투명한 애들을 먼저 싹 그려준다.
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-#if PRAC5 || WAVE
-	m_CommandList->SetPipelineState(m_PSOs["displacement"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Displacement]);
-#endif
-	// 하늘을 맨 마지막에 출력해주는 것이 depth test 성능상 좋다고 한다. 
+
+	// shadow debug layer를 그려준다.
+	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
+
+	// 하늘을 맨 마지막에 그려주는 것이 depth test 성능상 좋다고 한다. 
 	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
 
@@ -486,6 +541,10 @@ void ShadowMappingApp::OnKeyboardInput(const GameTimer _gt)
 	m_Camera.UpdateViewMatrix();
 }
 
+void ShadowMappingApp::AnimateMaterials(const GameTimer& _gt)
+{
+}
+
 void ShadowMappingApp::UpdateObjectCBs(const GameTimer& _gt)
 {
 	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
@@ -538,17 +597,58 @@ void ShadowMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
 			// Texture 인덱스를 넣어준다.
 			matData.DiffuseMapIndex = mat->DiffuseSrvHeapIndex;
 			matData.NormalMapIndex = mat->NormalSrvHeapIndex;
-#if PRAC5
-			matData.DispMapIndex = mat->DisplacementSrvHeapIndex;
-#elif WAVE
-			matData.DispMapIndex = mat->DisplacementSrvHeapIndex;
-			matData.MaterialTransform1 = m_wave2Transform;
-#endif
 			currMaterialCB->CopyData(mat->MatCBIndex, matData);
 
 			mat->NumFramesDirty--;
 		}
 	}
+}
+
+void ShadowMappingApp::UpdateShadowTransform(const GameTimer& _gt)
+{
+	// 일단은 첫번째 디렉셔널 라이트에만 그림자를 만든다.
+	XMVECTOR lightDir = XMLoadFloat3(&m_RotatedLightDirections[0]);
+	// ViewMat을 생성하기 위한 속성을 정의하고
+	XMVECTOR lightPos = -2.f * m_SceneBounds.Radius * lightDir;
+	XMVECTOR targetPos = XMLoadFloat3(&m_SceneBounds.Center);
+	XMVECTOR lightUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	// 광원에서 바라보는 ViewMat을 생성한다.
+	XMMATRIX lightViewMat = XMMatrixLookAtLH(lightPos, targetPos, lightUp);
+	
+	// 맴버를 업데이트한다.
+	XMStoreFloat3(&m_LightPosW, lightPos);
+
+	// 월드의 중심을 광원 view 좌표계로 이동한다.
+	XMFLOAT3 sphereCenterLightSpace;
+	XMStoreFloat3(&sphereCenterLightSpace, XMVector3TransformCoord(targetPos, lightViewMat));
+
+	// 직교 투영을 위한 viewport 속성을 설정한다.
+	float left = sphereCenterLightSpace.x - m_SceneBounds.Radius;
+	float right = sphereCenterLightSpace.x + m_SceneBounds.Radius;
+	float bottom = sphereCenterLightSpace.y - m_SceneBounds.Radius;
+	float top = sphereCenterLightSpace.y + m_SceneBounds.Radius;
+	float nearZ = sphereCenterLightSpace.z - m_SceneBounds.Radius;
+	float farZ = sphereCenterLightSpace.z + m_SceneBounds.Radius;
+
+	// 멤버를 업데이트 한다.
+	m_LightNearZ = nearZ;
+	m_LightFarZ = farZ;
+
+	// orthographic projection Mat을 생성한다.
+	XMMATRIX lightProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
+
+	// NDC 공간을 [-1, 1] 텍스쳐 공간으로 [0, 1] 바꿔준다.
+	XMMATRIX T(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.5f, 0.5f, 0.0f, 1.0f
+	);
+	// 그림자 변환 행렬을 맴버로 업데이트 한다.
+	XMMATRIX ShadowMat = lightViewMat * lightProjMat * T;
+	XMStoreFloat4x4(&m_LightViewMat, lightViewMat);
+	XMStoreFloat4x4(&m_LightProjMat, lightProjMat);
+	XMStoreFloat4x4(&m_ShadowMat, ShadowMat);
 }
 
 void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
@@ -567,12 +667,16 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
 	XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
 
+	// 그림자 변환 행렬도 passCB로 넘겨준다.
+	XMMATRIX shadowMat = XMLoadFloat4x4(&m_ShadowMat);
+
 	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.ProjMat, XMMatrixTranspose(ProjMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
 	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
+	XMStoreFloat4x4(&m_MainPassCB.ShadowMat, XMMatrixTranspose(shadowMat));
 
 	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
@@ -587,22 +691,59 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.FogStart = 5.f;
 	m_MainPassCB.FogRange = 150.f;
 
-	// 이제 Light를 채워준다. Shader와 App에서 정의한 Lights의 개수와 종류가 같아야 한다.
+	// 이제 Light를 채워준다. 멤버의 값을 채워준다.
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
-	m_MainPassCB.Lights[0].Direction = { 0.57735f, -0.57735f, 0.57735f };
+	m_MainPassCB.Lights[0].Direction = m_RotatedLightDirections[0];
 	m_MainPassCB.Lights[0].Strength = { 0.9f, 0.9f, 0.8f };
-	m_MainPassCB.Lights[1].Direction = { -0.57735f, -0.57735f, 0.57735f };
+	m_MainPassCB.Lights[1].Direction = m_RotatedLightDirections[1];
 	m_MainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
-	m_MainPassCB.Lights[2].Direction = { 0.0f, -0.707f, -0.707f };
+	m_MainPassCB.Lights[2].Direction = m_RotatedLightDirections[2];
 	m_MainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void ShadowMappingApp::AnimateMaterials(const GameTimer& _gt)
+void ShadowMappingApp::UpdateShadowPassCB(const GameTimer& _gt)
 {
-}
+	/* 
+	XMMATRIX ViewMat = m_Camera.GetViewMat();
+	XMMATRIX ProjMat = m_Camera.GetProjMat();
 
+	XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
+
+	XMVECTOR DetViewMat = XMMatrixDeterminant(ViewMat);
+	XMMATRIX InvViewMat = XMMatrixInverse(&DetViewMat, ViewMat);
+
+	XMVECTOR DetProjMat = XMMatrixDeterminant(ProjMat);
+	XMMATRIX InvProjMat = XMMatrixInverse(&DetProjMat, ProjMat);
+
+	XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
+	XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
+
+	// 그림자 변환 행렬도 passCB로 넘겨준다.
+	XMMATRIX shadowMat = XMLoadFloat4x4(&m_ShadowMat);
+
+	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
+	XMStoreFloat4x4(&m_MainPassCB.ProjMat, XMMatrixTranspose(ProjMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
+	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
+	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
+	XMStoreFloat4x4(&m_MainPassCB.ShadowMat, XMMatrixTranspose(shadowMat));
+
+	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
+	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
+	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
+	m_MainPassCB.NearZ = 0.01f;
+	m_MainPassCB.FarZ = 1000.f;
+	m_MainPassCB.TotalTime = _gt.GetTotalTime();
+	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
+
+	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
+	// 두번째 offset에 넣어준다.
+	currPassCB->CopyData(1, m_MainPassCB);
+	*/
+}
 
 void ShadowMappingApp::LoadTextures()
 {
@@ -1272,6 +1413,10 @@ void ShadowMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, cons
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
+}
+
+void ShadowMappingApp::DrawSceneToShadowMap()
+{
 }
 
 float ShadowMappingApp::GetHillsHeight(float _x, float _z) const

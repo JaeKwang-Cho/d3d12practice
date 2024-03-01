@@ -45,7 +45,7 @@ struct PassConstants {
 	XMFLOAT4X4 InvVPMat = MathHelper::Identity4x4();
 
 	// App에서 계산해서 넘겨주는 광원에서 그림자 텍스쳐로 넘어가는 그림자 변환 행렬이다.
-	XMFLOAT4X4 ShadowTransform = MathHelper::Identity4x4();
+	XMFLOAT4X4 ShadowMat = MathHelper::Identity4x4();
 
 	XMFLOAT3 EyePosW = { 0.f, 0.f, 0.f };
 	float cbPerPassPad1 = 0.f;
