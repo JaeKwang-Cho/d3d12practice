@@ -21,7 +21,7 @@ VertexOut VS(VertexIn vin)
 {
     VertexOut vout = (VertexOut) 0.0f;
 
-    // App에서 이미 호모 공간으로 변형되어 넘어온다.
+    // App에서 이미 호모 공간으로 넘어온다.
     vout.PosH = float4(vin.PosL, 1.0f);
 	
     vout.TexC = vin.TexC;

@@ -73,7 +73,7 @@ float4 PS(VertexOut pin) : SV_Target
     uint normalMatIndex = matData.NormalMapIndex;
     
     // 텍스쳐 배열에서 동적으로 텍스쳐를 가져온다.
-    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamLinearWrap, pin.TexC);
+    diffuseAlbedo *= gTextureMaps[diffuseTexIndex].Sample(gSamAnisotropicWrap, pin.TexC);
         
 #ifdef ALPHA_TEST
     // 알파 값이 일정값 이하면 그냥 잘라버린다.

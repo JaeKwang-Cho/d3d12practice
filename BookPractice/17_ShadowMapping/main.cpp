@@ -14,7 +14,6 @@
 #include "../Common/Camera.h"
 
 const int g_NumFrameResources = 3;
-const UINT CubeMapSize = 512;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -86,12 +85,10 @@ private:
 	void OnKeyboardInput(const GameTimer _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
-	void UpdateMaterialCBs(const GameTimer& _gt);
+	void UpdateMaterialBuffer(const GameTimer& _gt);
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
-	
-
 
 	// ==== Init ====
 	void LoadTextures();
@@ -114,7 +111,7 @@ private:
 	XMFLOAT3 GetHillsNormal(float _x, float _z)const;
 
 	// 정적 샘플러 구조체를 미리 만드는 함수이다.
-	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> GetStaticSamplers();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> GetStaticSamplers();
 
 private:
 	std::vector<std::unique_ptr<FrameResource>> m_FrameResources;
@@ -350,7 +347,7 @@ void ShadowMappingApp::Update(const GameTimer& _gt)
 
 	AnimateMaterials(_gt);
 	UpdateObjectCBs(_gt);
-	UpdateMaterialCBs(_gt);
+	UpdateMaterialBuffer(_gt);
 	// PassCB에 Shadow Transform이 담기니까, 순서를 잘 맞춰줘야 한다.
 	UpdateShadowTransform(_gt);
 	UpdateMainPassCB(_gt);
@@ -427,7 +424,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
 	m_CommandList->OMSetRenderTargets(1, &BackBufferHandle, true, &DepthStencilHandle);
 
-	// 현재 Frame Constant Buffer를 업데이트한다.
+	// 현재 Frame Constant Buffer 0 offset을 업데이트한다.
 	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
 	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress()); // Pass는 1번
 
@@ -436,6 +433,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 
 	// drawcall을 걸어준다.
 	// 일단 불투명한 애들을 먼저 싹 그려준다.
+	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
 	// shadow debug layer를 그려준다.
@@ -578,7 +576,7 @@ void ShadowMappingApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
-void ShadowMappingApp::UpdateMaterialCBs(const GameTimer& _gt)
+void ShadowMappingApp::UpdateMaterialBuffer(const GameTimer& _gt)
 {
 	UploadBuffer<MaterialData>* currMaterialCB = m_CurrFrameResource->MaterialBuffer.get();	
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
@@ -681,7 +679,7 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
 	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
-	m_MainPassCB.NearZ = 0.01f;
+	m_MainPassCB.NearZ = 1.f;
 	m_MainPassCB.FarZ = 1000.f;
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
@@ -705,9 +703,9 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 
 void ShadowMappingApp::UpdateShadowPassCB(const GameTimer& _gt)
 {
-	/* 
-	XMMATRIX ViewMat = m_Camera.GetViewMat();
-	XMMATRIX ProjMat = m_Camera.GetProjMat();
+	// 광원 입장에서 보이는 영역을 정의한다.
+	XMMATRIX ViewMat = XMLoadFloat4x4(&m_LightViewMat);
+	XMMATRIX ProjMat = XMLoadFloat4x4(&m_LightProjMat);
 
 	XMMATRIX VPMat = XMMatrixMultiply(ViewMat, ProjMat);
 
@@ -720,29 +718,25 @@ void ShadowMappingApp::UpdateShadowPassCB(const GameTimer& _gt)
 	XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
 	XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
 
-	// 그림자 변환 행렬도 passCB로 넘겨준다.
-	XMMATRIX shadowMat = XMLoadFloat4x4(&m_ShadowMat);
-
 	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.ProjMat, XMMatrixTranspose(ProjMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
 	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
-	XMStoreFloat4x4(&m_MainPassCB.ShadowMat, XMMatrixTranspose(shadowMat));
+	// 광원입장에서 그리기로한 정보를 넘겨줘야 한다.
+	UINT w = m_ShadowMap->GetWidth();
+	UINT h = m_ShadowMap->GetHeight();
 
-	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
-	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
-	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / m_ClientWidth, 1.f / m_ClientHeight);
-	m_MainPassCB.NearZ = 0.01f;
-	m_MainPassCB.FarZ = 1000.f;
-	m_MainPassCB.TotalTime = _gt.GetTotalTime();
-	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
+	m_MainPassCB.EyePosW = m_LightPosW;
+	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)w, (float)h);
+	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / w, 1.f / h);
+	m_MainPassCB.NearZ = m_LightNearZ;
+	m_MainPassCB.FarZ = m_LightFarZ;
 
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	// 두번째 offset에 넣어준다.
 	currPassCB->CopyData(1, m_MainPassCB);
-	*/
 }
 
 void ShadowMappingApp::LoadTextures()
@@ -767,7 +761,7 @@ void ShadowMappingApp::LoadTextures()
 		L"../Textures/tile_nmap.dds",
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
-		L"../Textures/snowcube1024.dds"
+		L"../Textures/desertcube1024.dds"
 	};
 
 	for (int i = 0; i < (int)texNames.size(); ++i)
@@ -790,28 +784,28 @@ void ShadowMappingApp::BuildRootSignature()
 	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 	UINT numOfParameter = 5;
 
-	// TextureCube가 넘어가는 Table
+	// TextureCube와 ShadowMap이 Srv로 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable0;
-	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 0);
+	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0);
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
 	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 10개로 만들어 준다. 
 	// 이제 노멀맵도 넘어간다.
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 16, 1, 0); // space0 / t1 - texture 정보
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 2, 0); // space0 / t2 - texture 정보
 
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
 	slotRootParameter[1].InitAsConstantBufferView(1); // b1 - PassConstants
 	slotRootParameter[2].InitAsShaderResourceView(0, 1); // t0 - Material Structred Buffer, Space도 1로 지정해준다.
-	// D3D12_SHADER_VISIBILITY_ALL로 해줘야 모든 쉐이더에서 볼 수 있다.
-	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_ALL); // space0, t0 - TextureCube
-	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_ALL); // space0, t1 - Texture2D Array
+	// D3D12_SHADER_VISIBILITY_ALL로 해주면 모든 쉐이더에서 볼 수 있다.
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t0 ~ t1 - TextureCube
+	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t2 - Texture2D Array
 
 	// DirectX에서 제공하는 Heap을 만들지 않고, Sampler를 생성할 수 있게 해주는
 	// Static Sampler 방법이다. 최대 2000개 생성 가능
 	// (원래는 D3D12_DESCRIPTOR_HEAP_DESC 가지고 D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER막 해줘야 한다.)
-	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> staticSamplers = GetStaticSamplers();
+	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> staticSamplers = GetStaticSamplers();
 
 	// IA에서 값이 들어가도록 설정한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
@@ -848,7 +842,7 @@ void ShadowMappingApp::BuildRootSignature()
 void ShadowMappingApp::BuildDescriptorHeaps()
 {
 	// Descriptor Count는 좀 넘겨도 된다. 부족한게 문제가 생기는 것이다.
-	const int textureDescriptorCount = 16;
+	const int textureDescriptorCount = 14;
 
 	int viewCount = 0;
 
@@ -901,8 +895,37 @@ void ShadowMappingApp::BuildDescriptorHeaps()
 	srvDesc.Format = skyCubeMap->GetDesc().Format;
 
 	m_d3dDevice->CreateShaderResourceView(skyCubeMap, &srvDesc, viewHandle);
+	m_SkyTexHeapIndex = viewCount++;
 
-	m_SkyTexHeapIndex = viewCount;
+	// 미리 맴버에다가 offset을 저장하고.
+	m_ShadowMapHeapIndex = viewCount++;
+	m_NullCubeSrvIndex = viewCount++;
+	m_NullTexSrvIndex = viewCount++;
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuStart = m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
+	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuStart = m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
+	D3D12_CPU_DESCRIPTOR_HANDLE dsvCpuStart = m_DsvHeap->GetCPUDescriptorHandleForHeapStart();
+
+	// 안쓰는 Cube Srv와 Tex Srv를 nullptr을 굳이 넣어주는 이유는 잘 모르겠지만...
+	CD3DX12_CPU_DESCRIPTOR_HANDLE nullSrv = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_NullCubeSrvIndex, m_CbvSrvUavDescriptorSize);
+	m_NullSrv = CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_NullCubeSrvIndex, m_CbvSrvUavDescriptorSize);
+
+	m_d3dDevice->CreateShaderResourceView(nullptr, &srvDesc, nullSrv);
+	nullSrv.Offset(1, m_CbvSrvUavDescriptorSize);
+
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	srvDesc.Texture2D.MostDetailedMip = 0;
+	srvDesc.Texture2D.MipLevels = 1;
+	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;
+	m_d3dDevice->CreateShaderResourceView(nullptr, &srvDesc, nullSrv);
+
+	// 클래스 인스턴스에 있는 텍스쳐 들을 view heap과 연결해준다.
+	m_ShadowMap->BuildDescriptors(
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_ShadowMapHeapIndex, m_CbvSrvUavDescriptorSize),
+		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_ShadowMapHeapIndex, m_CbvSrvUavDescriptorSize),
+		CD3DX12_CPU_DESCRIPTOR_HANDLE(dsvCpuStart, 1, m_DsvDescriptorSize) // 두번째 dsv offset을 가진다.
+	);
 }
 
 void ShadowMappingApp::BuildShadersAndInputLayout()
@@ -915,7 +938,14 @@ void ShadowMappingApp::BuildShadersAndInputLayout()
 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "PS", "ps_5_1");
-	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\16_NormalMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
+
+	m_Shaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["shadowOpaquePS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "PS", "ps_5_1");
+	m_Shaders["shadowAlphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", alphaTestDefines, "PS", "ps_5_1");
+	 
+	m_Shaders["debugVS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
@@ -937,6 +967,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
 	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
+	GeometryGenerator::MeshData quad = geoGenerator.CreateQuad(0.0f, 0.0f, 1.0f, 1.0f, 0.0f); // 그림자 디버깅용 창을 하나 만든다.
 
 	// 이거를 하나의 버퍼로 전부 연결한다.
 
@@ -946,12 +977,14 @@ void ShadowMappingApp::BuildStageGeometry()
 	UINT gridVertexOffset = (UINT)box.Vertices.size();
 	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
 	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
+	UINT quadVertexOffset = cylinderVertexOffset + (UINT)cylinder.Vertices.size();
 
 	// index offset
 	UINT boxIndexOffset = 0;
 	UINT gridIndexOffset = (UINT)box.Indices32.size();
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
 	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
+	UINT quadIndexOffset = cylinderIndexOffset + (UINT)cylinder.Indices32.size();
 
 	// 한방에 할꺼라서 MeshGeometry에 넣을
 	// SubGeometry로 정의한다.
@@ -970,18 +1003,23 @@ void ShadowMappingApp::BuildStageGeometry()
 	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
 	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
 
-
 	SubmeshGeometry cylinderSubmesh;
 	cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
 	cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
 	cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
+
+	SubmeshGeometry quadSubmesh;
+	quadSubmesh.IndexCount = (UINT)quad.Indices32.size();
+	quadSubmesh.StartIndexLocation = quadIndexOffset;
+	quadSubmesh.BaseVertexLocation = quadVertexOffset;
 
 	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
 	size_t totalVertexCount =
 		box.Vertices.size() +
 		grid.Vertices.size() +
 		sphere.Vertices.size() +
-		cylinder.Vertices.size();
+		cylinder.Vertices.size() +
+		quad.Vertices.size();
 
 	std::vector<Vertex> vertices;
 	vertices.resize(totalVertexCount);
@@ -1019,12 +1057,21 @@ void ShadowMappingApp::BuildStageGeometry()
 		vertices[k].TangentU = cylinder.Vertices[i].TangentU;
 	}
 
+	for (int i = 0; i < quad.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = quad.Vertices[i].Position;
+		vertices[k].Normal = quad.Vertices[i].Normal;
+		vertices[k].TexC = quad.Vertices[i].TexC;
+		vertices[k].TangentU = quad.Vertices[i].TangentU;
+	}
+
 	// 이제 index 정보도 한곳에 다 옮긴다.
 	std::vector<std::uint16_t> indices;
 	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
 	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
 	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
+	indices.insert(indices.end(), std::begin(quad.GetIndices16()), std::end(quad.GetIndices16()));
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
@@ -1063,6 +1110,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	geo->DrawArgs["grid"] = gridSubmesh;
 	geo->DrawArgs["sphere"] = sphereSubmesh;
 	geo->DrawArgs["cylinder"] = cylinderSubmesh;
+	geo->DrawArgs["quad"] = quadSubmesh;
 
 	m_Geometries[geo->Name] = std::move(geo);
 }
@@ -1150,6 +1198,44 @@ void ShadowMappingApp::BuildPSOs()
 	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
+	// Shadow Map을 생성할 때 사용하는 PSO다
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowDrawPSODesc = opaquePSODesc;
+	// 생성되는 삼각형 마다, (여기서는 광원에서 바라보는)카메라와의 각도를 계산해서
+	// bias를 속성 값에 따라 계산해서 적용해준다. 이거는 예쁘게 나오는 값들을 실험적으로 찾아야 한다.
+	// 아래 속성 값들의 사용법 : https://learn.microsoft.com/ko-kr/windows/win32/direct3d11/d3d10-graphics-programming-guide-output-merger-stage-depth-bias
+	shadowDrawPSODesc.RasterizerState.DepthBias = 100000;
+	shadowDrawPSODesc.RasterizerState.DepthBiasClamp = 0.f;
+	shadowDrawPSODesc.RasterizerState.SlopeScaledDepthBias = 1.f;
+	shadowDrawPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["shadowVS"]->GetBufferPointer()),
+		m_Shaders["shadowVS"]->GetBufferSize()
+	};
+	shadowDrawPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["shadowOpaquePS"]->GetBufferPointer()),
+		m_Shaders["shadowOpaquePS"]->GetBufferSize()
+	};
+	// 얘는 Render Target이 없다.
+	shadowDrawPSODesc.RTVFormats[0] = DXGI_FORMAT_UNKNOWN;
+	shadowDrawPSODesc.NumRenderTargets = 0;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowDrawPSODesc, IID_PPV_ARGS(&m_PSOs["shadow_opaque"])));
+
+	// debug Layer용 PSO다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC debugPSODesc = opaquePSODesc;
+	debugPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["debugVS"]->GetBufferPointer()),
+		m_Shaders["debugVS"]->GetBufferSize()
+	};
+	debugPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["debugPS"]->GetBufferPointer()),
+		m_Shaders["debugPS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&debugPSODesc, IID_PPV_ARGS(&m_PSOs["debug"])));
+
+
 	// Sky용 PSO
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPSODesc = opaquePSODesc;
 
@@ -1175,7 +1261,8 @@ void ShadowMappingApp::BuildPSOs()
 
 void ShadowMappingApp::BuildFrameResources()
 {
-	UINT passCBCount = 1;
+	// Shadow Map 용으로 하나 더 필요하다.
+	UINT passCBCount = 2;
 
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1265,6 +1352,20 @@ void ShadowMappingApp::BuildRenderItems()
 
 	m_RenderItemLayer[(int)RenderLayer::Sky].push_back(skyRitem.get());
 	m_AllRenderItems.push_back(std::move(skyRitem));
+
+	std::unique_ptr<RenderItem> quadRitem = std::make_unique<RenderItem>();
+	quadRitem->WorldMat = MathHelper::Identity4x4();
+	quadRitem->TexTransform = MathHelper::Identity4x4();
+	quadRitem->ObjCBIndex = objCBIndex++;
+	quadRitem->Mat = m_Materials["brickMat"].get();
+	quadRitem->Geo = m_Geometries["shapeGeo"].get();
+	quadRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	quadRitem->IndexCount = quadRitem->Geo->DrawArgs["quad"].IndexCount;
+	quadRitem->StartIndexLocation = quadRitem->Geo->DrawArgs["quad"].StartIndexLocation;
+	quadRitem->BaseVertexLocation = quadRitem->Geo->DrawArgs["quad"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Debug].push_back(quadRitem.get());
+	m_AllRenderItems.push_back(std::move(quadRitem));
 
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 
@@ -1417,6 +1518,40 @@ void ShadowMappingApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, cons
 
 void ShadowMappingApp::DrawSceneToShadowMap()
 {
+	// 인스턴스 맴버 값을 이용해서, Rasterization 속성 값을 설정한다.
+	D3D12_VIEWPORT shadowViewPort = m_ShadowMap->GetViewport();
+	m_CommandList->RSSetViewports(1, &shadowViewPort);
+	D3D12_RECT shadowRect = m_ShadowMap->GetScissorRect();
+	m_CommandList->RSSetScissorRects(1, &shadowRect);
+
+	// Barrier 설정을 하고
+	CD3DX12_RESOURCE_BARRIER shadowDS_READ_WRITE = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	m_CommandList->ResourceBarrier(1, &shadowDS_READ_WRITE);
+
+	// Depth view를 clear해주고
+	m_CommandList->ClearDepthStencilView(
+		m_ShadowMap->GetDsv(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
+		1.f, 0, 0, nullptr);
+
+	// Render Target은 nullptr로 한다. depth 판정 값만 기록할 것이라, Depth-Stencil View만 넘겨준다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE shadowDsvHandle = m_ShadowMap->GetDsv();
+	m_CommandList->OMSetRenderTargets(0, nullptr, false, &shadowDsvHandle);
+
+	// pass CB을 frame resource의 두번째 CBV에 바인드해주고
+	UINT passCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(PassConstants));
+	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
+	D3D12_GPU_VIRTUAL_ADDRESS passCBAddress = passCB->GetGPUVirtualAddress() + passCBByteSize;
+	m_CommandList->SetGraphicsRootConstantBufferView(1, passCBAddress);
+
+	// 광원 입장에서 보는 물체들을 그린다.
+	m_CommandList->SetPipelineState(m_PSOs["shadow_opaque"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+
+	// Dsv Barrier를 다시 Read로 바꾼다.
+	CD3DX12_RESOURCE_BARRIER shadowDS_WRITE_READ = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
+	m_CommandList->ResourceBarrier(1, &shadowDS_WRITE_READ);
 }
 
 float ShadowMappingApp::GetHillsHeight(float _x, float _z) const
@@ -1442,7 +1577,7 @@ XMFLOAT3 ShadowMappingApp::GetHillsNormal(float _x, float _z) const
 	return n;
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> ShadowMappingApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
 	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.
@@ -1473,7 +1608,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 		D3D12_TEXTURE_ADDRESS_MODE_MIRROR); // addressW
 	// 근접점 필터링 - 색 채우기
 	CD3DX12_STATIC_SAMPLER_DESC pointBorder(
-		3, // s3 - 레지스터 번호
+		3, // s4 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_POINT, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
@@ -1482,7 +1617,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 
 	// 주변선형 보간 필터링 - 반복
 	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
-		4, // s2 - 레지스터 번호
+		4, // s5 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
@@ -1490,21 +1625,21 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 
 	// 주변선형 보간 필터링 - 자르고 늘이기
 	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
-		5, // s3 - 레지스터 번호
+		5, // s6 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
 	// 주변선형 보간 필터링 - 미러
 	const CD3DX12_STATIC_SAMPLER_DESC linearMirror(
-		6, // s3 - 레지스터 번호
+		6, // s7 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_MIRROR,  // addressV
 		D3D12_TEXTURE_ADDRESS_MODE_MIRROR); // addressW
 	// 주변선형 보간 필터링 - 색채우기
 	CD3DX12_STATIC_SAMPLER_DESC linearBorder(
-		7, // s3 - 레지스터 번호
+		7, // s8 - 레지스터 번호
 		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
@@ -1512,7 +1647,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 	linearBorder.BorderColor = D3D12_STATIC_BORDER_COLOR::D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK;
 
 	const CD3DX12_STATIC_SAMPLER_DESC anisotropicWrap(
-		8, // s4 - 레지스터 번호
+		8, // s9 - 레지스터 번호
 		D3D12_FILTER_ANISOTROPIC, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
@@ -1521,7 +1656,7 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
 
 	const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
-		9, // s5 - 레지스터 번호
+		9, // s10 - 레지스터 번호
 		D3D12_FILTER_ANISOTROPIC, // filter
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
 		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
@@ -1529,8 +1664,19 @@ std::array<const CD3DX12_STATIC_SAMPLER_DESC, 10> ShadowMappingApp::GetStaticSam
 		0.0f,                              // LOD를 계산하는 offset(bias) 값이라고 한다.
 		8);                                // 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
 
+	const CD3DX12_STATIC_SAMPLER_DESC SamplerComparisonStateForShadow(
+		10, // s11 - 레지스터 번호
+		D3D12_FILTER_COMPARISON_MIN_MAG_LINEAR_MIP_POINT, // hlsl에서 SampleCmp를 사용할 수 있게하는 filter이다.
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU (테두리 색으로 지정한다.)
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressW
+		0.0f,                              // LOD를 계산하는 offset(bias) 값이라고 한다.
+		16,									// 최대 비등방 값 (높을 수록 비싸고, 예뻐진다.)
+		D3D12_COMPARISON_FUNC_LESS_EQUAL, // 샘플링된 데이터 비교 옵션이다. (원본이 비교보다 작거나 같으면 넘겨준다.)
+		D3D12_STATIC_BORDER_COLOR_OPAQUE_BLACK);                                 
+
 	return {
 		pointWrap, pointClamp, pointMirror, pointBorder,
 		linearWrap, linearClamp, linearMirror, linearBorder,
-		anisotropicWrap, anisotropicClamp };
+		anisotropicWrap, anisotropicClamp, SamplerComparisonStateForShadow };
 }

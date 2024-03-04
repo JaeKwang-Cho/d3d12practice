@@ -11,7 +11,7 @@ ShadowMap::ShadowMap(ID3D12Device* _device, UINT _width, UINT _height)
 	m_Width = _width;
 	m_Height = _height;
 
-	m_Viewport = { 0.f, 0.f, (float)_width, (float)_height, 0.f, 0.f };
+	m_Viewport = { 0.f, 0.f, (float)_width, (float)_height, 0.f, 1.f };
 	m_ScissorRect = { 0, 0, (int)_width, (int)_height };
 
 	BuildResource();
@@ -60,7 +60,7 @@ void ShadowMap::BuildDescriptors()
 	dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
 	dsvDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT; //±íÀÌ 24, ½ºÅÙ½Ç 8ºñÆ® »ç¿ë
 	dsvDesc.Texture2D.MipSlice = 0;
-	m_d3dDevice->CreateDepthStencilView(m_ShadowMap.Get(), &dsvDesc, m_hCpuSrv);
+	m_d3dDevice->CreateDepthStencilView(m_ShadowMap.Get(), &dsvDesc, m_hCpuDsv);
 }
 
 void ShadowMap::BuildResource()
@@ -85,8 +85,9 @@ void ShadowMap::BuildResource()
 	optClear.DepthStencil.Depth = 1.0f;
 	optClear.DepthStencil.Stencil = 0;
 
+	D3D12_HEAP_PROPERTIES heapDefaultProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	ThrowIfFailed(m_d3dDevice->CreateCommittedResource(
-		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+		&heapDefaultProps,
 		D3D12_HEAP_FLAG_NONE,
 		&texDesc,
 		D3D12_RESOURCE_STATE_GENERIC_READ,
