@@ -32,6 +32,9 @@
     <None Include="Shaders\ShadowDebug.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Screen.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FrameResource.h" />
@@ -64,6 +67,7 @@
     <ClInclude Include="..\Common\UploadBuffer.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="ScreenMap.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ShadowMap.cpp" />
@@ -90,5 +94,6 @@
     <ClCompile Include="..\Common\MathHelper.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="ScreenMap.cpp" />
   </ItemGroup>
 </Project>

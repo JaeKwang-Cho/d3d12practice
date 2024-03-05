@@ -44,6 +44,7 @@
     <ClInclude Include="..\Common\UploadBuffer.h" />
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="ScreenMap.h" />
     <ClInclude Include="ShadowMap.h" />
   </ItemGroup>
   <ItemGroup>
@@ -56,6 +57,7 @@
     <ClCompile Include="..\Common\MathHelper.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="ScreenMap.cpp" />
     <ClCompile Include="ShadowMap.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -65,6 +67,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\ShadowDebug.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Screen.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

@@ -56,6 +56,8 @@ Texture2D gTextureMaps[10] : register(t2);
 //StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
+Texture2D gScreenMap : register(t0, space2);
+
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
 SamplerState gSamPointMirror : register(s2);
