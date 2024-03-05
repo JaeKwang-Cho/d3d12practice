@@ -2,6 +2,10 @@
 // ShadowMappingApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
 #define PRAC1 (1)
+#if PRAC1
+#define PRAC1_ORTHO (0)
+#define PRAC1_PERSP (1 && !PRAC1_ORTHO)
+#endif
 
 #include "../Common/d3dApp.h"
 #include "../Common/UploadBuffer.h"
@@ -96,6 +100,7 @@ private:
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
 #if PRAC1
+	void UpdateScreenCamera(const GameTimer& _gt);
 	void UpdateScreenPassCB(const GameTimer& _gt);
 #endif 
 
@@ -395,6 +400,7 @@ void ShadowMappingApp::Update(const GameTimer& _gt)
 	UpdateMainPassCB(_gt);
 	UpdateShadowPassCB(_gt);
 #if PRAC1
+	UpdateScreenCamera(_gt);
 	UpdateScreenPassCB(_gt);
 #endif
 }
@@ -441,7 +447,6 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 
 #if PRAC1
 	// ==== 또 다른 카메라에서 화면 그리기 ====
-	// 여기 안에서 그림자 그려주기도 시도하기
 	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
 	DrawSceneToScreenMap();
 #endif
@@ -488,9 +493,11 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
+#if !PRAC1
 	// shadow debug layer를 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
+#endif
 
 	// 하늘을 맨 마지막에 그려주는 것이 depth test 성능상 좋다고 한다. 
 	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
@@ -690,6 +697,7 @@ void ShadowMappingApp::UpdateShadowTransform(const GameTimer& _gt)
 	m_LightFarZ = farZ;
 
 	// orthographic projection Mat을 생성한다.
+
 	XMMATRIX lightProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
 
 	// NDC 공간을 [-1, 1] 텍스쳐 공간으로 [0, 1] 바꿔준다.
@@ -704,16 +712,6 @@ void ShadowMappingApp::UpdateShadowTransform(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_LightViewMat, lightViewMat);
 	XMStoreFloat4x4(&m_LightProjMat, lightProjMat);
 	XMStoreFloat4x4(&m_ShadowMat, ShadowMat);
-
-#if PRAC1
-	m_ScreenCameraPosW = m_LightPosW;
-	m_ScreenViewMat = m_LightViewMat;
-	m_ScreenCameraNearZ = nearZ;
-	m_ScreenCameraFarZ = farZ;
-
-	XMMATRIX screenProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
-	XMStoreFloat4x4(&m_ScreenProjMat, screenProjMat);
-#endif
 }
 
 void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
@@ -804,6 +802,49 @@ void ShadowMappingApp::UpdateShadowPassCB(const GameTimer& _gt)
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	// 두번째 offset에 넣어준다.
 	currPassCB->CopyData(1, m_MainPassCB);
+}
+
+void ShadowMappingApp::UpdateScreenCamera(const GameTimer& _gt)
+{
+	// 일단은 첫번째 디렉셔널 라이트에만 그림자를 만든다.
+	XMVECTOR sCameraDir = XMLoadFloat3(&m_RotatedLightDirections[1]);
+	// ViewMat을 생성하기 위한 속성을 정의하고
+	XMVECTOR sCameraPos = -2.f * m_SceneBounds.Radius * sCameraDir;
+	XMVECTOR targetPos = XMLoadFloat3(&m_SceneBounds.Center);
+	XMVECTOR sCameraUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	// 광원에서 바라보는 ViewMat을 생성한다.
+	XMMATRIX sCameraViewMat = XMMatrixLookAtLH(sCameraPos, targetPos, sCameraUp);
+
+	// 맴버를 업데이트한다.
+	XMStoreFloat3(&m_ScreenCameraPosW, sCameraPos);
+
+	// 월드의 중심을 광원 view 좌표계로 이동한다.
+	XMFLOAT3 sphereCenterSCameraSpace;
+	XMStoreFloat3(&sphereCenterSCameraSpace, XMVector3TransformCoord(targetPos, sCameraViewMat));
+
+	// 직교 투영을 위한 viewport 속성을 설정한다.
+	float left = sphereCenterSCameraSpace.x - m_SceneBounds.Radius;
+	float right = sphereCenterSCameraSpace.x + m_SceneBounds.Radius;
+	float bottom = sphereCenterSCameraSpace.y - m_SceneBounds.Radius;
+	float top = sphereCenterSCameraSpace.y + m_SceneBounds.Radius;
+	float nearZ = sphereCenterSCameraSpace.z - m_SceneBounds.Radius;
+	float farZ = sphereCenterSCameraSpace.z + m_SceneBounds.Radius;
+
+	// 멤버를 업데이트 한다.
+	m_ScreenCameraNearZ = nearZ;
+	m_ScreenCameraFarZ = farZ;
+
+#if PRAC1_PERSP
+	// perspectiv projection Mat을 생성한다.
+	XMMATRIX sCameraProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.f, nearZ, farZ);
+#elif PRAC1_ORTHO
+	// orthographic projection Mat을 생성한다.
+	XMMATRIX sCameraProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
+#endif
+
+	
+	XMStoreFloat4x4(&m_ScreenViewMat, sCameraViewMat);
+	XMStoreFloat4x4(&m_ScreenProjMat, sCameraProjMat);
 }
 
 void ShadowMappingApp::UpdateScreenPassCB(const GameTimer& _gt)
@@ -1585,7 +1626,7 @@ void ShadowMappingApp::BuildRenderItems()
 
 #if PRAC1 
 	std::unique_ptr<RenderItem> screenRitem = std::make_unique<RenderItem>();
-	XMMATRIX screenTransformMat = XMMatrixScaling(0.8f, 1.f, 1.5f) * XMMatrixRotationZ(- XM_PIDIV2) * XMMatrixTranslation(-10.f, 4.f, 7.5f);
+	XMMATRIX screenTransformMat = XMMatrixScaling(1.5f, 1.f, 1.5f) * XMMatrixRotationZ(- XM_PIDIV2) * XMMatrixTranslation(-10.f, 7.5f, 7.5f);
 	XMStoreFloat4x4(&screenRitem->WorldMat, screenTransformMat);
 	XMMATRIX screenTexMat = XMMatrixRotationZ(XM_PIDIV2);
 	XMStoreFloat4x4(&screenRitem->TexTransform, screenTexMat);
