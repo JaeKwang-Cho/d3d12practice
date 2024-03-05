@@ -56,7 +56,7 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     vout.TexC = mul(texC, matData.MaterialTransform).xy;
     
     // PassCB에서 넘겨준 행렬로, 투영공간으로 변환한다.
-    vout.ShadowPosH = mul(float4(vin.PosL, 1.f), gShadowTransform);
+    vout.ShadowPosH = mul(posW, gShadowTransform);
     
     return vout;
 }

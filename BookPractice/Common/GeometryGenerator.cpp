@@ -719,36 +719,49 @@ GeometryGenerator::MeshData GeometryGenerator::CreateQuad(float _x, float _y, fl
 	// 화면을 그리는 좌표계인
 	// NDC(Normalize Device Coordinate)로 나타낸다.
 	meshData.Vertices[0] = Vertex(
-        _x, _y - _h, _depth,
+        _x, _y , _depth,
 		0.0f, 0.0f, -1.0f,
 		1.0f, 0.0f, 0.0f,
 		0.0f, 1.0f);
 
 	meshData.Vertices[1] = Vertex(
-		_x, _y, _depth,
+		_x, _y + _h, _depth,
 		0.0f, 0.0f, -1.0f,
 		1.0f, 0.0f, 0.0f,
 		0.0f, 0.0f);
 
 	meshData.Vertices[2] = Vertex(
-		_x+_w, _y, _depth,
+		_x+_w, _y + _h, _depth,
 		0.0f, 0.0f, -1.0f,
 		1.0f, 0.0f, 0.0f,
 		1.0f, 0.0f);
 
 	meshData.Vertices[3] = Vertex(
-		_x+_w, _y-_h, _depth,
+		_x+_w, _y, _depth,
 		0.0f, 0.0f, -1.0f,
 		1.0f, 0.0f, 0.0f,
 		1.0f, 1.0f);
 
-	meshData.Indices32[0] = 0;
-	meshData.Indices32[1] = 1;
-	meshData.Indices32[2] = 2;
+	if (_w * _h < 0.f)
+	{
+		meshData.Indices32[0] = 0;
+		meshData.Indices32[1] = 2;
+		meshData.Indices32[2] = 1;
 
-	meshData.Indices32[3] = 0;
-	meshData.Indices32[4] = 2;
-	meshData.Indices32[5] = 3;
+		meshData.Indices32[3] = 0;
+		meshData.Indices32[4] = 3;
+		meshData.Indices32[5] = 2;
+	}
+	else
+	{
+		meshData.Indices32[0] = 0;
+		meshData.Indices32[1] = 1;
+		meshData.Indices32[2] = 2;
+
+		meshData.Indices32[3] = 0;
+		meshData.Indices32[4] = 2;
+		meshData.Indices32[5] = 3;
+	}
 
     return meshData;
 }

@@ -13,6 +13,8 @@
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
 
+#define PRAC1 (1)
+
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -694,9 +696,9 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.Lights[0].Direction = m_RotatedLightDirections[0];
 	m_MainPassCB.Lights[0].Strength = { 0.9f, 0.9f, 0.8f };
 	m_MainPassCB.Lights[1].Direction = m_RotatedLightDirections[1];
-	m_MainPassCB.Lights[1].Strength = { 0.3f, 0.3f, 0.3f };
+	m_MainPassCB.Lights[1].Strength = { 0.4f, 0.4f, 0.4f };
 	m_MainPassCB.Lights[2].Direction = m_RotatedLightDirections[2];
-	m_MainPassCB.Lights[2].Strength = { 0.15f, 0.15f, 0.15f };
+	m_MainPassCB.Lights[2].Strength = { 0.2f, 0.2f, 0.2f };
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	currPassCB->CopyData(0, m_MainPassCB);
 }
@@ -967,7 +969,10 @@ void ShadowMappingApp::BuildStageGeometry()
 	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
 	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
-	GeometryGenerator::MeshData quad = geoGenerator.CreateQuad(0.0f, 0.0f, 1.0f, 1.0f, 0.0f); // 그림자 디버깅용 창을 하나 만든다.
+	GeometryGenerator::MeshData quad = geoGenerator.CreateQuad(0.f, -1.f, 1.f, 1.f, 0.0f); // 그림자 디버깅용 창을 하나 만든다.
+#if PRAC1
+	GeometryGenerator::MeshData screen = geoGenerator.CreateGrid(10.f, 10.f, 4, 4);
+#endif
 
 	// 이거를 하나의 버퍼로 전부 연결한다.
 
@@ -978,6 +983,9 @@ void ShadowMappingApp::BuildStageGeometry()
 	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
 	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
 	UINT quadVertexOffset = cylinderVertexOffset + (UINT)cylinder.Vertices.size();
+#if PRAC1
+	UINT screenVertexOffset = quadVertexOffset + (UINT)quad.Vertices.size();
+#endif
 
 	// index offset
 	UINT boxIndexOffset = 0;
@@ -985,6 +993,9 @@ void ShadowMappingApp::BuildStageGeometry()
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
 	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
 	UINT quadIndexOffset = cylinderIndexOffset + (UINT)cylinder.Indices32.size();
+#if PRAC1
+	UINT screenIndexOffset = quadIndexOffset + (UINT)quad.Indices32.size();
+#endif
 
 	// 한방에 할꺼라서 MeshGeometry에 넣을
 	// SubGeometry로 정의한다.
@@ -1012,6 +1023,12 @@ void ShadowMappingApp::BuildStageGeometry()
 	quadSubmesh.IndexCount = (UINT)quad.Indices32.size();
 	quadSubmesh.StartIndexLocation = quadIndexOffset;
 	quadSubmesh.BaseVertexLocation = quadVertexOffset;
+#if PRAC1
+	SubmeshGeometry screenSubmesh;
+	screenSubmesh.IndexCount = (UINT)screen.Indices32.size();
+	screenSubmesh.StartIndexLocation = screenIndexOffset;
+	screenSubmesh.BaseVertexLocation = screenVertexOffset;
+#endif
 
 	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
 	size_t totalVertexCount =
@@ -1020,6 +1037,9 @@ void ShadowMappingApp::BuildStageGeometry()
 		sphere.Vertices.size() +
 		cylinder.Vertices.size() +
 		quad.Vertices.size();
+#if PRAC1
+	totalVertexCount += screen.Vertices.size();
+#endif
 
 	std::vector<Vertex> vertices;
 	vertices.resize(totalVertexCount);
@@ -1064,6 +1084,15 @@ void ShadowMappingApp::BuildStageGeometry()
 		vertices[k].TexC = quad.Vertices[i].TexC;
 		vertices[k].TangentU = quad.Vertices[i].TangentU;
 	}
+#if PRAC1
+	for (int i = 0; i < screen.Vertices.size(); ++i, ++k)
+	{
+		vertices[k].Pos = screen.Vertices[i].Position;
+		vertices[k].Normal = screen.Vertices[i].Normal;
+		vertices[k].TexC = screen.Vertices[i].TexC;
+		vertices[k].TangentU = screen.Vertices[i].TangentU;
+	}
+#endif
 
 	// 이제 index 정보도 한곳에 다 옮긴다.
 	std::vector<std::uint16_t> indices;
@@ -1072,6 +1101,9 @@ void ShadowMappingApp::BuildStageGeometry()
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
 	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
 	indices.insert(indices.end(), std::begin(quad.GetIndices16()), std::end(quad.GetIndices16()));
+#if PRAC1
+	indices.insert(indices.end(), std::begin(screen.GetIndices16()), std::end(screen.GetIndices16()));
+#endif
 
 	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
@@ -1111,6 +1143,9 @@ void ShadowMappingApp::BuildStageGeometry()
 	geo->DrawArgs["sphere"] = sphereSubmesh;
 	geo->DrawArgs["cylinder"] = cylinderSubmesh;
 	geo->DrawArgs["quad"] = quadSubmesh;
+#if PRAC1
+	geo->DrawArgs["screen"] = screenSubmesh;
+#endif
 
 	m_Geometries[geo->Name] = std::move(geo);
 }
@@ -1366,6 +1401,26 @@ void ShadowMappingApp::BuildRenderItems()
 
 	m_RenderItemLayer[(int)RenderLayer::Debug].push_back(quadRitem.get());
 	m_AllRenderItems.push_back(std::move(quadRitem));
+
+#if PRAC1 
+	std::unique_ptr<RenderItem> screenRitem = std::make_unique<RenderItem>();
+	XMMATRIX screenTransformMat = XMMatrixScaling(0.8f, 1.f, 1.5f) * XMMatrixRotationZ(- XM_PIDIV2) * XMMatrixTranslation(-10.f, 4.f, 7.5f);
+	XMStoreFloat4x4(&screenRitem->WorldMat, screenTransformMat);
+	XMMATRIX screenTexMat = XMMatrixRotationZ(-XM_PIDIV2);
+	//XMStoreFloat4x4(&screenRitem->TexTransform, screenTexMat);
+	//screenRitem->WorldMat = MathHelper::Identity4x4();
+	screenRitem->TexTransform = MathHelper::Identity4x4();
+	screenRitem->ObjCBIndex = objCBIndex++;
+	screenRitem->Mat = m_Materials["brickMat"].get();
+	screenRitem->Geo = m_Geometries["shapeGeo"].get();
+	screenRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+	screenRitem->IndexCount = screenRitem->Geo->DrawArgs["screen"].IndexCount;
+	screenRitem->StartIndexLocation = screenRitem->Geo->DrawArgs["screen"].StartIndexLocation;
+	screenRitem->BaseVertexLocation = screenRitem->Geo->DrawArgs["screen"].BaseVertexLocation;
+
+	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(screenRitem.get());
+	m_AllRenderItems.push_back(std::move(screenRitem));
+#endif
 
 	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
 

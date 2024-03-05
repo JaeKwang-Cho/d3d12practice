@@ -170,8 +170,8 @@ float CaclcShadowFactor(float4 shadowPosH)
     // 일단 호모공간의 점을 w로 나눠서 투영을 완료한다.
     // Homogeneous clip space -> NDC
     shadowPosH.xyz /= shadowPosH.w;
-    
     float depth = shadowPosH.z;
+    
     uint width, height, numMips;
     // 텍스쳐 정보 가져오기
     gShadowMap.GetDimensions(0, width, height, numMips);
@@ -192,6 +192,7 @@ float CaclcShadowFactor(float4 shadowPosH)
     {
         // 최상위 밉맵 (level 0)에서
         // 4 표본 PCF를 수행해주는 GPU 제공 코드이다.
+        // D3D12_COMPARISON_FUNC_LESS_EQUAL
         percentLit += gShadowMap.SampleCmpLevelZero(gSamShadow,
             shadowPosH.xy + offsets[i], depth).r;
     }

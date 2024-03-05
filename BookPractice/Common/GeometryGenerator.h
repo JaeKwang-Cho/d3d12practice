@@ -118,7 +118,7 @@ public:
 	///<summary>
 	/// 화면에 정렬되는 사각형을 그린다.
 	/// Post Processing을 하는데 주로 쓰인다.
-	/// 시작 x, 시작 y, 너비, 높이, 깊이
+	/// 시작 x, 시작 y, 너비(오른쪽으로), 높이(위로), 깊이
 	///</summary>
     MeshData CreateQuad(float _x, float _y, float _w, float _h, float _depth);
 
