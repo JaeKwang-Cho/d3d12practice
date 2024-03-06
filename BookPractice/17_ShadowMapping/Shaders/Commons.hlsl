@@ -55,12 +55,10 @@ Texture2D gTextureMaps[10] : register(t2);
 
 //StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
-#if PRAC0
+
+// Practice
 Texture2D gScreenMap : register(t0, space2);
-#endif
-#if PRAC1
-Texture2D gTextureFilmMap : register(t0, space2);
-#endif
+Texture2D gTextureFilmMap : register(t1, space2);
 
 SamplerState gSamPointWrap : register(s0);
 SamplerState gSamPointClamp : register(s1);
@@ -99,6 +97,7 @@ cbuffer cbPass : register(b1)
     // App에서 갱신한 광원의 위치로 갱신해서 
     // passCB로 넘겨준다.
     float4x4 gShadowTransform;
+    float4x4 gTextureFilmTransform;
     
     float3 gEyePosW;
     float cbPerPassad1;

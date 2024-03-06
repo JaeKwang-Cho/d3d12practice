@@ -20,7 +20,8 @@ struct VertexOut
 {
     float4 PosH : SV_POSITION;
     float4 ShadowPosH : POSITION0;
-    float3 PosW : POSITION1;
+    float4 TextureFilmPosH : POSITION1;
+    float3 PosW : POSITION2;
     float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
     float2 TexC : TEXCOORD;
@@ -57,6 +58,7 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     
     // PassCB에서 넘겨준 행렬로, 투영공간으로 변환한다.
     vout.ShadowPosH = mul(posW, gShadowTransform);
+    vout.TextureFilmPosH = mul(posW, gTextureFilmTransform);
     
     return vout;
 }
@@ -121,6 +123,9 @@ float4 PS(VertexOut pin) : SV_Target
     float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
+    
+    float4 projectedTextureColor = gTextureFilmMap.Sample(gSamLinearClamp, pin.TextureFilmPosH.xy);
+    litColor += projectedTextureColor;
 
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;
