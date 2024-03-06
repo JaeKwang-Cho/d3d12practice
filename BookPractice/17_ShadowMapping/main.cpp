@@ -7,11 +7,20 @@
 #define PRAC0_PERSP (!PRAC0_ORTHO)
 #endif
 
-#define PRAC1 (1)
+#define PRAC1 (0)
 #if PRAC1
 #define PRAC1_ORTHO (0)
 #define PRAC1_PERSP (!PRAC1_ORTHO)
+#define PRAC2 (1)
 #endif
+
+#define PRAC3 (0)
+#define PRAC4 (0)
+#define PRAC8 (0)
+#define PRAC9 (0)
+#define PRAC10 (0)
+
+#define PRACTICING (PRAC0 | PRAC1 | PRAC3 | PRAC4 | PRAC8 | PRAC9 | PRAC10)
 
 #include "../Common/d3dApp.h"
 #include "../Common/UploadBuffer.h"
@@ -244,7 +253,11 @@ private:
 	float m_LightRotationAngle = 0.0f;
 	XMFLOAT3 m_BaseLightDirections[3] = {
 		XMFLOAT3(0.57735f, -0.57735f, 0.57735f),
+#if PRAC1
+		XMFLOAT3(-0.65f, -0.4f, 0.65f),
+#else
 		XMFLOAT3(-0.57735f, -0.57735f, 0.57735f),
+#endif
 		XMFLOAT3(0.0f, -0.707f, -0.707f)
 	};
 	XMFLOAT3 m_RotatedLightDirections[3];
@@ -338,6 +351,35 @@ bool ShadowMappingApp::Initialize()
 	// 사용할 shadow map의 해상도는 2048 * 2048으로 한다.
 	m_ShadowMap = std::make_unique<ShadowMap>(
 		m_d3dDevice.Get(), 2048, 2048);
+
+	/*
+
+		float ReciprocalWidth = 1.0f / (ViewRight - ViewLeft);
+		float ReciprocalHeight = 1.0f / (ViewTop - ViewBottom);
+		float fRange = 1.0f / (NearZ - FarZ);
+
+		XMMATRIX M;
+		M.m[0][0] = ReciprocalWidth + ReciprocalWidth;
+		M.m[0][1] = 0.0f;
+		M.m[0][2] = 0.0f;
+		M.m[0][3] = 0.0f;
+
+		M.m[1][0] = 0.0f;
+		M.m[1][1] = ReciprocalHeight + ReciprocalHeight;
+		M.m[1][2] = 0.0f;
+		M.m[1][3] = 0.0f;
+
+		M.m[2][0] = 0.0f;
+		M.m[2][1] = 0.0f;
+		M.m[2][2] = fRange;
+		M.m[2][3] = 0.0f;
+
+		M.r[3] = XMVectorSet(-(ViewLeft + ViewRight) * ReciprocalWidth,
+							 -(ViewTop + ViewBottom) * ReciprocalHeight,
+							 fRange * NearZ,
+							 1.0f);
+		return M;
+	*/
 
 #if PRAC0
 	m_ScreenMap = std::make_unique<ScreenMap>(
@@ -528,7 +570,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-#if !(PRAC0 || PRAC1)
+#if !(PRACTICING)
 	// shadow debug layer를 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
@@ -731,9 +773,12 @@ void ShadowMappingApp::UpdateShadowTransform(const GameTimer& _gt)
 	m_LightNearZ = nearZ;
 	m_LightFarZ = farZ;
 
+#if PRAC3
+	XMMATRIX lightProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.f, nearZ, farZ);
+#else
 	// orthographic projection Mat을 생성한다.
-
 	XMMATRIX lightProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
+#endif
 
 	// NDC 공간을 [-1, 1] 텍스쳐 공간으로 [0, 1] 바꿔준다.
 	XMMATRIX T(
@@ -972,10 +1017,10 @@ void ShadowMappingApp::UpdateTextureFilmTransform(const GameTimer& _gt)
 	XMStoreFloat3(&sphereCenterFilmSpace, XMVector3TransformCoord(targetPos, tFilmViewMat));
 
 	// 직교 투영을 위한 viewport 속성을 설정한다.
-	float left = sphereCenterFilmSpace.x - m_SceneBounds.Radius;
-	float right = sphereCenterFilmSpace.x + m_SceneBounds.Radius;
-	float bottom = sphereCenterFilmSpace.y - m_SceneBounds.Radius;
-	float top = sphereCenterFilmSpace.y + m_SceneBounds.Radius;
+	float left = sphereCenterFilmSpace.x - m_SceneBounds.Radius / 4.f;
+	float right = sphereCenterFilmSpace.x + m_SceneBounds.Radius / 4.f;
+	float bottom = sphereCenterFilmSpace.y - m_SceneBounds.Radius / 4.f;
+	float top = sphereCenterFilmSpace.y + m_SceneBounds.Radius / 4.f;
 	float nearZ = sphereCenterFilmSpace.z - m_SceneBounds.Radius;
 	float farZ = sphereCenterFilmSpace.z + m_SceneBounds.Radius;
 
@@ -985,7 +1030,7 @@ void ShadowMappingApp::UpdateTextureFilmTransform(const GameTimer& _gt)
 
 #if PRAC1_PERSP
 	// perspectiv projection Mat을 생성한다.
-	XMMATRIX tFilmProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.f, nearZ, farZ);
+	XMMATRIX tFilmProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4 / 4.f, 1.f, nearZ, farZ);
 #elif PRAC1_ORTHO
 	// orthographic projection Mat을 생성한다.
 	XMMATRIX tFilmProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
@@ -1267,9 +1312,31 @@ void ShadowMappingApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO Prac2[] =
+	{
+		"PRAC1", "1",
+		"PRAC2", "1",
+		NULL, NULL
+	};
+
+	const D3D_SHADER_MACRO Prac8[] =
+	{
+		"PRAC8", "1",
+		NULL, NULL
+	};
+	
+
 #if PRAC1
+#if PRAC2
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac2, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac2, "PS", "ps_5_1");
+#else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac1, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac1, "PS", "ps_5_1");
+#endif
+#elif PRAC8
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac8, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", Prac8, "PS", "ps_5_1");
 #else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "PS", "ps_5_1");
@@ -1577,9 +1644,15 @@ void ShadowMappingApp::BuildPSOs()
 	// 생성되는 삼각형 마다, (여기서는 광원에서 바라보는)카메라와의 각도를 계산해서
 	// bias를 속성 값에 따라 계산해서 적용해준다. 이거는 예쁘게 나오는 값들을 실험적으로 찾아야 한다.
 	// 아래 속성 값들의 사용법 : https://learn.microsoft.com/ko-kr/windows/win32/direct3d11/d3d10-graphics-programming-guide-output-merger-stage-depth-bias
+#if PRAC10
+	shadowDrawPSODesc.RasterizerState.DepthBias = 100000;
+	shadowDrawPSODesc.RasterizerState.DepthBiasClamp = 100.f;
+	shadowDrawPSODesc.RasterizerState.SlopeScaledDepthBias = 100.f;
+#elif !PRAC9
 	shadowDrawPSODesc.RasterizerState.DepthBias = 100000;
 	shadowDrawPSODesc.RasterizerState.DepthBiasClamp = 0.f;
 	shadowDrawPSODesc.RasterizerState.SlopeScaledDepthBias = 1.f;
+#endif
 	shadowDrawPSODesc.VS =
 	{
 		reinterpret_cast<BYTE*>(m_Shaders["shadowVS"]->GetBufferPointer()),

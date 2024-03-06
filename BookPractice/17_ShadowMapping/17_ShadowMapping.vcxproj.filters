@@ -35,9 +35,6 @@
     <None Include="Shaders\Screen.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="Shaders\TextureProjection.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FrameResource.h" />

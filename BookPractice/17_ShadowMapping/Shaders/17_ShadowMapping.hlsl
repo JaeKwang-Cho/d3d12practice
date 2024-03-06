@@ -99,17 +99,41 @@ float4 PS(VertexOut pin) : SV_Target
     
     // 일단은 첫번째 광원에 대해서만, 그림자를 설정한다.
     float3 shadowFactor = float3(1.f, 1.f, 1.f);
+#if PRAC8
+    pin.ShadowPosH.xyz /= pin.ShadowPosH.w;
+    float depthfromLight = pin.ShadowPosH.z;
+    float depthfromMap = gShadowMap.Sample(gSamLinearBorder, pin.ShadowPosH.xy);
+    [branch]
+    if(depthfromMap <= depthfromLight){
+        shadowFactor[0] = 0;
+    }else{
+        shadowFactor[0] = 1;
+    }
+#else
     shadowFactor[0] = CaclcShadowFactor(pin.ShadowPosH);
+#endif
 
     // 광택을 설정하고 (a 채널에 shininess 값이 들어있는 경우도 있다.)
     const float shininess = (1.0f - roughness) * normalMapSample.a;
     // 구조체를 채운 다음
     Material mat = { diffuseAlbedo, fresnelR0, shininess };
-    
+        
     // 이전에 정의 했던 식을 이용해서 넘긴다.    
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
         bumpedNormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
+#if PRAC2
+    pin.TextureFilmPosH.xyz /= pin.TextureFilmPosH.w;
+    float4 projectedTextureColor = gTextureFilmMap.Sample(gSamLinearBorder, pin.TextureFilmPosH.xy);
+    float3 checkBlack = projectedTextureColor.xyz;
+    float checkBlackLen = length(checkBlack);
+    
+    [branch]
+    if(checkBlackLen <= 0.f){
+        directLight = float4(0.f, 0.f, 0.f, 0.f);
+    }
+#endif
+    
     float4 litColor = ambient + directLight;
     
 
@@ -127,14 +151,10 @@ float4 PS(VertexOut pin) : SV_Target
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
     
-#if PRAC1    
+#if PRAC1 && !PRAC2
     pin.TextureFilmPosH.xyz /= pin.TextureFilmPosH.w;
     float4 projectedTextureColor = gTextureFilmMap.Sample(gSamLinearClamp, pin.TextureFilmPosH.xy);
     litColor.rgb += (projectedTextureColor.rgb *  projectedTextureColor.a);
-#endif
-
-#if PRAC2
-    // 보더 써가지고 빛 없애보기
 #endif
     
     // diffuse albedo에서 alpha값을 가져온다.
