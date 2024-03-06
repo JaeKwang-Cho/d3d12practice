@@ -1,10 +1,16 @@
 ﻿//***************************************************************************************
 // ShadowMappingApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
+#define PRAC0 (0)
+#if PRAC0
+#define PRAC0_ORTHO (0)
+#define PRAC0_PERSP (1 && !PRAC0_ORTHO)
+#endif
+
 #define PRAC1 (1)
 #if PRAC1
-#define PRAC1_ORTHO (0)
-#define PRAC1_PERSP (1 && !PRAC1_ORTHO)
+#define PRAC1_ORTHO (1)
+#define PRAC1_PERSP (0 && !PRAC1_ORTHO)
 #endif
 
 #include "../Common/d3dApp.h"
@@ -17,7 +23,7 @@
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
 
-#if PRAC1
+#if PRAC0
 #include "ScreenMap.h"
 #endif
 
@@ -65,7 +71,9 @@ enum class RenderLayer : int
 	Opaque = 0,
 	Debug,
 	Sky, 
+#if PRAC0
 	Screen,
+#endif
 	Count
 };
 
@@ -99,10 +107,13 @@ private:
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
-#if PRAC1
+#if PRAC0
 	void UpdateScreenCamera(const GameTimer& _gt);
 	void UpdateScreenPassCB(const GameTimer& _gt);
 #endif 
+#if PRAC1
+	void UpdateTextureFilmTransform(const GameTimer& _gt);
+#endif
 
 	// ==== Init ====
 	void LoadTextures();
@@ -119,7 +130,7 @@ private:
 	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
 	void DrawSceneToShadowMap(); // 디버깅용 그림자 화면을 그려주는 함수이다.
-#if PRAC1
+#if PRAC0
 	void DrawSceneToScreenMap(); 
 #endif
 
@@ -173,7 +184,7 @@ private:
 	// 쉐도우 맵을 관리해주는 클래스 인스턴스다.
 	std::unique_ptr<ShadowMap> m_ShadowMap;
 
-#if PRAC1
+#if PRAC0
 	std::unique_ptr<ScreenMap> m_ScreenMap;
 	UINT m_screenMapHeapIndex = 0;
 	CD3DX12_GPU_DESCRIPTOR_HANDLE m_ScreenSrv;
@@ -189,6 +200,23 @@ private:
 	// 업데이트 하기 위해서 맴버로 가지고 있는다.
 	XMFLOAT3 m_RotatedScreenDirections;
 #endif 
+
+#if PRAC1
+	UINT m_TextureFilmHeapIndex = 0;
+	CD3DX12_GPU_DESCRIPTOR_HANDLE m_TextureFilmSrv;
+
+	float m_TextureFilmNearZ = 0.0f;
+	float m_TextureFilmFarZ = 0.0f;
+	// 광원과 똑같은 위치에 있는 카메라
+	XMFLOAT3 m_TextureFilmPosW;
+	// 그걸로 만든 행렬들
+	XMFLOAT4X4 m_TextureFilmViewMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_TextureFilmProjMat = MathHelper::Identity4x4();
+	XMFLOAT4X4 m_TextureFilmTransform = MathHelper::Identity4x4();
+
+	// 업데이트 하기 위해서 맴버로 가지고 있는다.
+	XMFLOAT3 m_RotatedTextureFilmDirections;
+#endif
 
 	// 필요한 부분에만 그림자를 그리도록 하는 BoundingSphere다.
 	BoundingSphere m_SceneBounds;
@@ -270,7 +298,7 @@ void ShadowMappingApp::CreateRtvAndDsvDescriptorHeaps()
 
 	// 렌더타겟 힙
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-#if PRAC1
+#if PRAC0
 	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 1;
 #else
 	rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
@@ -286,7 +314,7 @@ void ShadowMappingApp::CreateRtvAndDsvDescriptorHeaps()
 
 	// 뎁스 스텐실 힙
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-#if PRAC1
+#if PRAC0
 	dsvHeapDesc.NumDescriptors = 3;
 #else
 	// 쉐도우 맵을 만드는 깊이 버퍼를 하나 더 만든다.
@@ -314,7 +342,7 @@ bool ShadowMappingApp::Initialize()
 	m_ShadowMap = std::make_unique<ShadowMap>(
 		m_d3dDevice.Get(), 2048, 2048);
 
-#if PRAC1
+#if PRAC0
 	m_ScreenMap = std::make_unique<ScreenMap>(
 		m_d3dDevice.Get(), 2048, 2048
 	);
@@ -388,7 +416,7 @@ void ShadowMappingApp::Update(const GameTimer& _gt)
 		lightDir = XMVector3TransformNormal(lightDir, R);
 		XMStoreFloat3(&m_RotatedLightDirections[i], lightDir);
 	}
-#if PRAC1
+#if PRAC0
 	m_RotatedScreenDirections = m_RotatedLightDirections[0];
 #endif
 
@@ -397,9 +425,12 @@ void ShadowMappingApp::Update(const GameTimer& _gt)
 	UpdateMaterialBuffer(_gt);
 	// PassCB에 Shadow Transform이 담기니까, 순서를 잘 맞춰줘야 한다.
 	UpdateShadowTransform(_gt);
+#if PRAC1
+	UpdateTextureFilmTransform(_gt);
+#endif
 	UpdateMainPassCB(_gt);
 	UpdateShadowPassCB(_gt);
-#if PRAC1
+#if PRAC0
 	UpdateScreenCamera(_gt);
 	UpdateScreenPassCB(_gt);
 #endif
@@ -445,7 +476,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	// 클래스 인스턴스 맴버인 텍스쳐에 그린다.
 	DrawSceneToShadowMap();
 
-#if PRAC1
+#if PRAC0
 	// ==== 또 다른 카메라에서 화면 그리기 ====
 	m_CommandList->SetGraphicsRootDescriptorTable(3, skyTexDescriptor);
 	DrawSceneToScreenMap();
@@ -493,7 +524,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-#if !PRAC1
+#if !PRAC0
 	// shadow debug layer를 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
@@ -503,7 +534,7 @@ void ShadowMappingApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
 
-#if PRAC1
+#if PRAC0
 	m_CommandList->SetGraphicsRootDescriptorTable(5, m_ScreenMap->GetSrv());
 	m_CommandList->SetPipelineState(m_PSOs["screen"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Screen]);
@@ -732,6 +763,9 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 
 	// 그림자 변환 행렬도 passCB로 넘겨준다.
 	XMMATRIX shadowMat = XMLoadFloat4x4(&m_ShadowMat);
+#if PRAC1
+	XMMATRIX textureFilmMat = XMLoadFloat4x4(&m_TextureFilmTransform);
+#endif
 
 	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
@@ -740,6 +774,9 @@ void ShadowMappingApp::UpdateMainPassCB(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
 	XMStoreFloat4x4(&m_MainPassCB.ShadowMat, XMMatrixTranspose(shadowMat));
+#if PRAC1
+	XMStoreFloat4x4(&m_MainPassCB.TextureFilmMat, XMMatrixTranspose(textureFilmMat));
+#endif
 
 	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
@@ -804,6 +841,7 @@ void ShadowMappingApp::UpdateShadowPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(1, m_MainPassCB);
 }
 
+#if PRAC0
 void ShadowMappingApp::UpdateScreenCamera(const GameTimer& _gt)
 {
 	// 일단은 첫번째 디렉셔널 라이트에만 그림자를 만든다.
@@ -834,10 +872,10 @@ void ShadowMappingApp::UpdateScreenCamera(const GameTimer& _gt)
 	m_ScreenCameraNearZ = nearZ;
 	m_ScreenCameraFarZ = farZ;
 
-#if PRAC1_PERSP
+#if PRAC0_PERSP
 	// perspectiv projection Mat을 생성한다.
 	XMMATRIX sCameraProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.f, nearZ, farZ);
-#elif PRAC1_ORTHO
+#elif PRAC0_ORTHO
 	// orthographic projection Mat을 생성한다.
 	XMMATRIX sCameraProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
 #endif
@@ -846,7 +884,6 @@ void ShadowMappingApp::UpdateScreenCamera(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_ScreenViewMat, sCameraViewMat);
 	XMStoreFloat4x4(&m_ScreenProjMat, sCameraProjMat);
 }
-
 void ShadowMappingApp::UpdateScreenPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = XMLoadFloat4x4(&m_ScreenViewMat);
@@ -903,6 +940,61 @@ void ShadowMappingApp::UpdateScreenPassCB(const GameTimer& _gt)
 	// 세번째 offset에 넣어준다.
 	currPassCB->CopyData(2, m_MainPassCB);
 }
+#endif
+
+#if PRAC1
+void ShadowMappingApp::UpdateTextureFilmTransform(const GameTimer& _gt)
+{
+	// 일단은 첫번째 디렉셔널 라이트에만 그림자를 만든다.
+	XMVECTOR tFilmDir = XMLoadFloat3(&m_RotatedLightDirections[1]);
+	// ViewMat을 생성하기 위한 속성을 정의하고
+	XMVECTOR tFilmPos = -2.f * m_SceneBounds.Radius * tFilmDir;
+	XMVECTOR targetPos = XMLoadFloat3(&m_SceneBounds.Center);
+	XMVECTOR tFilmUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	// 광원에서 바라보는 ViewMat을 생성한다.
+	XMMATRIX tFilmViewMat = XMMatrixLookAtLH(tFilmPos, targetPos, tFilmUp);
+
+	// 맴버를 업데이트한다.
+	XMStoreFloat3(&m_TextureFilmPosW, tFilmPos);
+
+	// 월드의 중심을 광원 view 좌표계로 이동한다.
+	XMFLOAT3 sphereCenterFilmSpace;
+	XMStoreFloat3(&sphereCenterFilmSpace, XMVector3TransformCoord(targetPos, tFilmViewMat));
+
+	// 직교 투영을 위한 viewport 속성을 설정한다.
+	float left = sphereCenterFilmSpace.x - m_SceneBounds.Radius;
+	float right = sphereCenterFilmSpace.x + m_SceneBounds.Radius;
+	float bottom = sphereCenterFilmSpace.y - m_SceneBounds.Radius;
+	float top = sphereCenterFilmSpace.y + m_SceneBounds.Radius;
+	float nearZ = sphereCenterFilmSpace.z - m_SceneBounds.Radius;
+	float farZ = sphereCenterFilmSpace.z + m_SceneBounds.Radius;
+
+	// 멤버를 업데이트 한다.
+	m_TextureFilmNearZ = nearZ;
+	m_TextureFilmFarZ = farZ;
+
+#if PRAC1_PERSP
+	// perspectiv projection Mat을 생성한다.
+	XMMATRIX tCameraProjMat = XMMatrixPerspectiveFovLH(XM_PIDIV4, 1.f, nearZ, farZ);
+#elif PRAC1_ORTHO
+	// orthographic projection Mat을 생성한다.
+	XMMATRIX tFilmProjMat = XMMatrixOrthographicOffCenterLH(left, right, bottom, top, nearZ, farZ);
+#endif
+
+	// NDC 공간을 [-1, 1] 텍스쳐 공간으로 [0, 1] 바꿔준다.
+	XMMATRIX T(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.5f, 0.5f, 0.0f, 1.0f
+	);
+	// 그림자 변환 행렬을 맴버로 업데이트 한다.
+	XMMATRIX FilmMat = tFilmViewMat * tFilmProjMat * T;
+	XMStoreFloat4x4(&m_TextureFilmTransform, FilmMat);
+	XMStoreFloat4x4(&m_TextureFilmViewMat, tFilmViewMat);
+	XMStoreFloat4x4(&m_TextureFilmProjMat, tFilmProjMat);
+}
+#endif
 
 void ShadowMappingApp::LoadTextures()
 {
@@ -946,7 +1038,7 @@ void ShadowMappingApp::LoadTextures()
 void ShadowMappingApp::BuildRootSignature()
 {	
 	// Table도 쓸거고, Constant도 쓸거다.
-#if PRAC1
+#if PRAC0
 	CD3DX12_ROOT_PARAMETER slotRootParameter[6];
 	UINT numOfParameter = 6;
 #else
@@ -971,7 +1063,7 @@ void ShadowMappingApp::BuildRootSignature()
 	// D3D12_SHADER_VISIBILITY_ALL로 해주면 모든 쉐이더에서 볼 수 있다.
 	slotRootParameter[3].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t0 ~ t1 - TextureCube - Texture2D
 	slotRootParameter[4].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t2 - Texture2D Array
-#if PRAC1
+#if PRAC0
 	CD3DX12_DESCRIPTOR_RANGE texTable3;
 	texTable3.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0, 2);
 	slotRootParameter[5].InitAsDescriptorTable(1, &texTable3, D3D12_SHADER_VISIBILITY_PIXEL); //space2, t0 - Screen Texture
@@ -1101,7 +1193,7 @@ void ShadowMappingApp::BuildDescriptorHeaps()
 		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_ShadowMapHeapIndex, m_CbvSrvUavDescriptorSize),
 		CD3DX12_CPU_DESCRIPTOR_HANDLE(dsvCpuStart, 1, m_DsvDescriptorSize) // 두번째 dsv offset을 가진다.
 	);
-#if PRAC1
+#if PRAC0
 	m_screenMapHeapIndex = viewCount++;
 
 	srvCpuStart = m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
@@ -1132,12 +1224,17 @@ void ShadowMappingApp::BuildShadersAndInputLayout()
 
 	const D3D_SHADER_MACRO Prac1[] =
 	{
-		"PRAC1", "1",
+		"PRAC0", "1",
 		NULL, NULL
 	};
 
+#if PRAC1
+	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\TextureProjection.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\TextureProjection.hlsl", nullptr, "PS", "ps_5_1");
+#else
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", nullptr, "PS", "ps_5_1");
+#endif
 	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_Shaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "VS", "vs_5_1");
@@ -1147,7 +1244,7 @@ void ShadowMappingApp::BuildShadersAndInputLayout()
 	m_Shaders["debugVS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "PS", "ps_5_1");
 
-#if PRAC1
+#if PRAC0
 	m_Shaders["screenVS"] = d3dUtil::CompileShader(L"Shaders\\Screen.hlsl", Prac1, "VS", "vs_5_1");
 	m_Shaders["screenPS"] = d3dUtil::CompileShader(L"Shaders\\Screen.hlsl", Prac1, "PS", "ps_5_1");
 #endif
@@ -1173,7 +1270,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
 	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
 	GeometryGenerator::MeshData quad = geoGenerator.CreateQuad(0.f, -1.f, 1.f, 1.f, 0.0f); // 그림자 디버깅용 창을 하나 만든다.
-#if PRAC1
+#if PRAC0
 	GeometryGenerator::MeshData screen = geoGenerator.CreateGrid(10.f, 10.f, 4, 4);
 #endif
 
@@ -1186,7 +1283,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
 	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
 	UINT quadVertexOffset = cylinderVertexOffset + (UINT)cylinder.Vertices.size();
-#if PRAC1
+#if PRAC0
 	UINT screenVertexOffset = quadVertexOffset + (UINT)quad.Vertices.size();
 #endif
 
@@ -1196,7 +1293,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
 	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
 	UINT quadIndexOffset = cylinderIndexOffset + (UINT)cylinder.Indices32.size();
-#if PRAC1
+#if PRAC0
 	UINT screenIndexOffset = quadIndexOffset + (UINT)quad.Indices32.size();
 #endif
 
@@ -1226,7 +1323,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	quadSubmesh.IndexCount = (UINT)quad.Indices32.size();
 	quadSubmesh.StartIndexLocation = quadIndexOffset;
 	quadSubmesh.BaseVertexLocation = quadVertexOffset;
-#if PRAC1
+#if PRAC0
 	SubmeshGeometry screenSubmesh;
 	screenSubmesh.IndexCount = (UINT)screen.Indices32.size();
 	screenSubmesh.StartIndexLocation = screenIndexOffset;
@@ -1240,7 +1337,7 @@ void ShadowMappingApp::BuildStageGeometry()
 		sphere.Vertices.size() +
 		cylinder.Vertices.size() +
 		quad.Vertices.size();
-#if PRAC1
+#if PRAC0
 	totalVertexCount += screen.Vertices.size();
 #endif
 
@@ -1287,7 +1384,7 @@ void ShadowMappingApp::BuildStageGeometry()
 		vertices[k].TexC = quad.Vertices[i].TexC;
 		vertices[k].TangentU = quad.Vertices[i].TangentU;
 	}
-#if PRAC1
+#if PRAC0
 	for (int i = 0; i < screen.Vertices.size(); ++i, ++k)
 	{
 		vertices[k].Pos = screen.Vertices[i].Position;
@@ -1304,7 +1401,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
 	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
 	indices.insert(indices.end(), std::begin(quad.GetIndices16()), std::end(quad.GetIndices16()));
-#if PRAC1
+#if PRAC0
 	indices.insert(indices.end(), std::begin(screen.GetIndices16()), std::end(screen.GetIndices16()));
 #endif
 
@@ -1346,7 +1443,7 @@ void ShadowMappingApp::BuildStageGeometry()
 	geo->DrawArgs["sphere"] = sphereSubmesh;
 	geo->DrawArgs["cylinder"] = cylinderSubmesh;
 	geo->DrawArgs["quad"] = quadSubmesh;
-#if PRAC1
+#if PRAC0
 	geo->DrawArgs["screen"] = screenSubmesh;
 #endif
 
@@ -1495,7 +1592,7 @@ void ShadowMappingApp::BuildPSOs()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
 
-#if PRAC1
+#if PRAC0
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC screenPSODesc = opaquePSODesc;
 	screenPSODesc.VS =
 	{
@@ -1515,7 +1612,7 @@ void ShadowMappingApp::BuildPSOs()
 void ShadowMappingApp::BuildFrameResources()
 {
 	// Shadow Map 용으로 하나 더 필요하다.
-#if PRAC1
+#if PRAC0
 	UINT passCBCount = 3;
 #else
 	UINT passCBCount = 2;
@@ -1624,7 +1721,7 @@ void ShadowMappingApp::BuildRenderItems()
 	m_RenderItemLayer[(int)RenderLayer::Debug].push_back(quadRitem.get());
 	m_AllRenderItems.push_back(std::move(quadRitem));
 
-#if PRAC1 
+#if PRAC0 
 	std::unique_ptr<RenderItem> screenRitem = std::make_unique<RenderItem>();
 	XMMATRIX screenTransformMat = XMMatrixScaling(1.5f, 1.f, 1.5f) * XMMatrixRotationZ(- XM_PIDIV2) * XMMatrixTranslation(-10.f, 7.5f, 7.5f);
 	XMStoreFloat4x4(&screenRitem->WorldMat, screenTransformMat);
@@ -1830,7 +1927,7 @@ void ShadowMappingApp::DrawSceneToShadowMap()
 		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 	m_CommandList->ResourceBarrier(1, &shadowDS_WRITE_READ);
 }
-
+#if PRAC0
 void ShadowMappingApp::DrawSceneToScreenMap()
 {
 	// 인스턴스 맴버 값을 이용해서, Rasterization 속성 값을 설정한다.
@@ -1886,7 +1983,7 @@ void ShadowMappingApp::DrawSceneToScreenMap()
 		m_ScreenMap->GetResourceDS(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 	m_CommandList->ResourceBarrier(1, &screenDS_WRITE_READ);
 }
-
+#endif
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> ShadowMappingApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
