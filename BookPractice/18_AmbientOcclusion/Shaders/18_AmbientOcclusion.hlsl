@@ -20,7 +20,8 @@ struct VertexOut
 {
     float4 PosH : SV_POSITION;
     float4 ShadowPosH : POSITION0;
-    float3 PosW : POSITION1;
+    float4 SsaoPosH : POSITION1;
+    float3 PosW : POSITION2;
     float3 NormalW : NORMAL;
     float3 TangentW : TANGENT;
     float2 TexC : TEXCOORD;
@@ -56,7 +57,10 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     vout.TexC = mul(texC, matData.MaterialTransform).xy;
     
     // PassCB에서 넘겨준 행렬로, 투영공간으로 변환한다.
-    vout.ShadowPosH = mul(posW, gShadowTransform);
+    vout.ShadowPosH = mul(posW, gShadowMat);
+    
+    // 생성된 Ssao Map위 값을 바로 찾을 수 있는 viewProjTexMat을 이용한다.
+    vout.SsaoPosH = mul(posW, gViewProjTexMat);
     
     return vout;
 }
@@ -89,8 +93,12 @@ float4 PS(VertexOut pin) : SV_Target
     // 표면에서 카메라 까지 벡터를 구한다.
     float3 toEyeW = normalize(gEyePosW - pin.PosW);
 
-	// 일단 냅다 간접광을 설정한다.
-    float4 ambient = gAmbientLight * diffuseAlbedo;
+	// 이제 간접광을 Ssao의 결과로 바뀌게 해준다.
+    // 일단 w로 나눠서(남아 있던 Homogenous공간의 Depth) 공간 변화를 마무리 해주고
+    pin.SsaoPosH /= pin.ShadowPosH.w; 
+    // Ssao Map에서 결과를 가져온다.
+    float ambientAccss = gSsaoMap.Sample(gSamLinearClamp, pin.SsaoPosH.xy, 0.f).r;
+    float4 ambient = gAmbientLight * diffuseAlbedo * ambientAccss;
     
     // 일단은 첫번째 광원에 대해서만, 그림자를 설정한다.
     float3 shadowFactor = float3(1.f, 1.f, 1.f);

@@ -45,6 +45,7 @@
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="ShadowMap.h" />
+    <ClInclude Include="Ssao.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Common\Camera.cpp" />
@@ -57,12 +58,24 @@
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ShadowMap.cpp" />
+    <ClCompile Include="Ssao.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Shadow.hlsl">
       <FileType>Document</FileType>
     </None>
     <None Include="Shaders\ShadowDebug.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\DrawNormals.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="Shaders\Ssao.hlsl">
+      <FileType>Document</FileType>
+    </None>
+    <None Include="Shaders\SsaoBlur.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

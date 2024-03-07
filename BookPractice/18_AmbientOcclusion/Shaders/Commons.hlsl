@@ -20,18 +20,6 @@
 // 빛 계산을 하는데 필요한 함수를 모아 놓은 것이다.
 #include "LightingUtil.hlsl"
 
-/*
-struct InstanceData
-{
-    float4x4 WorldMat;
-    float4x4 InvWorldTransposeMat;
-    float4x4 TexTransform;
-    uint MaterialIndex;
-    uint InstPad0;
-    uint InstPad1;
-    uint InstPad2;
-};
-*/
 struct MaterialData
 {
     float4 DiffuseAlbedo;
@@ -49,11 +37,12 @@ struct MaterialData
 TextureCube gCubeMap : register(t0);
 // 광원 시점에서 그린 깊이맵이다.
 Texture2D gShadowMap : register(t1);
+// 화면 공간을 기준으로 계산한 Occlusion Map이다.
+Texture2D gSsaoMap : register(t2);
 
 // 이제 노멀맵도 함께 사용할 것이기 때문에, 개수도 늘려주고, 일반적인 이름으로 바꿔준다.
-Texture2D gTextureMaps[10] : register(t2);
+Texture2D gTextureMaps[10] : register(t3);
 
-//StructuredBuffer<InstanceData> gInstanceData : register(t0, space1);
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
 SamplerState gSamPointWrap : register(s0);
@@ -92,7 +81,9 @@ cbuffer cbPass : register(b1)
     float4x4 gInvViewProj;
     // App에서 갱신한 광원의 위치로 갱신해서 
     // passCB로 넘겨준다.
-    float4x4 gShadowTransform;
+    float4x4 gShadowMat;
+    // Projection 해준다음, Texture 공간으로 옮겨주는 행렬
+    float4x4 gViewProjTexMat;
     
     float3 gEyePosW;
     float cbPerPassad1;
@@ -165,6 +156,7 @@ float3 WorldSpaceToTangentSpace(float3 _worldPos, float3 _unitNormalW, float3 ta
 }
 
 // LightingUtil.hlsl 에서 사용하는 ShadowFactor를 생성하는 함수이다.
+// 내부적으로 PCF 작업도 한다.
 float CaclcShadowFactor(float4 shadowPosH)
 {
     // 일단 호모공간의 점을 w로 나눠서 투영을 완료한다.

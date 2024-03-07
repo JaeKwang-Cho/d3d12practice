@@ -17,24 +17,31 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\Commons.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Sky.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\ShadowDebug.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\18_AmbientOcclusion.hlsl">
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\Shadow.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\SsaoBlur.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\ShadowDebug.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Commons.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Sky.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\DrawNormals.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Ssao.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
@@ -69,6 +76,7 @@
       <Filter>Commons\헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="ShadowMap.h" />
+    <ClInclude Include="Ssao.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FrameResource.cpp" />
@@ -95,5 +103,6 @@
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="ShadowMap.cpp" />
+    <ClCompile Include="Ssao.cpp" />
   </ItemGroup>
 </Project>
