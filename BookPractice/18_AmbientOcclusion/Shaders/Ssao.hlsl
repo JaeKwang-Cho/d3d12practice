@@ -27,7 +27,6 @@ cbuffer cbRootConstants : register(b1)
 }
 
 // 수치 좌표만 cbuffer에 넣을 수 있다.
-
 Texture2D gNormalMap : register(t0);
 Texture2D gDepthMap : register(t1);
 Texture2D gRandomVecMap : register(t2);

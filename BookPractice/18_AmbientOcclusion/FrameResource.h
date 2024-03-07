@@ -6,20 +6,6 @@
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
 
-// 인스턴스마다 넘겨주는 친구이다.
-/*
-struct InstanceData 
-{
-	XMFLOAT4X4 WorldMat = MathHelper::Identity4x4();
-	XMFLOAT4X4 InvWorldMat = MathHelper::Identity4x4();
-	XMFLOAT4X4 TexTransform = MathHelper::Identity4x4();
-	UINT MaterialIndex;
-	UINT instPad0;
-	UINT instPad1;
-	UINT instPad2;
-};
-*/
-
 // 오브젝트마다 넘겨주는 친구이다.
 struct ObjectConstants
 {
@@ -46,6 +32,8 @@ struct PassConstants {
 
 	// App에서 계산해서 넘겨주는 광원에서 그림자 텍스쳐로 넘어가는 그림자 변환 행렬이다.
 	XMFLOAT4X4 ShadowMat = MathHelper::Identity4x4();
+	// View - Proj - Tex 한방에 해주는 친구다.
+	XMFLOAT4X4 ViewProjTexMat = MathHelper::Identity4x4();
 
 	XMFLOAT3 EyePosW = { 0.f, 0.f, 0.f };
 	float cbPerPassPad1 = 0.f;
@@ -71,6 +59,25 @@ struct PassConstants {
 	// 순서는 Directional -> Point -> Spot 순이고
 	// 인덱스로 구분을 하게 된다.
 	Light Lights[MaxLights];
+};
+// Ssao Map 작업할 때 필요한 친구들이다.
+struct SsaoConstants 
+{
+	DirectX::XMFLOAT4X4 ProjMat;
+	DirectX::XMFLOAT4X4 InvProjMat;
+	DirectX::XMFLOAT4X4 ProjTexMat;
+	DirectX::XMFLOAT4   OffsetVectors[14];
+
+	// SsaoBlur 먹일때 사용
+	DirectX::XMFLOAT4 BlurWeights[3];
+
+	DirectX::XMFLOAT2 InvRenderTargetSize = { 0.0f, 0.0f };
+
+	// view 공간 occlusion 속성값들
+	float OcclusionRadius = 0.5f;
+	float OcclusionFadeStart = 0.2f;
+	float OcclusionFadeEnd = 2.0f;
+	float SurfaceEpsilon = 0.05f;
 };
 
 // 물체별로 색인화를 할 수 있기 때문에,
@@ -130,6 +137,9 @@ public:
 
 	// 다시 Object Constant Buffer로 돌아왔다.
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
+
+	// Ssao Map을 작성하고, Ssao Blur를 먹이는데 사용하는 Buffer이다.
+	std::unique_ptr<UploadBuffer<SsaoConstants>> SsaoCB = nullptr;
 
 	// 이제 Constant Buffer가 아니라 StructuredBuffer으로 넘겨주고
 	// Material 정보에 Transform과 Index를 추가한 구조체를 넘겨준다.

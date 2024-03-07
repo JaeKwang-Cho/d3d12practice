@@ -11,13 +11,16 @@ FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objec
 	{
 		PassCB = std::make_unique<UploadBuffer<PassConstants>>(_device, _passCount, true);
 	}
+
 	if (_objectCount > 0)
 	{
-		// InstanceBuffer = std::make_unique<UploadBuffer<InstanceData>>(_device, _objectCount, false);
-
 		// 다시 Object Constast Buffer로 돌아왔다.
 		ObjectCB = std::make_unique<UploadBuffer<ObjectConstants>>(_device, _objectCount, true);
 	}
+
+	// Screen 공간에 맞춰서 그리는 거니까 하나만 필요하다.
+	SsaoCB = std::make_unique<UploadBuffer<SsaoConstants>>(_device, 1, true);
+
 	if (_materialCount > 0)
 	{
 		MaterialBuffer = std::make_unique<UploadBuffer<MaterialData>>(_device, _materialCount, false);
