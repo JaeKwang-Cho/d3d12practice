@@ -48,13 +48,6 @@ struct PassConstants {
 	// Ambient Light와
 	DirectX::XMFLOAT4 AmbientLight = { 0.0f, 0.0f, 0.0f, 1.0f };
 
-	// Pass에서 Fog 정보를 넘겨준다.
-	DirectX::XMFLOAT4 FogColor = { 0.7f, 0.7f, 0.7f, 1.f };
-
-	float FogStart = 5.f;
-	float FogRange = 150.f;
-	DirectX::XMFLOAT2 cbPerPassPad2 = { 0.f, 0.f };
-
 	// 조명 정보를 넣어준다.
 	// 순서는 Directional -> Point -> Spot 순이고
 	// 인덱스로 구분을 하게 된다.

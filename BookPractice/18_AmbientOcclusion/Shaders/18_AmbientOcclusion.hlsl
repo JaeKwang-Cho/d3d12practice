@@ -95,14 +95,14 @@ float4 PS(VertexOut pin) : SV_Target
 
 	// 이제 간접광을 Ssao의 결과로 바뀌게 해준다.
     // 일단 w로 나눠서(남아 있던 Homogenous공간의 Depth) 공간 변화를 마무리 해주고
-    pin.SsaoPosH /= pin.ShadowPosH.w; 
+    pin.SsaoPosH /= pin.SsaoPosH.w;
     // Ssao Map에서 결과를 가져온다.
     float ambientAccss = gSsaoMap.Sample(gSamLinearClamp, pin.SsaoPosH.xy, 0.f).r;
     float4 ambient = gAmbientLight * diffuseAlbedo * ambientAccss;
     
     // 일단은 첫번째 광원에 대해서만, 그림자를 설정한다.
     float3 shadowFactor = float3(1.f, 1.f, 1.f);
-    shadowFactor[0] = CaclcShadowFactor(pin.ShadowPosH);
+    shadowFactor[0] = CalcShadowFactor(pin.ShadowPosH);
 
     // 광택을 설정하고 (a 채널에 shininess 값이 들어있는 경우도 있다.)
     const float shininess = (1.0f - roughness) * normalMapSample.a;
@@ -131,7 +131,7 @@ float4 PS(VertexOut pin) : SV_Target
         
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;
-
+    
     
     // 출력한다.
     return litColor;

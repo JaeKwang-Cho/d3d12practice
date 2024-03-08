@@ -1,6 +1,6 @@
 //***************************************************************************************
 // ShadowDebug.hlsl by Frank Luna (C) 2015 All Rights Reserved.
-// 광원 입장에서 깊이 버퍼가 어떻게 보이는지 그리는 쉐이더다.
+// Screen에서 그림자가 어떻게 보이는지 그리는 쉐이더다.
 //***************************************************************************************
 
 #include "Commons.hlsl"
@@ -31,6 +31,6 @@ VertexOut VS(VertexIn vin)
 
 float4 PS(VertexOut pin) : SV_Target
 {
-    return float4(gShadowMap.Sample(gSamLinearWrap, pin.TexC).rrr, 1.0f);
+    return float4(gSsaoMap.Sample(gSamLinearWrap, pin.TexC).rrr, 1.0f);
 }
 

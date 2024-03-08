@@ -33,8 +33,6 @@ public:
 
     void RebuildDescriptors(ID3D12Resource* _depthStencilBuffer);
 
-    void SetPSOs(ID3D12PipelineState* _ssaoPso, ID3D12PipelineState* _ssaoBlurPso);
-
     ///<summary>
     /// resize용
     ///</summary>
@@ -56,7 +54,7 @@ private:
     /// edge-preserving blur를 해서, 불연속 적인 부분으로 판단이 되면, blur에 포함하지 않는다.
     ///</summary>
     void BlurAmbientMap(ID3D12GraphicsCommandList* _cmdList, FrameResource* _currFrame, int _blurCount);
-    void BlurAmbientMap(ID3D12GraphicsCommandList* _cmdList, bool _horzBlur);
+    void BlurAmbientMap(ID3D12GraphicsCommandList* _cmdList, bool _bHorzBlur);
 
     void BuildResources();
     void BuildRandomVectorTexture(ID3D12GraphicsCommandList* _cmdList);
@@ -69,8 +67,8 @@ private:
 
     Microsoft::WRL::ComPtr<ID3D12RootSignature> m_SsaoRootSig;
 
-    ID3D12PipelineState* m_SsaoPso = nullptr;
-    ID3D12PipelineState* m_BlurPso = nullptr;
+    ID3D12PipelineState* m_SsaoPSO = nullptr;
+    ID3D12PipelineState* m_BlurPSO = nullptr;
 
     Microsoft::WRL::ComPtr<ID3D12Resource> m_RandomVectorMap;
     Microsoft::WRL::ComPtr<ID3D12Resource> m_RandomVectorMapUploadBuffer;
@@ -104,17 +102,17 @@ private:
     DirectX::XMFLOAT4 m_Offsets[14];
 
     D3D12_VIEWPORT m_Viewport;
-    D3D12_RECT mS_cissorRect;
+    D3D12_RECT m_ScissorRect;
 
 public:
     UINT GetSsaoMapWidth() const
     {
-        return m_RenderTargetWidth / 2.f;
+        return m_RenderTargetWidth / 2;
     }
 
     UINT GetSsaoMapHeight() const
     {
-        return m_RenderTargetHeight / 2.f;
+        return m_RenderTargetHeight / 2;
     }
 
     ID3D12Resource* GetNormalMap()
@@ -126,19 +124,27 @@ public:
         return m_AmbientMap0.Get();
     }
 
-    CD3DX12_CPU_DESCRIPTOR_HANDLE NormalMapRtv() const
+    CD3DX12_CPU_DESCRIPTOR_HANDLE GetNormalMapRtv() const
     {
         return m_hNormalMapCpuRtv;
     }
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE NormalMapSrv() const
+    CD3DX12_GPU_DESCRIPTOR_HANDLE GetNormalMapSrv() const
     {
         return m_hNormalMapGpuSrv;
     }
 
-    CD3DX12_GPU_DESCRIPTOR_HANDLE AmbientMapSrv() const
+    CD3DX12_GPU_DESCRIPTOR_HANDLE GetAmbientMapSrv() const
     {
         return m_hAmbientMap0GpuSrv;
     }
+
+    void SetPSOs(ID3D12PipelineState* _ssaoPSO, ID3D12PipelineState* _ssaoBlurPSO)
+    {
+        m_SsaoPSO = _ssaoPSO;
+        m_BlurPSO = _ssaoBlurPSO;
+    }
+
+    
 };
 

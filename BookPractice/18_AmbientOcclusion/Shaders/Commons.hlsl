@@ -97,13 +97,6 @@ cbuffer cbPass : register(b1)
     float gDeltaTime;
     
     float4 gAmbientLight;
-    
-    // fog 정보는 pass로 넘어온다
-    float4 gFogColor;
-    
-    float gFogStart;
-    float gFogRange;
-    float2 cbPerPassPad2;
 
     // Indices [0, NUM_DIR_LIGHTS) are directional lights;
     // indices [NUM_DIR_LIGHTS, NUM_DIR_LIGHTS+NUM_POINT_LIGHTS) are point lights;
@@ -157,7 +150,7 @@ float3 WorldSpaceToTangentSpace(float3 _worldPos, float3 _unitNormalW, float3 ta
 
 // LightingUtil.hlsl 에서 사용하는 ShadowFactor를 생성하는 함수이다.
 // 내부적으로 PCF 작업도 한다.
-float CaclcShadowFactor(float4 shadowPosH)
+float CalcShadowFactor(float4 shadowPosH)
 {
     // 일단 호모공간의 점을 w로 나눠서 투영을 완료한다.
     // Homogeneous clip space -> NDC

@@ -11,6 +11,7 @@
 #include "FileReader.h"
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
+#include "Ssao.h"
 
 const int g_NumFrameResources = 3;
 
@@ -30,7 +31,7 @@ struct RenderItem
 	// Dirty flag를 켜서 새로 업데이트를 한다. (디자인 패턴 관련)
 	// 어쨌든 PassCB는 Frame 마다 갱신을 하므로, Frame 마다 업데이트를 해줘야한다.
 	// 여기서는 g_NumFrameResources 값으로 세팅을 해줘서, 업데이트를 한다
-	int NumFrameDirty = g_NumFrameResources;
+	int NumFramesDirty = g_NumFrameResources;
 
 	// Render Item과 GPU에 넘어간 CB가 함께 가지는 Index 값
 	UINT ObjCBIndex = -1;
@@ -88,10 +89,12 @@ private:
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
 	void UpdateShadowPassCB(const GameTimer& _gt); // 디버깅용 화면을 그릴때 사용하는 PassCB를 업데이트 해준다.
+	void UpdateSsaoCB(const GameTimer& _gt); // Ssao Map을 생성할 때 사용하는 SsaoCB를 업데이트 해준다.
 
 	// ==== Init ====
 	void LoadTextures();
 	void BuildRootSignature();
+	void BuildSsaoRootSignature();
 	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
 	void BuildStageGeometry();
@@ -103,7 +106,8 @@ private:
 
 	// ==== Render ====
 	void DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY  _Type = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED);
-	void DrawSceneToShadowMap(); // 디버깅용 그림자 화면을 그려주는 함수이다.
+	void DrawSceneToShadowMap(); // 광원입장에서 깊이맵을 그려주는 함수이다.
+	void DrawNormalsAndDepth(); // Screen 입장에서 노멀맵과 깊이맵을 그려주는 함수이다.
 
 	// 정적 샘플러 구조체를 미리 만드는 함수이다.
 	std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> GetStaticSamplers();
@@ -113,14 +117,12 @@ private:
 	FrameResource* m_CurrFrameResource = nullptr;
 	int m_CurrFrameResourceIndex = 0;
 
-	// Compute Shader용 PSO가 따로 필요하다.
+	// Ssao용 Root Signature를 따로 만들어야 편하다.
 	ComPtr<ID3D12RootSignature> m_RootSignature = nullptr;
+	ComPtr<ID3D12RootSignature> m_SsaoRootSignature = nullptr;
 
 	// Uav도 함께 쓰는 heap이므로 이름을 바꿔준다.
 	ComPtr<ID3D12DescriptorHeap> m_CbvSrvUavDescriptorHeap = nullptr;
-
-	// 테스트용 Sampler Heap이다.
-	ComPtr<ID3D12DescriptorHeap> m_SamplerHeap = nullptr;
 
 	// 도형, 쉐이더, PSO 등등 App에서 관리한다..
 	std::unordered_map<std::string, std::unique_ptr<MeshGeometry>> m_Geometries;
@@ -150,10 +152,11 @@ private:
 
 	// Camera
 	Camera m_Camera;
-	Camera m_CubeMapCamera[6];
 
 	// 쉐도우 맵을 관리해주는 클래스 인스턴스다.
 	std::unique_ptr<ShadowMap> m_ShadowMap;
+	// Ssao Map을 생성하고 블러를 먹여주는 클래스 인스턴스다.
+	std::unique_ptr<Ssao> m_Ssao;
 
 	// 필요한 부분에만 그림자를 그리도록 하는 BoundingSphere다.
 	BoundingSphere m_SceneBounds;
@@ -162,9 +165,16 @@ private:
 	UINT m_SkyTexHeapIndex = 0;
 	// Shadow Texture가 위치한 view handle offset을 저장해 놓는다.
 	UINT m_ShadowMapHeapIndex = 0;
+	// Ssao를 생성할 때 사용하는 Normal Map, Depth Map, RandomVector Map이 연속적으로 있는 view offset이다.
+	UINT m_SsaoHeapIndexStart;
+	// Ssao 클래스에서 관리하고 있는, AmbientMap view offset이다.
+	// (ambient0Map, ambient1Map, ambientNormalMap, ambientDepthMap, RandomVectorMap)
+	UINT m_SsaoAmbientMapIndex = 0;
+
 	// 디버깅용 큐브와 텍스쳐가 위치한 view handle offset을 저장해 놓는다.
 	UINT m_NullCubeSrvIndex = 0;
-	UINT m_NullTexSrvIndex = 0;
+	UINT m_NullTexSrvIndex0 = 0;
+	UINT m_NullTexSrvIndex1 = 0;
 	// 렌더타겟없이 뎁스 스텐실 뷰만 있는 Srv이다.
 	CD3DX12_GPU_DESCRIPTOR_HANDLE m_NullSrv;
 
@@ -188,6 +198,33 @@ private:
 		XMFLOAT3(0.0f, -0.707f, -0.707f)
 	};
 	XMFLOAT3 m_RotatedLightDirections[3];
+
+public:
+	// Heap에서 연속적으로 존재하는 View들이 많을 예정이라 이렇게 Get 함수를 만들었다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE GetCpuSrv(int index)const
+	{
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srv = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+		srv.Offset(index, m_CbvSrvUavDescriptorSize);
+		return srv;
+	}
+	CD3DX12_GPU_DESCRIPTOR_HANDLE GetGpuSrv(int index)const
+	{
+		CD3DX12_GPU_DESCRIPTOR_HANDLE srv = CD3DX12_GPU_DESCRIPTOR_HANDLE(m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+		srv.Offset(index, m_CbvSrvUavDescriptorSize);
+		return srv;
+	}
+	CD3DX12_CPU_DESCRIPTOR_HANDLE GetDsv(int index)const
+	{
+		CD3DX12_CPU_DESCRIPTOR_HANDLE dsv = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_DsvHeap->GetCPUDescriptorHandleForHeapStart());
+		dsv.Offset(index, m_DsvDescriptorSize);
+		return dsv;
+	}
+	CD3DX12_CPU_DESCRIPTOR_HANDLE GetRtv(int index)const
+	{
+		CD3DX12_CPU_DESCRIPTOR_HANDLE rtv = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_RtvHeap->GetCPUDescriptorHandleForHeapStart());
+		rtv.Offset(index, m_RtvDescriptorSize);
+		return rtv;
+	}
 };
 
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
@@ -233,9 +270,10 @@ void AmbientOcclusionApp::CreateRtvAndDsvDescriptorHeaps()
 {
 	// __super::CreateRtvAndDsvDescriptorHeaps();
 
-	// 렌더타겟 힙
+	// 렌더타겟 힙 
+	// 노멀맵 1개 + AO맵 2개 (핑퐁)
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-	rtvHeapDesc.NumDescriptors = SwapChainBufferCount;
+	rtvHeapDesc.NumDescriptors = SwapChainBufferCount + 3;
 	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	rtvHeapDesc.NodeMask = 0;
@@ -247,7 +285,7 @@ void AmbientOcclusionApp::CreateRtvAndDsvDescriptorHeaps()
 
 	// 뎁스 스텐실 힙
 	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
-	// 쉐도우 맵을 만드는 깊이 버퍼를 하나 더 만든다.
+	// 쉐도우 맵을 만드는 깊이 버퍼를 1개 더 만든다.
 	dsvHeapDesc.NumDescriptors = 2;
 	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
 	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
@@ -271,9 +309,17 @@ bool AmbientOcclusionApp::Initialize()
 	m_ShadowMap = std::make_unique<ShadowMap>(
 		m_d3dDevice.Get(), 2048, 2048);
 
+	// Ssao 클래스 인스턴스를 생성한다.
+	m_Ssao = std::make_unique<Ssao>(
+		m_d3dDevice.Get(),
+		m_CommandList.Get(),
+		m_ClientWidth, m_ClientHeight
+	);
+
 	// ======== 초기화 ==========
 	LoadTextures();
 	BuildRootSignature();
+	BuildSsaoRootSignature();
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
 	BuildStageGeometry();
@@ -284,6 +330,8 @@ bool AmbientOcclusionApp::Initialize()
 	BuildPSOs();
 	// =========================
 
+	// Ssao 내부 변수에 PSO를 세팅해준다.
+	m_Ssao->SetPSOs(m_PSOs["ssao"].Get(), m_PSOs["ssaoBlur"].Get());
 
 	// 초기화 요청이 들어간 Command List를 Queue에 등록한다.
 	ThrowIfFailed(m_CommandList->Close());
@@ -301,6 +349,14 @@ void AmbientOcclusionApp::OnResize()
 	D3DApp::OnResize();
 
 	m_Camera.SetFrustum(0.25f * MathHelper::Pi, GetAspectRatio(), 1.f, 1000.f);
+	// Screen 크기가 변해도 Ssao를 다시 생성한다.
+	if (m_Ssao != nullptr)
+	{
+		m_Ssao->OnResize(m_ClientWidth, m_ClientHeight);
+		// 리소스도 다시 만들었으니, view도 다시 설정한다.
+		// (내부에서 depth buffer도 사용하기 때문에 넘겨준거다.)
+		m_Ssao->RebuildDescriptors(m_DepthStencilBuffer.Get());
+	}
 }
 
 void AmbientOcclusionApp::Update(const GameTimer& _gt)
@@ -347,6 +403,8 @@ void AmbientOcclusionApp::Update(const GameTimer& _gt)
 	UpdateShadowTransform(_gt);
 	UpdateMainPassCB(_gt);
 	UpdateShadowPassCB(_gt);
+	// Ssao CB도 업데이트 해준다.
+	UpdateSsaoCB(_gt);
 }
 
 void AmbientOcclusionApp::Draw(const GameTimer& _gt)
@@ -389,7 +447,28 @@ void AmbientOcclusionApp::Draw(const GameTimer& _gt)
 	// 클래스 인스턴스 맴버인 텍스쳐에 그린다.
 	DrawSceneToShadowMap();
 
+	// ==== Screen 입장에서 노멀 / 뎁스 그리기 ====
+
+	DrawNormalsAndDepth();
+
+	// ==== Ssao Map 그리기 ====
+	
+	// Ssao용 Root Signature 세팅
+	m_CommandList->SetGraphicsRootSignature(m_SsaoRootSignature.Get());
+	// commandlist와 현재 FrameResource를 blur 횟수와 함께 넘겨준다.
+	// 그러면 내부적으로 SsaoCB를 이용한다.
+	m_Ssao->ComputeSsao(m_CommandList.Get(), m_CurrFrameResource, 3);
+
 	// ==== 화면 그리기 ====
+	
+	// 다시 루트 시그니처 세팅을 하고
+	m_CommandList->SetGraphicsRootSignature(m_RootSignature.Get());
+
+	// 이러면 다시 렌더링 자원을 bind 해줘야 한다.
+	m_CommandList->SetGraphicsRootShaderResourceView(2, matStructredBuffer->GetGPUVirtualAddress()); // Mat는 2번
+
+	// 텍스쳐도 인덱스를 이용해서 공통으로 사용하니깐, 이렇게 넘겨준다.
+	m_CommandList->SetGraphicsRootDescriptorTable(4, m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	// 커맨드 리스트에서, Viewport와 ScissorRects 를 설정한다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
@@ -408,12 +487,8 @@ void AmbientOcclusionApp::Draw(const GameTimer& _gt)
 		GetCurrentBackBufferView(),
 		Colors::LightSteelBlue,
 		0, nullptr);
-	// 뎁스를 1.f 스텐실을 0으로 초기화 한다.
-	m_CommandList->ClearDepthStencilView(
-		GetDepthStencilView(),
-		D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL,
-		1.0f, 0, 0, nullptr);
-
+	// 뎁스 스텐실 버퍼는 초기화 하지 않는다.
+	
 	// Rendering 할 백 버퍼와, 깊이 버퍼의 핸들을 OM 단계에 세팅을 해준다.
 	D3D12_CPU_DESCRIPTOR_HANDLE BackBufferHandle = GetCurrentBackBufferView();
 	D3D12_CPU_DESCRIPTOR_HANDLE DepthStencilHandle = GetDepthStencilView();
@@ -544,7 +619,7 @@ void AmbientOcclusionApp::UpdateObjectCBs(const GameTimer& _gt)
 	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
 	{
 		// Constant Buffer가 변경됐을 때 Update를 한다.
-		if (e->NumFrameDirty > 0)
+		if (e->NumFramesDirty > 0)
 		{
 			// CPU에 있는 값을 가져와서
 			XMMATRIX worldMat = XMLoadFloat4x4(&e->WorldMat);
@@ -566,7 +641,7 @@ void AmbientOcclusionApp::UpdateObjectCBs(const GameTimer& _gt)
 			currObjectCB->CopyData(e->ObjCBIndex, objConstants);
 
 			// 다음 FrameResource에서 업데이트를 하도록 설정한다.
-			e->NumFrameDirty--;
+			e->NumFramesDirty--;
 		}
 	}
 }
@@ -662,6 +737,14 @@ void AmbientOcclusionApp::UpdateMainPassCB(const GameTimer& _gt)
 
 	// 그림자 변환 행렬도 passCB로 넘겨준다.
 	XMMATRIX shadowMat = XMLoadFloat4x4(&m_ShadowMat);
+	// View Proj Tex 행렬도 넘겨준다.
+	XMMATRIX TexMat(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.5f, 0.5f, 0.0f, 1.0f);
+
+	XMMATRIX viewProjTex = XMMatrixMultiply(VPMat, TexMat);
 
 	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
@@ -670,6 +753,7 @@ void AmbientOcclusionApp::UpdateMainPassCB(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
 	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
 	XMStoreFloat4x4(&m_MainPassCB.ShadowMat, XMMatrixTranspose(shadowMat));
+	XMStoreFloat4x4(&m_MainPassCB.ViewProjTexMat, XMMatrixTranspose(viewProjTex));
 
 	m_MainPassCB.EyePosW = m_Camera.GetPosition3f();
 	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)m_ClientWidth, (float)m_ClientHeight);
@@ -678,11 +762,6 @@ void AmbientOcclusionApp::UpdateMainPassCB(const GameTimer& _gt)
 	m_MainPassCB.FarZ = 1000.f;
 	m_MainPassCB.TotalTime = _gt.GetTotalTime();
 	m_MainPassCB.DeltaTime = _gt.GetDeltaTime();
-
-	// 사실 이미 값이 있긴 한데... 그냥 한번 더 써준거다.
-	m_MainPassCB.FogColor = { 0.7f, 0.7f, 0.7f, 1.f };
-	m_MainPassCB.FogStart = 5.f;
-	m_MainPassCB.FogRange = 150.f;
 
 	// 이제 Light를 채워준다. 멤버의 값을 채워준다.
 	m_MainPassCB.AmbientLight = { 0.25f, 0.25f, 0.35f, 1.0f };
@@ -713,30 +792,64 @@ void AmbientOcclusionApp::UpdateShadowPassCB(const GameTimer& _gt)
 	XMVECTOR DetVPMatMat = XMMatrixDeterminant(VPMat);
 	XMMATRIX InvVPMat = XMMatrixInverse(&DetVPMatMat, VPMat);
 
-	XMStoreFloat4x4(&m_MainPassCB.ViewMat, XMMatrixTranspose(ViewMat));
-	XMStoreFloat4x4(&m_MainPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
-	XMStoreFloat4x4(&m_MainPassCB.ProjMat, XMMatrixTranspose(ProjMat));
-	XMStoreFloat4x4(&m_MainPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
-	XMStoreFloat4x4(&m_MainPassCB.VPMat, XMMatrixTranspose(VPMat));
-	XMStoreFloat4x4(&m_MainPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.ViewMat, XMMatrixTranspose(ViewMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.InvViewMat, XMMatrixTranspose(InvViewMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.ProjMat, XMMatrixTranspose(ProjMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.InvProjMat, XMMatrixTranspose(InvProjMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.VPMat, XMMatrixTranspose(VPMat));
+	XMStoreFloat4x4(&m_ShadowPassCB.InvVPMat, XMMatrixTranspose(InvVPMat));
 	// 광원입장에서 그리기로한 정보를 넘겨줘야 한다.
 	UINT w = m_ShadowMap->GetWidth();
 	UINT h = m_ShadowMap->GetHeight();
 
-	m_MainPassCB.EyePosW = m_LightPosW;
-	m_MainPassCB.RenderTargetSize = XMFLOAT2((float)w, (float)h);
-	m_MainPassCB.InvRenderTargetSize = XMFLOAT2(1.f / w, 1.f / h);
-	m_MainPassCB.NearZ = m_LightNearZ;
-	m_MainPassCB.FarZ = m_LightFarZ;
+	m_ShadowPassCB.EyePosW = m_LightPosW;
+	m_ShadowPassCB.RenderTargetSize = XMFLOAT2((float)w, (float)h);
+	m_ShadowPassCB.InvRenderTargetSize = XMFLOAT2(1.f / w, 1.f / h);
+	m_ShadowPassCB.NearZ = m_LightNearZ;
+	m_ShadowPassCB.FarZ = m_LightFarZ;
 
 	UploadBuffer<PassConstants>* currPassCB = m_CurrFrameResource->PassCB.get();
 	// 두번째 offset에 넣어준다.
-	currPassCB->CopyData(1, m_MainPassCB);
+	currPassCB->CopyData(1, m_ShadowPassCB);
+}
+
+void AmbientOcclusionApp::UpdateSsaoCB(const GameTimer& _gt)
+{
+	SsaoConstants ssaoCB;
+	XMMATRIX P = m_Camera.GetProjMat();
+	// NDC를 Texture 좌표로 바꾼다.
+	XMMATRIX T(
+		0.5f, 0.0f, 0.0f, 0.0f,
+		0.0f, -0.5f, 0.0f, 0.0f,
+		0.0f, 0.0f, 1.0f, 0.0f,
+		0.5f, 0.5f, 0.0f, 1.0f);
+
+	// 화면 기준이니까 그대로 가져온다.
+	ssaoCB.ProjMat = m_MainPassCB.ProjMat;
+	ssaoCB.InvProjMat = m_MainPassCB.InvProjMat;
+	XMStoreFloat4x4(&ssaoCB.ProjTexMat, XMMatrixTranspose(P * T));
+	// 균일한 벡터를 Shader에 넘겨준다.
+	m_Ssao->GetOffsetVectors(ssaoCB.OffsetVectors);
+	// blur 가중치를 세팅한다.
+	std::vector<float> blurWeights = m_Ssao->CalcGaussWeights(2.5f);
+	ssaoCB.BlurWeights[0] = XMFLOAT4(&blurWeights[0]);
+	ssaoCB.BlurWeights[1] = XMFLOAT4(&blurWeights[4]);
+	ssaoCB.BlurWeights[2] = XMFLOAT4(&blurWeights[8]);
+
+	ssaoCB.InvRenderTargetSize = XMFLOAT2(1.0f / m_Ssao->GetSsaoMapWidth(), 1.0f / m_Ssao->GetSsaoMapHeight());
+
+	// Occlusion을 먹일 threshold 값을 세팅한다.
+	ssaoCB.OcclusionRadius = 0.5f;
+	ssaoCB.OcclusionFadeStart = 0.2f;
+	ssaoCB.OcclusionFadeEnd = 1.0f;
+	ssaoCB.SurfaceEpsilon = 0.05f;
+
+	UploadBuffer<SsaoConstants>* currSsaoCB = m_CurrFrameResource->SsaoCB.get();
+	currSsaoCB->CopyData(0, ssaoCB);
 }
 
 void AmbientOcclusionApp::LoadTextures()
 {
-	// 진작에 이렇게 할걸
 	std::vector<std::string> texNames =
 	{
 		"bricksDiffuseMap",
@@ -756,7 +869,7 @@ void AmbientOcclusionApp::LoadTextures()
 		L"../Textures/tile_nmap.dds",
 		L"../Textures/white1x1.dds",
 		L"../Textures/default_nmap.dds",
-		L"../Textures/desertcube1024.dds",
+		L"../Textures/sunsetcube1024.dds",
 	};
 
 	for (int i = 0; i < (int)texNames.size(); ++i)
@@ -779,15 +892,15 @@ void AmbientOcclusionApp::BuildRootSignature()
 	CD3DX12_ROOT_PARAMETER slotRootParameter[5];
 	UINT numOfParameter = 5;
 
-	// TextureCube와 ShadowMap이 Srv로 넘어가는 Table
+	// TextureCube, ShadowMap, SsaoMap이 Srv로 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable0;
-	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0);
+	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 0);
 
 	// Pixel Shader에서 사용하는 Texture 정보가 넘어가는 Table
 	CD3DX12_DESCRIPTOR_RANGE texTable1;
 	// Texture2D를 Index로 접근할 것 이기 때문에 이렇게 10개로 만들어 준다. 
 	// 이제 노멀맵도 넘어간다.
-	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 2, 0); // space0 / t2 - texture 정보
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 10, 3, 0); // space0 / t2 - texture 정보
 
 	// Srv가 넘어가는 테이블, Pass, Object, Material이 넘어가는 Constant
 	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - PerObject
@@ -834,10 +947,98 @@ void AmbientOcclusionApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
+void AmbientOcclusionApp::BuildSsaoRootSignature()
+{
+	
+	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
+	UINT numOfParameter = 4;
+
+	// SsaoMap을 생성할 때 사용하는 NormalMap, DepthMap이 들어간다.
+	CD3DX12_DESCRIPTOR_RANGE texTable0;
+	texTable0.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 2, 0, 0);
+
+	// Random Vector Map 혹은 Input 역할을 하는 Ambient Map이 들어간다.
+	CD3DX12_DESCRIPTOR_RANGE texTable1;
+	texTable1.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 2, 0);
+
+	slotRootParameter[0].InitAsConstantBufferView(0); // b0 - Ssao CB
+	slotRootParameter[1].InitAsConstants(1, 1); // b1 - bHorizontalBlur
+	slotRootParameter[2].InitAsDescriptorTable(1, &texTable0, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t0 ~ t1 - NormalMap ~ DepthMap
+	slotRootParameter[3].InitAsDescriptorTable(1, &texTable1, D3D12_SHADER_VISIBILITY_PIXEL); // space0, t2 - Random Vector Map / Ambient Map
+
+	// Ssao.hlsl는 일단 4개의 샘플러만 보내준다.
+	const CD3DX12_STATIC_SAMPLER_DESC pointClamp(
+		0, // 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_POINT, // 필터
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearClamp(
+		1, // 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // 필터
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_CLAMP); // addressW
+
+	const CD3DX12_STATIC_SAMPLER_DESC depthMapSam(
+		2, // 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // 필터
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_BORDER,  // addressW
+		0.0f,
+		0,
+		D3D12_COMPARISON_FUNC_LESS_EQUAL,
+		D3D12_STATIC_BORDER_COLOR_OPAQUE_WHITE);
+
+	const CD3DX12_STATIC_SAMPLER_DESC linearWrap(
+		3, // 레지스터 번호
+		D3D12_FILTER_MIN_MAG_MIP_LINEAR, // 필터
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressU
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP,  // addressV
+		D3D12_TEXTURE_ADDRESS_MODE_WRAP); // addressW
+
+	std::array<CD3DX12_STATIC_SAMPLER_DESC, 4> staticSamplers =
+	{
+		pointClamp, linearClamp, depthMapSam, linearWrap
+	};
+
+	// IA에서 값이 들어가도록 설정한다.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSigDesc(
+		numOfParameter,
+		slotRootParameter,
+		(UINT)staticSamplers.size(), // 드디어 여길 채워넣게 되었다.
+		staticSamplers.data(), // 보아하니 구조체만 넣어주면 되는 듯 보인다.
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+	);
+
+	// Root Parameter 를 만든다.
+	ComPtr<ID3DBlob> serializedRootSig = nullptr;
+	ComPtr<ID3DBlob> errorBlob = nullptr;
+	HRESULT hr = D3D12SerializeRootSignature(
+		&rootSigDesc,
+		D3D_ROOT_SIGNATURE_VERSION_1,
+		serializedRootSig.GetAddressOf(),
+		errorBlob.GetAddressOf()
+	);
+
+	if (errorBlob != nullptr)
+	{
+		::OutputDebugStringA((char*)errorBlob->GetBufferPointer());
+	}
+	ThrowIfFailed(hr);
+
+	ThrowIfFailed(m_d3dDevice->CreateRootSignature(
+		0,
+		serializedRootSig->GetBufferPointer(),
+		serializedRootSig->GetBufferSize(),
+		IID_PPV_ARGS(m_SsaoRootSignature.GetAddressOf())));
+}
+
 void AmbientOcclusionApp::BuildDescriptorHeaps()
 {
-	// Descriptor Count는 좀 넘겨도 된다. 부족한게 문제가 생기는 것이다.
-	const int textureDescriptorCount = 14;
+	const int textureDescriptorCount = 18;
 
 	int viewCount = 0;
 
@@ -894,16 +1095,17 @@ void AmbientOcclusionApp::BuildDescriptorHeaps()
 
 	// 미리 맴버에다가 offset을 저장하고.
 	m_ShadowMapHeapIndex = viewCount++;
+	m_SsaoHeapIndexStart = viewCount++;
+	viewCount += 2; // (연속 3개 - NormalMap, DepthMap, RandomVectorMap)
+	m_SsaoAmbientMapIndex = viewCount++;
+	viewCount += 1; // (연속 3 + 2개 - ambient0Map, ambient1Map)
 	m_NullCubeSrvIndex = viewCount++;
-	m_NullTexSrvIndex = viewCount++;
-
-	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuStart = m_CbvSrvUavDescriptorHeap->GetCPUDescriptorHandleForHeapStart();
-	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuStart = m_CbvSrvUavDescriptorHeap->GetGPUDescriptorHandleForHeapStart();
-	D3D12_CPU_DESCRIPTOR_HANDLE dsvCpuStart = m_DsvHeap->GetCPUDescriptorHandleForHeapStart();
+	m_NullTexSrvIndex0 = viewCount++;
+	m_NullTexSrvIndex1 = viewCount++;
 
 	// 안쓰는 Cube Srv와 Tex Srv를 nullptr을 굳이 넣어주는 이유는 잘 모르겠지만...
-	CD3DX12_CPU_DESCRIPTOR_HANDLE nullSrv = CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_NullCubeSrvIndex, m_CbvSrvUavDescriptorSize);
-	m_NullSrv = CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_NullCubeSrvIndex, m_CbvSrvUavDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE nullSrv = GetCpuSrv(m_NullCubeSrvIndex);
+	m_NullSrv = GetGpuSrv(m_NullCubeSrvIndex);
 
 	m_d3dDevice->CreateShaderResourceView(nullptr, &srvDesc, nullSrv);
 	nullSrv.Offset(1, m_CbvSrvUavDescriptorSize);
@@ -915,11 +1117,23 @@ void AmbientOcclusionApp::BuildDescriptorHeaps()
 	srvDesc.Texture2D.ResourceMinLODClamp = 0.f;
 	m_d3dDevice->CreateShaderResourceView(nullptr, &srvDesc, nullSrv);
 
+	nullSrv.Offset(1, m_CbvSrvUavDescriptorSize);
+	m_d3dDevice->CreateShaderResourceView(nullptr, &srvDesc, nullSrv);
+
 	// 클래스 인스턴스에 있는 텍스쳐 들을 view heap과 연결해준다.
 	m_ShadowMap->BuildDescriptors(
-		CD3DX12_CPU_DESCRIPTOR_HANDLE(srvCpuStart, m_ShadowMapHeapIndex, m_CbvSrvUavDescriptorSize),
-		CD3DX12_GPU_DESCRIPTOR_HANDLE(srvGpuStart, m_ShadowMapHeapIndex, m_CbvSrvUavDescriptorSize),
-		CD3DX12_CPU_DESCRIPTOR_HANDLE(dsvCpuStart, 1, m_DsvDescriptorSize) // 두번째 dsv offset을 가진다.
+		GetCpuSrv(m_ShadowMapHeapIndex),
+		GetGpuSrv(m_ShadowMapHeapIndex),
+		GetDsv(1) // 두번째 dsv offset을 가진다.
+	);
+
+	m_Ssao->BuildDescriptors(
+		m_DepthStencilBuffer.Get(), // 내부적으로 depth buffer를 사용한다.
+		GetCpuSrv(m_SsaoHeapIndexStart), // 내부적으로 5개의 view를 가지고 있는다.
+		GetGpuSrv(m_SsaoHeapIndexStart),
+		GetRtv(SwapChainBufferCount), // Ssao를 그릴 RT
+		m_CbvSrvUavDescriptorSize, 
+		m_RtvDescriptorSize
 	);
 }
 
@@ -941,6 +1155,15 @@ void AmbientOcclusionApp::BuildShadersAndInputLayout()
 
 	m_Shaders["debugVS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "PS", "ps_5_1");
+
+	m_Shaders["drawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["drawNormalsPS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "PS", "ps_5_1");
+
+	m_Shaders["ssaoVS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["ssaoPS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "PS", "ps_5_1");
+
+	m_Shaders["ssaoBlurVS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["ssaoBlurPS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");
@@ -1165,36 +1388,47 @@ void AmbientOcclusionApp::BuildSkullGeometry()
 
 void AmbientOcclusionApp::BuildPSOs()
 {
-	// 불투명 PSO
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc;
+	// 이렇게 기본 PSO를 따로 뺀 이유는
+	// opaque Rendering을 할 때, ssao map을 작성하면스 depth buffer가 이미
+	// 작성이 되어있어서 또 작성할 필요가 없기 때문에 그런 것이다.
+	// 그래서 depth 판정을 할 때, D3D12_COMPARISON_FUNC_EQUAL 같은 친구들을 렌더링하면
+	// 평소 처럼 나오게 되는 것이다.
 
-	ZeroMemory(&opaquePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
-	opaquePSODesc.InputLayout = { m_InputLayout.data(), (UINT)m_InputLayout.size() };
-	opaquePSODesc.pRootSignature = m_RootSignature.Get();
-	opaquePSODesc.VS =
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC basePSODesc;
+
+	ZeroMemory(&basePSODesc, sizeof(D3D12_GRAPHICS_PIPELINE_STATE_DESC));
+	basePSODesc.InputLayout = { m_InputLayout.data(), (UINT)m_InputLayout.size() };
+	basePSODesc.pRootSignature = m_RootSignature.Get();
+	basePSODesc.VS =
 	{
 		reinterpret_cast<BYTE*>(m_Shaders["standardVS"]->GetBufferPointer()),
 		m_Shaders["standardVS"]->GetBufferSize()
 	};
-	opaquePSODesc.PS =
+	basePSODesc.PS =
 	{
 		reinterpret_cast<BYTE*>(m_Shaders["opaquePS"]->GetBufferPointer()),
 		m_Shaders["opaquePS"]->GetBufferSize()
 	};
-	opaquePSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	opaquePSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	opaquePSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	opaquePSODesc.SampleMask = UINT_MAX;
-	opaquePSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	opaquePSODesc.NumRenderTargets = 1;
-	opaquePSODesc.RTVFormats[0] = m_BackBufferFormat;
-	opaquePSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
-	opaquePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
-	opaquePSODesc.DSVFormat = m_DepthStencilFormat;
+	basePSODesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	basePSODesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	basePSODesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	basePSODesc.SampleMask = UINT_MAX;
+	basePSODesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	basePSODesc.NumRenderTargets = 1;
+	basePSODesc.RTVFormats[0] = m_BackBufferFormat;
+	basePSODesc.SampleDesc.Count = m_4xMsaaState ? 4 : 1;
+	basePSODesc.SampleDesc.Quality = m_4xMsaaState ? (m_4xMsaaQuality - 1) : 0;
+	basePSODesc.DSVFormat = m_DepthStencilFormat;
+
+	// 불투명 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc = basePSODesc;
+	// depth buffer가 screen에 대하여 이미 작성이 되어있는 특별한 경우이다.
+	opaquePSODesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_EQUAL;
+	opaquePSODesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
 
 	// Shadow Map을 생성할 때 사용하는 PSO다
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowDrawPSODesc = opaquePSODesc;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC shadowDrawPSODesc = basePSODesc;
 	// 생성되는 삼각형 마다, (여기서는 광원에서 바라보는)카메라와의 각도를 계산해서
 	// bias를 속성 값에 따라 계산해서 적용해준다. 이거는 예쁘게 나오는 값들을 실험적으로 찾아야 한다.
 	// 아래 속성 값들의 사용법 : https://learn.microsoft.com/ko-kr/windows/win32/direct3d11/d3d10-graphics-programming-guide-output-merger-stage-depth-bias
@@ -1217,7 +1451,7 @@ void AmbientOcclusionApp::BuildPSOs()
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowDrawPSODesc, IID_PPV_ARGS(&m_PSOs["shadow_opaque"])));
 
 	// debug Layer용 PSO다.
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC debugPSODesc = opaquePSODesc;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC debugPSODesc = basePSODesc;
 	debugPSODesc.VS =
 	{
 		reinterpret_cast<BYTE*>(m_Shaders["debugVS"]->GetBufferPointer()),
@@ -1230,9 +1464,66 @@ void AmbientOcclusionApp::BuildPSOs()
 	};
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&debugPSODesc, IID_PPV_ARGS(&m_PSOs["debug"])));
 
+	// Screen에서 보이는 Normal을 그리는 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC drawNormalsPSODesc = basePSODesc;
+	drawNormalsPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["drawNormalsVS"]->GetBufferPointer()),
+		m_Shaders["drawNormalsVS"]->GetBufferSize()
+	};
+	drawNormalsPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["drawNormalsPS"]->GetBufferPointer()),
+		m_Shaders["drawNormalsPS"]->GetBufferSize()
+	};
+	drawNormalsPSODesc.RTVFormats[0] = Ssao::NormalMapFormat;
+	drawNormalsPSODesc.SampleDesc.Count = 1;
+	drawNormalsPSODesc.SampleDesc.Quality = 0;
+	drawNormalsPSODesc.DSVFormat = m_DepthStencilFormat;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawNormalsPSODesc, IID_PPV_ARGS(&m_PSOs["drawNormals"])));
+
+	// SSAO Map을 그리는 PSO
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC ssaoPSODesc = basePSODesc;
+	// SSAO는 내부적으로 따로 좌표계 변환을 하고 쉐이더 리소스로 작업을 하기 때문에
+	// 입력으로 들어가는 Vertex, Index 값이 없다.
+	ssaoPSODesc.InputLayout = { nullptr, 0 };
+	ssaoPSODesc.pRootSignature = m_SsaoRootSignature.Get();
+	ssaoPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["ssaoVS"]->GetBufferPointer()),
+		m_Shaders["ssaoVS"]->GetBufferSize()
+	};
+	ssaoPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["ssaoPS"]->GetBufferPointer()),
+		m_Shaders["ssaoPS"]->GetBufferSize()
+	};
+	// 뎁스 버퍼도 이용하지 않는다.
+	ssaoPSODesc.DepthStencilState.DepthEnable = false;
+	ssaoPSODesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	ssaoPSODesc.RTVFormats[0] = Ssao::AmbientMapFormat;
+	ssaoPSODesc.SampleDesc.Count = 1;
+	ssaoPSODesc.SampleDesc.Quality = 0;
+	ssaoPSODesc.DSVFormat = DXGI_FORMAT_UNKNOWN;
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&ssaoPSODesc, IID_PPV_ARGS(&m_PSOs["ssao"])));
+
+	// SSAO에 blur를 먹이는 PSO다.
+	// 쉐이더만 바꿔주면 된다.
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC ssaoBlurPSODesc = ssaoPSODesc;
+	ssaoBlurPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["ssaoBlurVS"]->GetBufferPointer()),
+		m_Shaders["ssaoBlurVS"]->GetBufferSize()
+	};
+	ssaoBlurPSODesc.PS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["ssaoBlurPS"]->GetBufferPointer()),
+		m_Shaders["ssaoBlurPS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&ssaoBlurPSODesc, IID_PPV_ARGS(&m_PSOs["ssaoBlur"])));
 
 	// Sky용 PSO
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPSODesc = opaquePSODesc;
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skyPSODesc = basePSODesc;
 
 	// 커다란 구로 표현을 할거고, 안쪽에서 바라보기 때문에 cull을 반대로 해줘야한다.
 	skyPSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_FRONT;
@@ -1546,6 +1837,42 @@ void AmbientOcclusionApp::DrawSceneToShadowMap()
 	CD3DX12_RESOURCE_BARRIER shadowDS_WRITE_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
 	m_CommandList->ResourceBarrier(1, &shadowDS_WRITE_READ);
+}
+
+void AmbientOcclusionApp::DrawNormalsAndDepth()
+{
+	// 화면에 보이는 normal을 뽑는 것이다.
+	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
+	m_CommandList->RSSetScissorRects(1, &m_ScissorRect);
+
+	// 렌더타겟이 될 리소스와 뷰를 가져온다.
+	ID3D12Resource* normalMap = m_Ssao->GetNormalMap();
+	CD3DX12_CPU_DESCRIPTOR_HANDLE normalMapRtv = m_Ssao->GetNormalMapRtv();
+
+	// 베리어를 렌더 타겟으로 바꾸고
+	CD3DX12_RESOURCE_BARRIER normalMap_READ_RT = CD3DX12_RESOURCE_BARRIER::Transition(normalMap, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	m_CommandList->ResourceBarrier(1, &normalMap_READ_RT);
+
+	// 노멀은 z = 1로, depth는 1로 초기화 시킨다.
+	float clearValue[] = { 0.0f, 0.0f, 1.0f, 0.0f };
+	m_CommandList->ClearRenderTargetView(normalMapRtv, clearValue, 0, nullptr);
+	m_CommandList->ClearDepthStencilView(GetDepthStencilView(), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 1.0f, 0, 0, nullptr);
+
+	// 렌더 타겟을 바인드하고
+	D3D12_CPU_DESCRIPTOR_HANDLE depthStencilView = GetDepthStencilView();
+	m_CommandList->OMSetRenderTargets(1, &normalMapRtv, true, &depthStencilView);
+
+	// 화면과 똑같은 passCB를 넘겨준다..
+	ID3D12Resource* passCB = m_CurrFrameResource->PassCB->Resource();
+	m_CommandList->SetGraphicsRootConstantBufferView(1, passCB->GetGPUVirtualAddress());
+
+	m_CommandList->SetPipelineState(m_PSOs["drawNormals"].Get());
+
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+
+	// 다시 베리어를 Read로 바꾼다.
+	CD3DX12_RESOURCE_BARRIER normalMap_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(normalMap, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);
+	m_CommandList->ResourceBarrier(1, &normalMap_RT_READ);
 }
 
 std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> AmbientOcclusionApp::GetStaticSamplers()
