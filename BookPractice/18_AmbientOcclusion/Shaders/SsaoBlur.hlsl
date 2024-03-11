@@ -123,9 +123,10 @@ float4 PS(VertexOut pin) : SV_Target
 		// 노멀이나 뎁스 차이가 심하면, 같은 경계에 있지 않다고
         // 판단해서 blur 계산에 포함시키지 않는다.
 		//
-	
+#if !PRAC2
         if (dot(neighborNormal, centerNormal) >= 0.8f &&
 		    abs(neighborDepth - centerDepth) <= 0.2f)
+#endif
         {
             float weight = blurWeights[i + gBlurRadius];
 

@@ -186,8 +186,13 @@ float4 PS(VertexOut pin) : SV_Target
 		
         float distZ = p.z - r.z;
         float dp = max(dot(n, normalize(r - p)), 0.0f);
-
+#if !PRAC4
         float occlusion = dp * OcclusionFunction(distZ);
+#else
+        float occlusion = OcclusionFunction(distZ);
+#endif
+
+        
 
         occlusionSum += occlusion;
     }

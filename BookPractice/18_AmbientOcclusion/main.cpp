@@ -13,6 +13,9 @@
 #include "../Common/Camera.h"
 #include "Ssao.h"
 
+#define PRAC2 (0)
+#define PRAC4 (1)
+
 const int g_NumFrameResources = 3;
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
@@ -505,7 +508,7 @@ void AmbientOcclusionApp::Draw(const GameTimer& _gt)
 	// 일단 불투명한 애들을 먼저 싹 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-
+//#if !PRAC2
 	// shadow debug layer를 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
@@ -513,6 +516,8 @@ void AmbientOcclusionApp::Draw(const GameTimer& _gt)
 	// 하늘을 맨 마지막에 그려주는 것이 depth test 성능상 좋다고 한다. 
 	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
+//#endif
+
 
 	// ======================================
 
@@ -1145,6 +1150,18 @@ void AmbientOcclusionApp::BuildShadersAndInputLayout()
 		NULL, NULL
 	};
 
+	const D3D_SHADER_MACRO Prac2[] =
+	{
+		"PRAC2", "1",
+		NULL, NULL
+	};
+
+	const D3D_SHADER_MACRO Prac4[] =
+	{
+		"PRAC4", "1",
+		NULL, NULL
+	};
+
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\18_AmbientOcclusion.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\18_AmbientOcclusion.hlsl", nullptr, "PS", "ps_5_1");
 	//m_Shaders["alphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\17_ShadowMapping.hlsl", alphaTestDefines, "PS", "ps_5_1");
@@ -1159,11 +1176,22 @@ void AmbientOcclusionApp::BuildShadersAndInputLayout()
 	m_Shaders["drawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["drawNormalsPS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "PS", "ps_5_1");
 
+#if !PRAC4
 	m_Shaders["ssaoVS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["ssaoPS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "PS", "ps_5_1");
+#else
+	m_Shaders["ssaoVS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", Prac4, "VS", "vs_5_1");
+	m_Shaders["ssaoPS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", Prac4, "PS", "ps_5_1");
+#endif
 
+	
+#if !PRAC2
 	m_Shaders["ssaoBlurVS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["ssaoBlurPS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", nullptr, "PS", "ps_5_1");
+#else
+	m_Shaders["ssaoBlurVS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", Prac2, "VS", "vs_5_1");
+	m_Shaders["ssaoBlurPS"] = d3dUtil::CompileShader(L"Shaders\\SsaoBlur.hlsl", Prac2, "PS", "ps_5_1");
+#endif
 
 	m_Shaders["skyVS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "VS", "vs_5_1");
 	m_Shaders["skyPS"] = d3dUtil::CompileShader(L"Shaders\\Sky.hlsl", nullptr, "PS", "ps_5_1");

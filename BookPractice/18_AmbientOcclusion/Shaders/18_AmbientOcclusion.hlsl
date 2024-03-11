@@ -98,6 +98,7 @@ float4 PS(VertexOut pin) : SV_Target
     pin.SsaoPosH /= pin.SsaoPosH.w;
     // Ssao Map에서 결과를 가져온다.
     float ambientAccss = gSsaoMap.Sample(gSamLinearClamp, pin.SsaoPosH.xy, 0.f).r;
+    
     float4 ambient = gAmbientLight * diffuseAlbedo * ambientAccss;
     
     // 일단은 첫번째 광원에 대해서만, 그림자를 설정한다.
