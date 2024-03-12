@@ -42,6 +42,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="ShadowMap.cpp" />
     <ClCompile Include="Ssao.cpp" />
+    <ClCompile Include="AnimationHelper.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Common\Camera.h">
@@ -75,33 +76,18 @@
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="ShadowMap.h" />
     <ClInclude Include="Ssao.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <FxCompile Include="Shaders\Commons.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\DrawNormals.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Shadow.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Sky.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Ssao.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\SsaoBlur.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
+    <ClInclude Include="AnimationHelper.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\19_Quaternion.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\Commons.hlsl" />
+    <None Include="Shaders\DrawNormals.hlsl" />
+    <None Include="Shaders\LightingUtil.hlsl" />
+    <None Include="Shaders\Shadow.hlsl" />
+    <None Include="Shaders\Sky.hlsl" />
+    <None Include="Shaders\Ssao.hlsl" />
+    <None Include="Shaders\SsaoBlur.hlsl" />
   </ItemGroup>
 </Project>

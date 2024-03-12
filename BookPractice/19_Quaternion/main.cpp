@@ -12,6 +12,7 @@
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
 #include "Ssao.h"
+#include "AnimationHelper.h"
 
 const int g_NumFrameResources = 3;
 
@@ -91,6 +92,7 @@ private:
 	void UpdateSsaoCB(const GameTimer& _gt); // Ssao Map을 생성할 때 사용하는 SsaoCB를 업데이트 해준다.
 
 	// ==== Init ====
+	void DefineSkullAnimation();
 	void LoadTextures();
 	void BuildRootSignature();
 	void BuildSsaoRootSignature();
@@ -197,6 +199,13 @@ private:
 		XMFLOAT3(0.0f, -0.707f, -0.707f)
 	};
 	XMFLOAT3 m_RotatedLightDirections[3];
+
+	// skull animation을 위한 맴버이다.
+	float m_AnimTimePos = 0.f;
+	BoneAnimation m_SkullAnimation;
+
+	RenderItem* m_SkullRitem = nullptr;
+	XMFLOAT4X4 m_SkullWorldMat = MathHelper::Identity4x4();
 
 public:
 	// Heap에서 연속적으로 존재하는 View들이 많을 예정이라 이렇게 Get 함수를 만들었다.
@@ -314,6 +323,8 @@ bool QuaternionApp::Initialize()
 		m_CommandList.Get(),
 		m_ClientWidth, m_ClientHeight
 	);
+	// skull animation을 생성한다.
+	DefineSkullAnimation();
 
 	// ======== 초기화 ==========
 	LoadTextures();
@@ -362,6 +373,17 @@ void QuaternionApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
+
+	// 애니메이션을 업데이트 한다.
+	m_AnimTimePos += _gt.GetDeltaTime();
+	if (m_AnimTimePos >= m_SkullAnimation.GetEndTime())
+	{
+		m_AnimTimePos = 0.f;
+	}
+
+	m_SkullAnimation.Interpolate(m_AnimTimePos, m_SkullWorldMat);
+	m_SkullRitem->WorldMat = m_SkullWorldMat;
+	m_SkullRitem->NumFramesDirty = g_NumFrameResources;
 
 	// 원형 배열을 돌면서
 	m_CurrFrameResourceIndex = (m_CurrFrameResourceIndex + 1) % g_NumFrameResources;
@@ -842,6 +864,42 @@ void QuaternionApp::UpdateSsaoCB(const GameTimer& _gt)
 
 	UploadBuffer<SsaoConstants>* currSsaoCB = m_CurrFrameResource->SsaoCB.get();
 	currSsaoCB->CopyData(0, ssaoCB);
+}
+
+void QuaternionApp::DefineSkullAnimation()
+{
+	// 대충 이렇게 애니메이션을 정의해보자.
+
+	XMVECTOR q0 = XMQuaternionRotationAxis(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XMConvertToRadians(30.0f));
+	XMVECTOR q1 = XMQuaternionRotationAxis(XMVectorSet(1.0f, 1.0f, 2.0f, 0.0f), XMConvertToRadians(45.0f));
+	XMVECTOR q2 = XMQuaternionRotationAxis(XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f), XMConvertToRadians(-30.0f));
+	XMVECTOR q3 = XMQuaternionRotationAxis(XMVectorSet(1.0f, 0.0f, 0.0f, 0.0f), XMConvertToRadians(70.0f));
+
+	m_SkullAnimation.vecKeyframe.resize(5);
+	m_SkullAnimation.vecKeyframe[0].timePos = 0.0f;
+	m_SkullAnimation.vecKeyframe[0].translation = XMFLOAT3(-7.0f, 0.0f, 0.0f);
+	m_SkullAnimation.vecKeyframe[0].scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+	XMStoreFloat4(&m_SkullAnimation.vecKeyframe[0].rotationQuat, q0);
+
+	m_SkullAnimation.vecKeyframe[1].timePos = 2.0f;
+	m_SkullAnimation.vecKeyframe[1].translation = XMFLOAT3(0.0f, 2.0f, 10.0f);
+	m_SkullAnimation.vecKeyframe[1].scale = XMFLOAT3(0.5f, 0.5f, 0.5f);
+	XMStoreFloat4(&m_SkullAnimation.vecKeyframe[1].rotationQuat, q1);
+
+	m_SkullAnimation.vecKeyframe[2].timePos = 4.0f;
+	m_SkullAnimation.vecKeyframe[2].translation = XMFLOAT3(7.0f, 0.0f, 0.0f);
+	m_SkullAnimation.vecKeyframe[2].scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+	XMStoreFloat4(&m_SkullAnimation.vecKeyframe[2].rotationQuat, q2);
+
+	m_SkullAnimation.vecKeyframe[3].timePos = 6.0f;
+	m_SkullAnimation.vecKeyframe[3].translation = XMFLOAT3(0.0f, 1.0f, -10.0f);
+	m_SkullAnimation.vecKeyframe[3].scale = XMFLOAT3(0.5f, 0.5f, 0.5f);
+	XMStoreFloat4(&m_SkullAnimation.vecKeyframe[3].rotationQuat, q3);
+
+	m_SkullAnimation.vecKeyframe[4].timePos = 8.0f;
+	m_SkullAnimation.vecKeyframe[4].translation = XMFLOAT3(-7.0f, 0.0f, 0.0f);
+	m_SkullAnimation.vecKeyframe[4].scale = XMFLOAT3(0.25f, 0.25f, 0.25f);
+	XMStoreFloat4(&m_SkullAnimation.vecKeyframe[4].rotationQuat, q0);
 }
 
 void QuaternionApp::LoadTextures()
@@ -1706,7 +1764,7 @@ void QuaternionApp::BuildRenderItems()
 	skullRenderItem->IndexCount = skullRenderItem->Geo->DrawArgs["skull"].IndexCount;
 	skullRenderItem->StartIndexLocation = skullRenderItem->Geo->DrawArgs["skull"].StartIndexLocation;
 	skullRenderItem->BaseVertexLocation = skullRenderItem->Geo->DrawArgs["skull"].BaseVertexLocation;
-
+	m_SkullRitem = skullRenderItem.get();
 	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(skullRenderItem.get());
 
 	m_AllRenderItems.push_back(std::move(skullRenderItem));
