@@ -1,5 +1,5 @@
 //***************************************************************************************
-// 19_Quaternion.hlsl by Frank Luna (C) 2015 All Rights Reserved.
+// 20_Animation.hlsl by Frank Luna (C) 2015 All Rights Reserved.
 //
 // Default shader, currently supports lighting.
 //***************************************************************************************
