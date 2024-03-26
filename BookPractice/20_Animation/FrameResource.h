@@ -18,6 +18,12 @@ struct ObjectConstants
 	UINT objPad2;
 };
 
+// 스키닝을 할 때 쓰이는 Bone의 정보이다.
+struct SkinnedConstants 
+{
+	DirectX::XMFLOAT4X4 BoneTransform[96];
+};
+
 // 렌더링마다 한번씩만 넘겨주는 친구이다.
 struct PassConstants {
 
@@ -53,6 +59,7 @@ struct PassConstants {
 	// 인덱스로 구분을 하게 된다.
 	Light Lights[MaxLights];
 };
+
 // Ssao Map 작업할 때 필요한 친구들이다.
 struct SsaoConstants 
 {
@@ -107,11 +114,22 @@ struct Vertex {
 	XMFLOAT3 TangentU;
 };
 
+// Skinning에 사용할 Vertex 정보이다.
+struct SkinnedVertex 
+{
+	XMFLOAT3 Pos;
+	XMFLOAT3 Normal;
+	XMFLOAT2 TexC;
+	XMFLOAT3 TangentU;
+	XMFLOAT3 BoneWeights;
+	BYTE BoneIndices[4];
+};
+
 // CPU가 프레임 마다 Command List를 구성하는데 필요한 정보들을 저장한다.
 struct FrameResource
 {
 public:
-	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _instanceCount, UINT _materialCount);
+	FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _skinnedObjectCount, UINT _materialCount);
 	FrameResource(const FrameResource& _other) = delete;
 	FrameResource& operator=(const FrameResource& _other) = delete;
 	~FrameResource();
@@ -130,6 +148,9 @@ public:
 
 	// 다시 Object Constant Buffer로 돌아왔다.
 	std::unique_ptr<UploadBuffer<ObjectConstants>> ObjectCB = nullptr;
+
+	// Skinning 할 때 쓰이는 CB이다.
+	std::unique_ptr<UploadBuffer<SkinnedConstants>> SkinnedCB = nullptr;
 
 	// Ssao Map을 작성하고, Ssao Blur를 먹이는데 사용하는 Buffer이다.
 	std::unique_ptr<UploadBuffer<SsaoConstants>> SsaoCB = nullptr;

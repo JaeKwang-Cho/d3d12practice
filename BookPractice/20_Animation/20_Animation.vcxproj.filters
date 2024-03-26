@@ -15,12 +15,11 @@
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
     </Filter>
-    <Filter Include="PostProcess">
+    <Filter Include="VisualFromLight">
       <UniqueIdentifier>{926c238d-f628-4b88-bdef-f3e0cc585a8a}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="AnimationHelper.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="..\Common\Camera.cpp">
@@ -45,16 +44,15 @@
       <Filter>Commons\소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="ShadowMap.cpp">
-      <Filter>PostProcess</Filter>
+      <Filter>VisualFromLight</Filter>
     </ClCompile>
     <ClCompile Include="Ssao.cpp">
-      <Filter>PostProcess</Filter>
+      <Filter>VisualFromLight</Filter>
     </ClCompile>
     <ClCompile Include="LoadM3d.cpp" />
     <ClCompile Include="SkinnedData.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="AnimationHelper.h" />
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="..\Common\Camera.h">
@@ -85,39 +83,37 @@
       <Filter>Commons\헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="ShadowMap.h">
-      <Filter>PostProcess</Filter>
+      <Filter>VisualFromLight</Filter>
     </ClInclude>
     <ClInclude Include="Ssao.h">
-      <Filter>PostProcess</Filter>
+      <Filter>VisualFromLight</Filter>
     </ClInclude>
     <ClInclude Include="LoadM3d.h" />
     <ClInclude Include="SkinnedData.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\Commons.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\DrawNormals.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\LightingUtil.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Shadow.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Sky.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\Ssao.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-    <FxCompile Include="Shaders\SsaoBlur.hlsl">
-      <Filter>Shaders</Filter>
-    </FxCompile>
-  </ItemGroup>
-  <ItemGroup>
     <None Include="Shaders\20_Animation.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Commons.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\DrawNormals.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Shadow.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Sky.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Ssao.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\SsaoBlur.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

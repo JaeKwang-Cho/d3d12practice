@@ -1,6 +1,6 @@
 #include "FrameResource.h"
 
-FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _materialCount)
+FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objectCount, UINT _skinnedObjectCount, UINT _materialCount)
 {
 	ThrowIfFailed(_device->CreateCommandAllocator(
 		D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -20,6 +20,11 @@ FrameResource::FrameResource(ID3D12Device* _device, UINT _passCount, UINT _objec
 
 	// Screen 공간에 맞춰서 그리는 거니까 하나만 필요하다.
 	SsaoCB = std::make_unique<UploadBuffer<SsaoConstants>>(_device, 1, true);
+
+	if (_skinnedObjectCount > 0) // 예제에서는 한개 밖에 없다.
+	{
+		SkinnedCB = std::make_unique<UploadBuffer<SkinnedConstants>>(_device, _skinnedObjectCount, true);
+	}
 
 	if (_materialCount > 0)
 	{

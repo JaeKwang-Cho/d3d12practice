@@ -41,7 +41,7 @@ Texture2D gShadowMap : register(t1);
 Texture2D gSsaoMap : register(t2);
 
 // 이제 노멀맵도 함께 사용할 것이기 때문에, 개수도 늘려주고, 일반적인 이름으로 바꿔준다.
-Texture2D gTextureMaps[10] : register(t3);
+Texture2D gTextureMaps[48] : register(t3);
 
 StructuredBuffer<MaterialData> gMaterialData : register(t0, space1);
 
@@ -70,8 +70,14 @@ cbuffer cbPerObject : register(b0)
     uint gObjPad2;
 };
 
+// 스키닝할때 필요한 bone 행렬이다.
+cbuffer cbSkinned : register(b1)
+{
+    float4x4 gBoneTransforms[96];
+};
+
 // 프레임 마다 달라지는 Constant Buffer
-cbuffer cbPass : register(b1)
+cbuffer cbPass : register(b2)
 {
     float4x4 gView;
     float4x4 gInvView;

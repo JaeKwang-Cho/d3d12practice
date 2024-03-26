@@ -13,6 +13,10 @@ struct VertexIn
     float3 NormalL : NORMAL;
     float2 TexC : TEXCOORD;
     float3 TangentU : TANGENT;
+#ifdef SKINNED
+    float3 BoneWeights : WEIGHTS;
+    uint4 BoneIndices : BONEINDICES;
+#endif
 };
 
 // 출력으로는 World Pos와 동차 (Homogeneous clip space) Pos로 나눈다.
@@ -33,6 +37,31 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     
     // 머테리얼 데이터를 가져온다
     MaterialData matData = gMaterialData[gMaterialIndex];
+    
+#ifdef SKINNED
+        float weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    weights[0] = vin.BoneWeights.x;
+    weights[1] = vin.BoneWeights.y;
+    weights[2] = vin.BoneWeights.z;
+    weights[3] = 1.0f - weights[0] - weights[1] - weights[2];
+
+    float3 posL = float3(0.0f, 0.0f, 0.0f);
+    float3 normalL = float3(0.0f, 0.0f, 0.0f);
+    float3 TangentU = float3(0.0f, 0.0f, 0.0f);
+    for(int i = 0; i < 4; ++i)
+    {
+        // Uniform scaling 이라고 가정한다.
+        // 그렇지 않으면 inverse-transpose를 곱해야한다.
+
+        posL += weights[i] * mul(float4(vin.PosL, 1.0f), gBoneTransforms[vin.BoneIndices[i]]).xyz;
+        normalL += weights[i] * mul(vin.NormalL, (float3x3)gBoneTransforms[vin.BoneIndices[i]]);
+        TangentU += weights[i] * mul(vin.TangentU.xyz, (float3x3)gBoneTransforms[vin.BoneIndices[i]]);
+    }
+
+    vin.PosL = posL;
+    vin.NormalL = normalL;
+    vin.TangentU.xyz = TangentU;
+#endif
 	
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
