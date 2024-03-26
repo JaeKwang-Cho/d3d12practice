@@ -59,7 +59,7 @@ public:
 
     bool LoadM3d(
         const std::string& _filename,
-        std::vector<Vertex>& _vertices,
+        std::vector<SkinnedVertex>& _vertices,
         std::vector<USHORT>& _indices,
         std::vector<Subset>& _subsets,
         std::vector<M3dMaterial>& _mats,

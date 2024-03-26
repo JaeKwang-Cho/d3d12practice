@@ -116,5 +116,8 @@
     <None Include="Shaders\SsaoBlur.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="Shaders\ShadowDebug.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

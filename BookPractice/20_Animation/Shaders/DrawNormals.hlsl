@@ -23,6 +23,10 @@ struct VertexIn
     float3 NormalL : NORMAL;
     float2 TexC : TEXCOORD;
     float3 TangentU : TANGENT;
+#ifdef SKINNED
+    float3 BoneWeights : WEIGHTS;
+    uint4 BoneIndices : BONEINDICES;
+#endif
 };
 
 struct VertexOut
@@ -39,6 +43,30 @@ VertexOut VS(VertexIn vin)
 
 	// 머테리얼 데이터를 가져온다
     MaterialData matData = gMaterialData[gMaterialIndex];
+    
+#ifdef SKINNED
+    float weights[4] = {0.f, 0.f, 0.f, 0.f};
+    weights[0] = vin.BoneWeights.x;
+    weights[1] = vin.BoneWeights.y;
+    weights[2] = vin.BoneWeights.z;
+    weights[3] = 1.f - weights[0] - weights[1] - weights[2];
+    
+    float3 posL = float3(0.f, 0.f, 0.f);
+    float3 normalL = float3(0.f, 0.f, 0.f);
+    float3 tangentU = float3(0.f, 0.f, 0.f);
+    for(int i = 0; i < 4; i++){
+        // 변환할때 균등 변환임을 가정한다.
+        // 그렇지 않으면 노멀을 바꿀때, inverse-transpose를 사용해야 한다.
+        
+        posL += weights[i] * mul(float4(vin.PosL, 1.f), gBoneTransforms[vin.BoneIndices[i]]).xyz;
+        normalL += weights[i] * mul(vin.NormalL, (float3x3)gBoneTransforms[vin.BoneIndices[i]]);
+        tangentU += weights[i] * mul(vin.TangentU.xyz, (float3x3)gBoneTransforms[vin.BoneIndices[i]]);
+    }
+    
+    vin.PosL = posL;
+    vin.NormalL = normalL;
+    vin.TangentU.xyz = tangentU;
+#endif
 	
     // Uniform Scaling 이라고 가정하고 계산한다.
     // (그렇지 않으면, 역전치 행렬을 사용해야 한다.)

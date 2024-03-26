@@ -9,6 +9,10 @@ struct VertexIn
 {
     float3 PosL : POSITION;
     float2 TexC : TEXCOORD;
+#ifdef SKINNED
+    float3 BoneWeights : WEIGHTS;
+    uint4 BoneIndices  : BONEINDICES;
+#endif
 };
 
 struct VertexOut
@@ -22,6 +26,24 @@ VertexOut VS(VertexIn vin)
     VertexOut vout = (VertexOut) 0.0f;
 
     MaterialData matData = gMaterialData[gMaterialIndex];
+    
+#ifdef SKINNED
+    float weights[4] = {0.f, 0.f, 0.f, 0.f};
+    weights[0] = vin.BoneWeights.x;
+    weights[1] = vin.BoneWeights.y;
+    weights[2] = vin.BoneWeights.z;
+    weights[3] = 1.f - weights[0] - weights[1] - weights[2];
+    
+    float3 posL = float3(0.f, 0.f, 0.f);
+    for(int i = 0; i < 4; i++){
+        // 변환할때 균등 변환임을 가정한다.
+        // 그렇지 않으면 노멀을 바꿀때, inverse-transpose를 사용해야 한다.
+        
+        posL += weights[i] * mul(float4(vin.PosL, 1.f), gBoneTransforms[vin.BoneIndices[i]]).xyz;
+    }
+    
+    vin.PosL = posL;
+#endif
     
     // World Pos로 바꾼다.
     float4 posW = mul(float4(vin.PosL, 1.0f), gWorld);
