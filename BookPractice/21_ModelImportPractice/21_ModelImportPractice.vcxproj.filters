@@ -1,0 +1,123 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Commons">
+      <UniqueIdentifier>{ad1d7edc-fc05-455c-a6f0-31bd40f0b22c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{f83b2130-0450-4b03-bc55-affba26a20d6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="LightVisual">
+      <UniqueIdentifier>{09a54db1-11f3-4fbd-ad3b-5081ce16b166}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\소스 파일">
+      <UniqueIdentifier>{772a18b7-cbb8-4c7f-b586-3d64f0ccb71f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Commons\헤더 파일">
+      <UniqueIdentifier>{99fb0121-4878-48ec-b4cc-d0c79bbf5fd4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ShadowMap.cpp">
+      <Filter>LightVisual</Filter>
+    </ClCompile>
+    <ClCompile Include="Ssao.cpp">
+      <Filter>LightVisual</Filter>
+    </ClCompile>
+    <ClCompile Include="FrameResource.cpp" />
+    <ClCompile Include="LoadM3d.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="SkinnedData.cpp" />
+    <ClCompile Include="..\Common\d3dUtil.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\d3dApp.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\Camera.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\DDSTextureLoader.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GameTimer.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\GeometryGenerator.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Common\MathHelper.cpp">
+      <Filter>Commons\소스 파일</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ShadowMap.h">
+      <Filter>LightVisual</Filter>
+    </ClInclude>
+    <ClInclude Include="Ssao.h">
+      <Filter>LightVisual</Filter>
+    </ClInclude>
+    <ClInclude Include="FileReader.h" />
+    <ClInclude Include="FrameResource.h" />
+    <ClInclude Include="LoadM3d.h" />
+    <ClInclude Include="SkinnedData.h" />
+    <ClInclude Include="..\Common\Camera.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dApp.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dUtil.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\d3dx12.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\DDSTextureLoader.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GameTimer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\GeometryGenerator.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\MathHelper.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Common\UploadBuffer.h">
+      <Filter>Commons\헤더 파일</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\Commons.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\DrawNormals.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\Shadow.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\ShadowDebug.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\Sky.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\Ssao.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\SsaoBlur.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\21_ModelImportPractice.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+  </ItemGroup>
+</Project>
