@@ -11,35 +11,9 @@
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
 #include "Ssao.h"
-#include "SkinnedData.h"
-#include "LoadM3d.h"
+#include "FbxPractice.h"
 
 const int g_NumFrameResources = 3;
-
-// 지금 예제는 스키닝할 모델은 하나밖에 없다.
-struct SkinnedModelInstance
-{
-	SkinnedData* SkinnedInfo = nullptr;
-	std::vector<DirectX::XMFLOAT4X4> FinalTransforms;
-	std::string ClipName;
-	float TimePos = 0.f;
-
-	// 시간에 따라 현재 animation clip에 맞는 bone 위치를
-	// 보간하고, 최종 transform을 계산한다.
-	void UpdateSkinnedAnimation(float _dt)
-	{
-		TimePos += _dt;
-
-		// 애니메이션 루프
-		if (TimePos > SkinnedInfo->GetClipEndTime(ClipName))
-		{
-			TimePos = 0.f;
-		}
-		// 현재 시간에 맞는 final transform을 구한다.
-		SkinnedInfo->GetFinalTransforms(ClipName, TimePos, FinalTransforms);
-
-	}
-};
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -74,18 +48,12 @@ struct RenderItem
 	UINT IndexCount = 0;
 	UINT StartIndexLocation = 0;
 	int BaseVertexLocation = 0;
-
-	// 스키닝하는 아이템에만 사용하고
-	UINT SkinnedCBIndex = -1;
-	// 그렇지 않으면 nullptr로 둔다.
-	SkinnedModelInstance* SkinnedModelInst = nullptr;
 };
 
 // 스카이 맵을 그리는 lay를 따로 둔다. 
 enum class RenderLayer : int
 {
 	Opaque = 0,
-	SkinnedOpaque,
 	Debug,
 	Sky,
 	Count
@@ -117,7 +85,6 @@ private:
 	void OnKeyboardInput(const GameTimer _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
-	void UpdateSkinnedCBs(const GameTimer& _gt); // 스키닝할 때 필요한 final bone을 넘겨주는 SkinnedCB를 업데이트 해준다.
 	void UpdateMaterialBuffer(const GameTimer& _gt);
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
@@ -131,7 +98,6 @@ private:
 	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
 	void BuildStageGeometry();
-	void LoadSkinnedModel(); // 예제에서 맞춤으로 만든 .m3d 파일을 임포트한다.
 	void BuildMaterials();
 	void BuildRenderItems();
 	void BuildPSOs();
@@ -166,8 +132,6 @@ private:
 
 	// input layout도 백터로 가지고 있는다
 	std::vector<D3D12_INPUT_ELEMENT_DESC> m_InputLayout;
-	// skinning 할때는 Vertex에 추가로 넘겨줘야할 것이 있다.
-	std::vector<D3D12_INPUT_ELEMENT_DESC> m_SkinnedInputLayout;
 
 	// RenderItem 리스트
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
@@ -209,15 +173,6 @@ private:
 	UINT m_NullTexSrvIndex1 = 0;
 	// 렌더타겟없이 뎁스 스텐실 뷰만 있는 Srv이다.
 	CD3DX12_GPU_DESCRIPTOR_HANDLE m_NullSrv;
-
-	// Mesh Skinning 할 때 쓰이는 맴버들이다.
-	UINT m_SkinnedSrvHeapStart = 0;
-	std::string m_SkinnedModelFileName = "..\\20_Animation\\Models\\soldier.m3d";
-	std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; // 예제에서는 하나만 렌더링한다.
-	SkinnedData m_SkinnedInfo;
-	std::vector<M3DLoader::Subset> m_SkinnedSubsets;
-	std::vector<M3DLoader::M3dMaterial> m_SkinnedMaterials;
-	std::vector<std::string> m_SkinnedTextureNames;
 
 	// 그림자 투영을 하기 위해 필요한 속성들이다.
 	// viewport 속성
@@ -357,7 +312,6 @@ bool AnimationApp::Initialize()
 	);
 
 	// ======== 초기화 ==========
-	LoadSkinnedModel();
 	LoadTextures();
 	BuildRootSignature();
 	BuildSsaoRootSignature();
@@ -438,7 +392,6 @@ void AnimationApp::Update(const GameTimer& _gt)
 
 	AnimateMaterials(_gt);
 	UpdateObjectCBs(_gt);
-	UpdateSkinnedCBs(_gt);
 	UpdateMaterialBuffer(_gt);
 	// PassCB에 Shadow Transform이 담기니까, 순서를 잘 맞춰줘야 한다.
 	UpdateShadowTransform(_gt);
@@ -550,9 +503,6 @@ void AnimationApp::Draw(const GameTimer& _gt)
 	// 일단 불투명한 애들을 먼저 싹 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-
-	m_CommandList->SetPipelineState(m_PSOs["skinnedOpaque"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
 
 	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
@@ -692,23 +642,6 @@ void AnimationApp::UpdateObjectCBs(const GameTimer& _gt)
 			e->NumFramesDirty--;
 		}
 	}
-}
-
-void AnimationApp::UpdateSkinnedCBs(const GameTimer& _gt)
-{
-	UploadBuffer<SkinnedConstants>* currSkinnedCB = m_CurrFrameResource->SkinnedCB.get();
-
-	m_SkinnedModelInst->UpdateSkinnedAnimation(_gt.GetDeltaTime());
-
-	SkinnedConstants skinnedConstants;
-	std::copy(
-		std::begin(m_SkinnedModelInst->FinalTransforms),
-		std::end(m_SkinnedModelInst->FinalTransforms),
-		&skinnedConstants.BoneTransform[0]
-	);
-
-	currSkinnedCB->CopyData(0, skinnedConstants);
-
 }
 
 void AnimationApp::UpdateMaterialBuffer(const GameTimer& _gt)
@@ -937,28 +870,6 @@ void AnimationApp::LoadTextures()
 		L"../Textures/desertcube1024.dds",
 	};
 
-	// 스키닝한 메쉬에 덮을 텍스쳐도 추가한다.
-	for (UINT i = 0; i < m_SkinnedMaterials.size(); i++)
-	{
-		std::string diffuseName = m_SkinnedMaterials[i].DiffuseMapName;
-		std::string normalName = m_SkinnedMaterials[i].NormalMapName;
-
-		std::wstring diffuseFilename = L"../Textures/" + AnsiToWString(diffuseName);
-		std::wstring normalFilename = L"../Textures/" + AnsiToWString(normalName);
-
-		// 확장자 빼고 저장한다.
-		diffuseName = diffuseName.substr(0, diffuseName.find_last_of("."));
-		normalName = normalName.substr(0, normalName.find_last_of("."));
-
-		m_SkinnedTextureNames.push_back(diffuseName);
-		texNames.push_back(diffuseName);
-		texFilenames.push_back(diffuseFilename);
-
-		m_SkinnedTextureNames.push_back(normalName);
-		texNames.push_back(normalName);
-		texFilenames.push_back(normalFilename);
-	}
-
 	for (int i = 0; i < (int)texNames.size(); ++i)
 	{
 		// 중복해서 만들지 않게 한다.
@@ -1158,16 +1069,6 @@ void AnimationApp::BuildDescriptorHeaps()
 		m_Textures["defaultNormalMap"]->Resource,
 	};
 
-	// skinning Texture가 저장될 index를 맴버에 저장해놓는다.
-	m_SkinnedSrvHeapStart = (UINT)tex2DList.size();
-
-	for (UINT i = 0; i < (UINT)m_SkinnedTextureNames.size(); i++)
-	{
-		ComPtr<ID3D12Resource> texResource = m_Textures[m_SkinnedTextureNames[i]]->Resource;
-		assert(texResource != nullptr);
-		tex2DList.push_back(texResource);
-	}
-
 	ComPtr<ID3D12Resource> skyCubeMap = m_Textures["skyCubeMap"]->Resource;
 
 	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -1258,11 +1159,9 @@ void AnimationApp::BuildShadersAndInputLayout()
 
 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["skinnedVS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["skinnedShadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["shadowOpaquePS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "PS", "ps_5_1");
 	m_Shaders["shadowAlphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
@@ -1270,7 +1169,6 @@ void AnimationApp::BuildShadersAndInputLayout()
 	m_Shaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["drawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "VS", "vs_5_1");
-	m_Shaders["skinnedDrawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["drawNormalsPS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["ssaoVS"] = d3dUtil::CompileShader(L"Shaders\\Ssao.hlsl", nullptr, "VS", "vs_5_1");
@@ -1288,18 +1186,7 @@ void AnimationApp::BuildShadersAndInputLayout()
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-	};
-
-	m_SkinnedInputLayout =
-	{
-		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{ "WEIGHTS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 3 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{ "BONEINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, sizeof(XMFLOAT3) * 4 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-	};
-}
+	};}
 
 void AnimationApp::BuildStageGeometry()
 {
@@ -1457,64 +1344,6 @@ void AnimationApp::BuildStageGeometry()
 	m_Geometries[geo->Name] = std::move(geo);
 }
 
-void AnimationApp::LoadSkinnedModel()
-{
-	std::vector<M3DLoader::SkinnedVertex> vertices;
-	std::vector<USHORT> indices;
-
-	M3DLoader m3dLoader;
-	m3dLoader.LoadM3d(
-		m_SkinnedModelFileName, vertices, indices,
-		m_SkinnedSubsets, m_SkinnedMaterials, m_SkinnedInfo);
-
-	m_SkinnedModelInst = std::make_unique<SkinnedModelInstance>();
-	m_SkinnedModelInst->SkinnedInfo = &m_SkinnedInfo;
-	m_SkinnedModelInst->FinalTransforms.resize(m_SkinnedInfo.BoneCount());
-	m_SkinnedModelInst->ClipName = "Take1";
-	m_SkinnedModelInst->TimePos = 0.f;
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(SkinnedVertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = m_SkinnedModelFileName;
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(),
-		vertices.data(), vbByteSize, geo->VertexBufferUploader
-	);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(), m_CommandList.Get(),
-		indices.data(), ibByteSize, geo->IndexBufferUploader
-	);
-
-	geo->VertexByteStride = sizeof(SkinnedVertex);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	for (UINT i = 0; i < (UINT)m_SkinnedSubsets.size(); i++)
-	{
-		SubmeshGeometry submesh;
-		std::string name = "sm_" + std::to_string(i);
-
-		submesh.IndexCount = (UINT)m_SkinnedSubsets[i].FaceCount * 3;
-		submesh.StartIndexLocation = m_SkinnedSubsets[i].FaceStart * 3;
-		submesh.BaseVertexLocation = 0;
-
-		geo->DrawArgs[name] = submesh;
-	}
-
-	m_Geometries[geo->Name] = std::move(geo);
-}
-
 void AnimationApp::BuildPSOs()
 {
 	// 이렇게 기본 PSO를 따로 뺀 이유는
@@ -1554,18 +1383,6 @@ void AnimationApp::BuildPSOs()
 	//
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC opaquePSODesc = basePSODesc;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&opaquePSODesc, IID_PPV_ARGS(&m_PSOs["opaque"])));
-
-	//
-	// Skinned 불투명 PSO
-	// 
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedOpaquePSODesc = opaquePSODesc;
-	skinnedOpaquePSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
-	skinnedOpaquePSODesc.VS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["skinnedVS"]->GetBufferPointer()),
-		m_Shaders["skinnedVS"]->GetBufferSize()
-	};
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedOpaquePSODesc, IID_PPV_ARGS(&m_PSOs["skinnedOpaque"])));
 	
 	//
 	// Shadow Map을 생성할 때 사용하는 PSO다
@@ -1591,18 +1408,7 @@ void AnimationApp::BuildPSOs()
 	shadowDrawPSODesc.NumRenderTargets = 0;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowDrawPSODesc, IID_PPV_ARGS(&m_PSOs["shadow_opaque"])));
 
-	//
-	// Skinned Shadow Map 생성 PSO
-	//
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedShadowMapPSODesc = shadowDrawPSODesc;
-	skinnedShadowMapPSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
-	skinnedShadowMapPSODesc.VS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["skinnedShadowVS"]->GetBufferPointer()),
-		m_Shaders["skinnedShadowVS"]->GetBufferSize()
-	};
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedShadowMapPSODesc, IID_PPV_ARGS(&m_PSOs["skinnedShadow_opaque"])));
-
+	
 	//
 	// debug Layer용 PSO다.
 	//
@@ -1638,18 +1444,6 @@ void AnimationApp::BuildPSOs()
 	drawNormalsPSODesc.SampleDesc.Quality = 0;
 	drawNormalsPSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawNormalsPSODesc, IID_PPV_ARGS(&m_PSOs["drawNormals"])));
-
-	//
-	// Skinned Normal을 그리는 PSO
-	//
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedDrawNormalsPSODesc = drawNormalsPSODesc;
-	skinnedDrawNormalsPSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
-	skinnedDrawNormalsPSODesc.VS =
-	{
-		reinterpret_cast<BYTE*>(m_Shaders["skinnedDrawNormalsVS"]->GetBufferPointer()),
-		m_Shaders["skinnedDrawNormalsVS"]->GetBufferSize()
-	};
-	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedDrawNormalsPSODesc, IID_PPV_ARGS(&m_PSOs["skinnedDrawNormals"])));
 
 	//
 	// SSAO Map을 그리는 PSO
@@ -1723,7 +1517,7 @@ void AnimationApp::BuildFrameResources()
 {
 	// Shadow Map 용으로 하나 더 필요하다.
 	UINT passCBCount = 2;
-	UINT skinnedObjectCount = 1;
+	UINT skinnedObjectCount = 0;
 
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1787,24 +1581,6 @@ void AnimationApp::BuildMaterials()
 	m_Materials["mirrorMat"] = std::move(mirrorMat);
 	m_Materials["tileMat"] = std::move(tileMat);
 	m_Materials["skyMat"] = std::move(skyMat);
-
-	UINT matCBIndex = 4;
-	UINT srvHeapIndex = m_SkinnedSrvHeapStart;
-	for (UINT i = 0; i < m_SkinnedMaterials.size(); i++)
-	{
-		std::unique_ptr<Material> mat = std::make_unique<Material>();
-
-		mat->Name = m_SkinnedMaterials[i].Name;
-		mat->MatCBIndex = matCBIndex++;
-		mat->DiffuseSrvHeapIndex = srvHeapIndex++;
-		mat->NormalSrvHeapIndex = srvHeapIndex++;
-		mat->DiffuseAlbedo = m_SkinnedMaterials[i].DiffuseAlbedo;
-		mat->FresnelR0 = m_SkinnedMaterials[i].FresnelR0;
-		mat->Roughness = m_SkinnedMaterials[i].Roughness;
-
-		m_Materials[mat->Name] = std::move(mat);
-	}
-
 }
 
 void AnimationApp::BuildRenderItems()
@@ -1928,45 +1704,13 @@ void AnimationApp::BuildRenderItems()
 		m_AllRenderItems.push_back(std::move(leftSphereRitem));
 		m_AllRenderItems.push_back(std::move(rightSphereRitem));
 	}
-
-	for (UINT i = 0; i < m_SkinnedMaterials.size(); i++)
-	{
-		std::string subMeshName = "sm_" + std::to_string(i);
-
-		std::unique_ptr<RenderItem> ritem = std::make_unique<RenderItem>();
-
-		// 오른손좌표계에서 들어온 좌표계 변환을 반영한다.
-		// (여기가 뭔지 모르겠다. ***)
-		XMMATRIX modelScale = XMMatrixScaling(0.05f, 0.05f, -0.05f);
-		XMMATRIX modelRot = XMMatrixRotationY(MathHelper::Pi);
-		XMMATRIX modelOffset = XMMatrixTranslation(0.f, 0.f, -5.f);
-		XMStoreFloat4x4(&ritem->WorldMat, modelScale * modelRot * modelOffset);
-
-		ritem->TexTransform = MathHelper::Identity4x4();
-		ritem->ObjCBIndex = objCBIndex++;
-		ritem->Mat = m_Materials[m_SkinnedMaterials[i].Name].get();
-		ritem->Geo = m_Geometries[m_SkinnedModelFileName].get();
-		ritem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		ritem->IndexCount = ritem->Geo->DrawArgs[subMeshName].IndexCount;
-		ritem->StartIndexLocation = ritem->Geo->DrawArgs[subMeshName].StartIndexLocation;
-		ritem->BaseVertexLocation= ritem->Geo->DrawArgs[subMeshName].BaseVertexLocation;
-
-		// 예제에서 준 모델은 같은 SkinnedModel instance을 사용한다.
-		ritem->SkinnedCBIndex = 0;
-		ritem->SkinnedModelInst = m_SkinnedModelInst.get();
-
-		m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque].push_back(ritem.get());
-		m_AllRenderItems.push_back(std::move(ritem));
-	}
 }
 
 void AnimationApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
-	UINT skinnedCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(SkinnedConstants));
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
-	ID3D12Resource* skinnedCB = m_CurrFrameResource->SkinnedCB->Resource();
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
@@ -1996,17 +1740,7 @@ void AnimationApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const st
 		// 이제 Item은 Object Buffer만 넘겨주어도 된다.
 		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-		// skinnning을 하는 렌더 아이템이면 그에 맞는 CB view 값을 bind 해준다.
-		if (ri->SkinnedModelInst != nullptr)
-		{
-			D3D12_GPU_VIRTUAL_ADDRESS skinnedCBAddress = skinnedCB->GetGPUVirtualAddress() + ri->SkinnedCBIndex * skinnedCBByteSize;
-			_cmdList->SetGraphicsRootConstantBufferView(1, skinnedCBAddress);
-		}
-		else
-		{
-			_cmdList->SetGraphicsRootConstantBufferView(1, 0);
-		}
-		
+		_cmdList->SetGraphicsRootConstantBufferView(1, 0);
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}
@@ -2044,10 +1778,6 @@ void AnimationApp::DrawSceneToShadowMap()
 	m_CommandList->SetPipelineState(m_PSOs["shadow_opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-	// 스키닝을 하는 물체에 대해서도 Shadow Map을 그려준다.
-	m_CommandList->SetPipelineState(m_PSOs["skinnedShadow_opaque"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
-
 	// Dsv Barrier를 다시 Read로 바꾼다.
 	CD3DX12_RESOURCE_BARRIER shadowDS_WRITE_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -2083,10 +1813,6 @@ void AnimationApp::DrawNormalsAndDepth()
 
 	m_CommandList->SetPipelineState(m_PSOs["drawNormals"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
-
-	// 여기서도 스키닝하는 친구에 대한 Normal Map을 그려준다.
-	m_CommandList->SetPipelineState(m_PSOs["skinnedDrawNormals"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
 
 	// 다시 베리어를 Read로 바꾼다.
 	CD3DX12_RESOURCE_BARRIER normalMap_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(normalMap, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);

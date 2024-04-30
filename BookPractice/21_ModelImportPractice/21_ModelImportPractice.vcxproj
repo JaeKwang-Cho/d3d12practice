@@ -26,6 +26,7 @@
     <ClCompile Include="..\Common\GameTimer.cpp" />
     <ClCompile Include="..\Common\GeometryGenerator.cpp" />
     <ClCompile Include="..\Common\MathHelper.cpp" />
+    <ClCompile Include="FbxPractice.cpp" />
     <ClCompile Include="FrameResource.cpp" />
     <ClCompile Include="LoadM3d.cpp" />
     <ClCompile Include="main.cpp" />
@@ -43,6 +44,7 @@
     <ClInclude Include="..\Common\GeometryGenerator.h" />
     <ClInclude Include="..\Common\MathHelper.h" />
     <ClInclude Include="..\Common\UploadBuffer.h" />
+    <ClInclude Include="FbxPractice.h" />
     <ClInclude Include="FileReader.h" />
     <ClInclude Include="FrameResource.h" />
     <ClInclude Include="LoadM3d.h" />
@@ -131,6 +133,10 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <IncludePath>A:\[FBX]\2020.3.4\include;$(IncludePath)</IncludePath>
+    <ExternalIncludePath>A:\[FBX]\2020.3.4\include;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -163,12 +169,18 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <DisableSpecificWarnings>26495;26813</DisableSpecificWarnings>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <AdditionalIncludeDirectories>C:\Program Files\Autodesk\FBX\FBX SDK\2020.3.7\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\Program Files\Autodesk\FBX\FBX SDK\2020.3.7\lib\x64\debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;alembic-md.lib;zlib-md.lib;wininet.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -185,9 +197,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\Program Files\Autodesk\FBX\FBX SDK\2020.3.7\lib\x64\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>libfbxsdk-md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-  </ImportGroup>
+  <ImportGroup Label="ExtensionTargets" />
 </Project>
