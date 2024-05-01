@@ -1,3 +1,5 @@
+// copyright : AutoDesk FBX
+
 #pragma once
 
 #include <fbxsdk.h>
@@ -14,7 +16,18 @@ public:
 	void Init();
 	void ImportFile(const char* _fileName);
 	// 테스트 용으로 Scene안에 뭐가 들었는지 확인해보는 함수
-	void TestTraverseScene();
+	void TestTraverseScene() const;
+	void TestTraverseLayer() const;
+	void TestTraverseMesh() const;
+
+private:
+	void PrintMeshInfo(FbxMesh* _pMeshNode) const;
+	void PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const;
+	void PrintNode(FbxNode* _pNode) const;
+	void PrintTabs() const;
+	void PrintAttribute(FbxNodeAttribute* _pAttribute) const;
+	FbxString GetAttributeTypeName(FbxNodeAttribute::EType _type) const;
+
 private:
 	// File name
 	std::string fileName = "";
@@ -27,5 +40,7 @@ private:
 	FbxImporter* importer = nullptr;
 	// Root FBX Scene
 	FbxScene* rootScene = nullptr;
+
+	mutable int numOfTabs = 0;
 };
 

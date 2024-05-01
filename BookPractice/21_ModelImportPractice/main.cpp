@@ -14,6 +14,8 @@
 #include "FbxPractice.h"
 
 const int g_NumFrameResources = 3;
+// fbxPractice
+const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance.fbx";
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -229,6 +231,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 #if defined(DEBUG) | defined(_DEBUG)
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
+
+	std::unique_ptr<FbxPractice> fbxPractice =  std::make_unique<FbxPractice>();
+	fbxPractice->Init();
+	fbxPractice->ImportFile(danceFbxFilePath.c_str());
+	fbxPractice->TestTraverseScene();
+	fbxPractice->TestTraverseMesh();
 
 	try
 	{

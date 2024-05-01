@@ -717,7 +717,7 @@ void D3DApp::LogAdapters()
         text += desc.Description;
         text += L"\n";
 
-        OutputDebugString(text.c_str());
+        //OutputDebugString(text.c_str());
 
         adapterList.push_back(adapter);
         
@@ -743,7 +743,7 @@ void D3DApp::LogAdapterOutputs(IDXGIAdapter* adapter)
         std::wstring text = L"***Output: ";
         text += desc.DeviceName;
         text += L"\n";
-        OutputDebugString(text.c_str());
+        //OutputDebugString(text.c_str());
 
         LogOutputDisplayModes(output, m_BackBufferFormat);
 
@@ -774,6 +774,6 @@ void D3DApp::LogOutputDisplayModes(IDXGIOutput* output, DXGI_FORMAT format)
             L"Refresh = " + std::to_wstring(n) + L"/" + std::to_wstring(d) +
             L"\n";
 
-        ::OutputDebugString(text.c_str());
+        //::OutputDebugString(text.c_str());
     }
 }
