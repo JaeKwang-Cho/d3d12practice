@@ -235,8 +235,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 	std::unique_ptr<FbxPractice> fbxPractice =  std::make_unique<FbxPractice>();
 	fbxPractice->Init();
 	fbxPractice->ImportFile(danceFbxFilePath.c_str());
-	fbxPractice->TestTraverseScene();
-	fbxPractice->TestTraverseMesh();
+	//fbxPractice->TestTraverseScene();
+	//fbxPractice->TestTraverseMesh();
+	fbxPractice->SetMesh();
 
 	try
 	{

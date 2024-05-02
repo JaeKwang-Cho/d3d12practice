@@ -7,6 +7,8 @@
 #include <format>
 #include <fstream>
 
+#include "FrameResource.h"
+
 FbxPractice::~FbxPractice()
 {
 	if (ioSettings != nullptr)
@@ -122,34 +124,324 @@ void FbxPractice::TestTraverseMesh() const
 	}
 }
 
+void FbxPractice::SetMesh()
+{
+	FbxNode* pRootNode = rootScene->GetRootNode();
+
+	OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
+	if (pRootNode != nullptr) {
+		for (int i = 0; i < pRootNode->GetChildCount(); i++) {
+			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
+			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
+				GetMesh(pRootNode->GetChild(i)->GetMesh());
+			}
+		}
+	}
+}
+
+// 예제 따라가면서 해보기
+void FbxPractice::GetMesh(const FbxMesh* _pMeshNode)
+{
+	assert(_pMeshNode != nullptr);
+	// 일단... control point의 갯수를 얻는다.
+	int polygonVertexCount = _pMeshNode->GetControlPointsCount();
+
+	// material...마다 polygon 갯수를 계산한다. (모름)
+	FbxLayerElementArrayTemplate<int>* materialIndiceArr = nullptr;
+	FbxGeometryElement::EMappingMode materialMappingMode = FbxGeometryElement::eNone;
+	if (_pMeshNode->GetElementMaterial() != nullptr) {
+		materialIndiceArr = &_pMeshNode->GetElementMaterial()->GetIndexArray();
+		materialMappingMode = _pMeshNode->GetElementMaterial()->GetMappingMode();
+		if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon) {
+			
+		}
+	}
+
+}
+
 void FbxPractice::PrintMeshInfo(FbxMesh* _pMeshNode) const
 {
+	OutputDebugStringA("\n***Print Mesh Info***\n\n");
+	// FbxNodeAttribute - Node Attribute Type
+	FbxNodeAttribute::EType attribType = _pMeshNode->GetAttributeType();
+	FbxString attribTypeStr = GetAttributeTypeName(attribType);
+	OutputDebugStringA(std::format("FbxNodeAttribute - Mesh's attribute type is {}\n", attribTypeStr.Buffer()).c_str());
+
+	OutputDebugStringA("\n--FbxLayerContainer--\n");
+	// FbxLayerContainer - Layers
+	int layerCount = _pMeshNode->GetLayerCount();
+	if (layerCount > 0) {
+		OutputDebugStringA(std::format("\tFbxLayerContainer - Mesh has layer {}\n", layerCount).c_str());
+		for (int i = 0; i < layerCount; i++) {
+			FbxLayer* curLayer = _pMeshNode->GetLayer(i);
+			for (int j = 0; j < (int)FbxLayerElement::eTypeCount; j++) {
+				FbxLayerElement* curLayerElement = curLayer->GetLayerElementOfType((FbxLayerElement::EType)j);
+				if (curLayerElement != nullptr) {
+					FbxString curLayerEleTypeStr = GetLayerElementTypeName((FbxLayerElement::EType)j);
+					OutputDebugStringA(std::format("\t\t {}th's layer has {} Type's layerElement.\n", i, curLayerEleTypeStr.Buffer()).c_str());
+					const char* curlayerEleName = curLayerElement->GetName();
+					if (curlayerEleName != nullptr) {
+						OutputDebugStringA(std::format("\t\t\t It's Name is '{}'\n", curlayerEleName).c_str());
+					}
+				}
+			}
+		}
+	}
+	else {
+		OutputDebugStringA("\tFbxLayerContainer - Mesh has no layer \n");
+	}
+	
+	OutputDebugStringA("\n--FbxGeometryBase--\n");
+	// FbxGeometryBase - Control Point
+	int controlPointCount = _pMeshNode->GetControlPointsCount();
+	if (controlPointCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} control points\n", controlPointCount).c_str());
+		const FbxVector4 firstControlPoint = _pMeshNode->GetControlPointAt(0); // 너무 많을 것 같으니 하나만...
+		OutputDebugStringA(std::format("\t\tfirst control point is ({}, {}, {}, {})\n", firstControlPoint[0], firstControlPoint[1], firstControlPoint[2], firstControlPoint[3]).c_str());
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no control points");
+	}
+
+	// FbxGeometryBase - NormalElement
+	int normalElementCount = _pMeshNode->GetElementNormalCount();
+	if (normalElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} normalElements\n", normalElementCount).c_str());
+		const FbxLayerElementTemplate<FbxVector4>* firstNormalElement = _pMeshNode->GetElementNormal(0);
+		const FbxLayerElementArrayTemplate<FbxVector4>* firstNormalElementsArr = &firstNormalElement->GetDirectArray();
+		int countNormals = firstNormalElementsArr->GetCount();
+		OutputDebugStringA(std::format("\t\tFbxLayerElementTemplate - first normalElement's has {} \n", countNormals).c_str());
+		FbxVector4 firstNormal = firstNormalElementsArr->GetAt(0);
+		OutputDebugStringA(std::format("\t\tfirst normal is ({}, {}, {}, {})\n", firstNormal[0], firstNormal[1], firstNormal[2], firstNormal[3]).c_str());
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no normalElements\n");
+	}
+	
+	// FbxGeometryBase - Tangent
+	int tangentElementCount = _pMeshNode->GetElementTangentCount();
+	if (tangentElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} tangents\n", tangentElementCount).c_str());
+		const FbxLayerElementTemplate<FbxVector4>* firstTangentElement = _pMeshNode->GetElementTangent(0);
+		const FbxLayerElementArrayTemplate<FbxVector4>* firstTangentElementsArr = &firstTangentElement->GetDirectArray();
+		int countTangents = firstTangentElementsArr->GetCount();
+		OutputDebugStringA(std::format("\t\tFbxLayerElementTemplate - first tangentElement's has {} \n", countTangents).c_str());
+		FbxVector4 firstTangent = firstTangentElementsArr->GetAt(0);
+		OutputDebugStringA(std::format("\t\tfirst tangent is ({}, {}, {}, {})\n", firstTangent[0], firstTangent[1], firstTangent[2], firstTangent[3]).c_str());
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no tangentElements\n");
+	}
+
+	// FbxGeometryBase - Binormal
+	int binormalElementCount = _pMeshNode->GetElementBinormalCount();
+	if (binormalElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} binormals\n", binormalElementCount).c_str());
+		const FbxLayerElementTemplate<FbxVector4>* firstBinormalElement = _pMeshNode->GetElementBinormal(0);
+		const FbxLayerElementArrayTemplate<FbxVector4>* firstBinormalElementsArr = &firstBinormalElement->GetDirectArray();
+		int countBinormals = firstBinormalElementsArr->GetCount();
+		OutputDebugStringA(std::format("\t\tFbxLayerElementTemplate - first binormalElement's has {} \n", countBinormals).c_str());
+		FbxVector4 firstBinormal = firstBinormalElementsArr->GetAt(0);
+		OutputDebugStringA(std::format("\t\tfirst binormal is ({}, {}, {}, {})\n", firstBinormal[0], firstBinormal[1], firstBinormal[2], firstBinormal[3]).c_str());
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no binormalElements\n");
+	}
+
+	// FbxGeometryBase - Material
+	int materialElementCount = _pMeshNode->GetElementMaterialCount();
+	if (materialElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} materialElement\n", materialElementCount).c_str());
+		const FbxLayerElementMaterial* firstMaterialElement = _pMeshNode->GetElementMaterial(0);
+		OutputDebugStringA("\t\tfirst material is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no MaterialElements\n");
+	}
+
+	// FbxGeometryBase - Polygon Group
+	int polygonGroupElementCount = _pMeshNode->GetElementPolygonGroupCount();
+	if (polygonGroupElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} polygonGroupElements\n", polygonGroupElementCount).c_str());
+		const FbxLayerElementTemplate<int>* firstPolygonGroupElement = _pMeshNode->GetElementPolygonGroup(0);
+		OutputDebugStringA("\t\tfirst polygonGroup is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no polygonGroupElements\n");
+	}
+
+	// FbxGeometryBase - Vertex Color
+	int vertexColorElementCount = _pMeshNode->GetElementVertexColorCount();
+	if (vertexColorElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} vertexColorElements\n", vertexColorElementCount).c_str());
+		const FbxLayerElementTemplate<FbxColor>* firstPolygonGroupElement = _pMeshNode->GetElementVertexColor(0);
+		OutputDebugStringA("\t\tfirst vertexColor is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no vertexColorElement\n");
+	}
+
+	// FbxGeometryBase - Smoothing
+	int smoothingElementCount = _pMeshNode->GetElementSmoothingCount();
+	if (smoothingElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} smoothingElements\n", smoothingElementCount).c_str());
+		const FbxLayerElementTemplate<int>* firstSmoothingElement = _pMeshNode->GetElementSmoothing(0);
+		OutputDebugStringA("\t\tfirst smoothing is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no smoothingElements\n");
+	}
+
+	// FbxGeometryBase - Vertex Crease
+	int vertexCreaseElementCount = _pMeshNode->GetElementVertexCreaseCount();
+	if (vertexCreaseElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} vertexCreaseElements\n", vertexCreaseElementCount).c_str());
+		const FbxLayerElementTemplate<double>* firstVertexCreaseElement = _pMeshNode->GetElementVertexCrease(0);
+		OutputDebugStringA("\t\tfirst vertex crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no vertexCreaseElement\n");
+	}
+
+	// FbxGeometryBase - Edge Crease
+	int edgeCreaseElementCount = _pMeshNode->GetElementEdgeCreaseCount();
+	if (edgeCreaseElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} edgeCreaseElements\n", edgeCreaseElementCount).c_str());
+		const FbxLayerElementTemplate<double>* firstedgeCreaseElement = _pMeshNode->GetElementEdgeCrease(0);
+		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no edgeCreaseElement\n");
+	}
+
+	// FbxGeometryBase - Hole
+	int holeElementCount = _pMeshNode->GetElementHoleCount();
+	if (holeElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} holeElements\n", holeElementCount).c_str());
+		const FbxLayerElementTemplate<bool>* firstHoleElement = _pMeshNode->GetElementHole(0);
+		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no HoleElement\n");
+	}
+
+	// FbxGeometryBase - UserData
+	int userDataElementCount = _pMeshNode->GetElementUserDataCount();
+	if (userDataElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} UserDataElements\n", userDataElementCount).c_str());
+		const FbxLayerElementTemplate<void*>* firstUserDataElement = _pMeshNode->GetElementUserData(0);
+		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no UserDataElement\n");
+	}
+
+	// FbxGeometryBase - Visibility
+	int visibilityElementCount = _pMeshNode->GetElementVisibilityCount();
+	if (visibilityElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} VisibilityElements\n", visibilityElementCount).c_str());
+		const FbxLayerElementTemplate<bool>* firstVisibilityElement = _pMeshNode->GetElementVisibility(0);
+		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no VisibilityElement\n");
+	}
+
+	// FbxGeometryBase - UV
+	int uvElementCount = _pMeshNode->GetElementUVCount();
+	if (uvElementCount > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} UVElements\n", uvElementCount).c_str());
+		const FbxLayerElementTemplate<FbxVector2>* firstUVElement = _pMeshNode->GetElementUV(0);
+		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometryBase - Mesh has no UVElement\n");
+	}
+
+	// FbxGeometryBase - UVSetName
+	FbxStringList uvSetNameList;
+	_pMeshNode->GetUVSetNames(uvSetNameList);
+	if (uvSetNameList.GetCount() > 0) {
+		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} UV Sets\n", uvSetNameList.GetCount()).c_str());
+		for (int i = 0; i < uvSetNameList.GetCount(); i++) {
+			OutputDebugStringA(std::format("\t\t{}th UV set name is {}\n", i, uvSetNameList[0].Buffer()).c_str());
+		}
+	}
+
+	OutputDebugStringA("\n--FbxGeometry--\n");
 	// FbxGeometry - Deformer
 	int deformerCount = _pMeshNode->GetDeformerCount();
 	FbxArray<FbxDeformer*> deformers;
 	if (deformerCount > 0) {
-		OutputDebugStringA("\tMesh has deformer\n");
+		OutputDebugStringA(std::format("\tFbxGeometry - Mesh has {} deformer\n", deformerCount).c_str());
 		for (int i = 0; i < deformerCount; i++) {
 			deformers.Add(_pMeshNode->GetDeformer(i));
 		}
 	}
+	else {
+		OutputDebugStringA("\tFbxGeometry - Mesh has no deformers\n");
+	}
+
 	// FbxGeometry - weight map
 	int weightMapCount = _pMeshNode->GetDestinationGeometryWeightedMapCount();
 	if (weightMapCount > 0) {
-		OutputDebugStringA("\tMesh has weightMap\n");
+		OutputDebugStringA("\tFbxGeometry - Mesh has weightMap\n");
+	}
+	else {
+		OutputDebugStringA("\tFbxGeometry - Mesh has no weightMap\n");
 	}
 	// FbxGeometry - Shape Management
 	int shapeCount = _pMeshNode->GetShapeCount();
 	if (shapeCount > 0) {
-		OutputDebugStringA("\tMesh has shape\n");
+		OutputDebugStringA("\tFbxGeometry - Mesh has shape\n");
 	}
-	// FbxMesh - Polygon(Vertex)
-https://docs.autodesk.com/FBX/2014/ENU/FBX-SDK-Documentation/index.html?url=cpp_ref/class_fbx_mesh.html,topicNumber=cpp_ref_class_fbx_mesh_html22bd1d19-4e92-42fb-be31-952116fdb029
-	// FbxMesh - Polygon(Index)
+	else {
+		OutputDebugStringA("\tFbxGeometry - Mesh has no shape\n");
+	}
 	
-	// FbxMesh - UV
+	OutputDebugStringA("\n--FbxMesh--\n");
+	// FbxMesh - Polygon
+	int polygonCount = _pMeshNode->GetPolygonCount();
+	OutputDebugStringA(std::format("\tFbxMesh - Mesh has '{}' polygons\n", polygonCount).c_str());
 
-	
+	int vertexCount = 0;
+	for (int i = 0; i < polygonCount; i++) {
+		vertexCount += _pMeshNode->GetPolygonSize(i);
+	}
+	OutputDebugStringA(std::format("\tFbxMesh - Mesh has '{}' vertices\n", vertexCount).c_str());
+
+	int firstVertex = _pMeshNode->GetPolygonVertex(0, 0);
+	OutputDebugStringA(std::format("\tFbxMesh - first vertex(which is control point's index) in first polygon is ({})\n", firstVertex).c_str());
+
+	FbxVector4 firstVertexNormal = FbxVector4();
+	bool bHasNormal = _pMeshNode->GetPolygonVertexNormal(1, 1, firstVertexNormal);
+	if (bHasNormal) {
+		OutputDebugStringA(std::format("\tFbxMesh - first vertex, first polygon's Normal is ({}, {}, {})\n", firstVertexNormal[0], firstVertexNormal[1], firstVertexNormal[2]).c_str());
+	}	
+
+	FbxVector2 firstVertexUV = FbxVector2();
+	bool bfirstVertexUVMapped;
+	if (uvSetNameList.GetCount() > 0) {
+		bool bHasUV = _pMeshNode->GetPolygonVertexUV(0, 0, uvSetNameList[0], firstVertexUV, bfirstVertexUVMapped);
+		if (bHasUV) {
+			OutputDebugStringA(std::format("\tFbxMesh - first vertex, first polygon, first uv set' UV is ({}, {}) / mapped check '{}' \n", firstVertexUV[0], firstVertexUV[1], bfirstVertexUVMapped).c_str());
+		}
+	}
+
+	// FbxMesh - UV
+	OutputDebugStringA("\tFbxMesh - TextureUV\n");
+	for (int i = 0; i < FbxLayerElement::eTypeCount; i++) {
+		FbxLayerElementArrayTemplate<FbxVector2>* uvArrLockable = nullptr;
+		FbxLayerElement::EType curType = static_cast<FbxLayerElement::EType>(i);
+		bool bSuccessGetTextureUV = _pMeshNode->GetTextureUV(&uvArrLockable, curType);
+		if (bSuccessGetTextureUV && uvArrLockable->GetCount() > 0) {
+			OutputDebugStringA(std::format("\t\tFbxMesh - Mesh has {} UV textures- \n", GetLayerElementTypeName(curType).Buffer()).c_str());
+			uvArrLockable->Clear();
+		}
+		else {
+			OutputDebugStringA(std::format("\t\tFbxMesh - Mesh has 'no' UV textures - Types {}\n", GetLayerElementTypeName(curType).Buffer()).c_str());
+		}
+	}
 }
 
 void FbxPractice::PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const
@@ -340,5 +632,45 @@ FbxString FbxPractice::GetAttributeTypeName(FbxNodeAttribute::EType _type) const
 		default: return "unknown";
 	}
 }
+
+// LayerElement Type enum을 FbxString으로 바꿔주는 함수이다.
+FbxString FbxPractice::GetLayerElementTypeName(FbxLayerElement::EType _type) const
+{
+	switch (_type) {
+	case FbxLayerElement::eUnknown: return "unidentified";
+	case FbxLayerElement::eNormal: return "Normal";
+	case FbxLayerElement::eBiNormal: return "BiNormal";
+	case FbxLayerElement::eTangent: return "Tangent";
+	case FbxLayerElement::eMaterial: return "Material";
+	case FbxLayerElement::ePolygonGroup: return "PolygonGroup";
+	case FbxLayerElement::eUV: return "UV";
+	case FbxLayerElement::eVertexColor: return "VertexColor";
+	case FbxLayerElement::eSmoothing: return "Smoothing";
+	case FbxLayerElement::eVertexCrease: return "VertexCrease";
+	case FbxLayerElement::eEdgeCrease: return "EdgeCrease";
+	case FbxLayerElement::eHole: return "Hole";
+	case FbxLayerElement::eUserData: return "UserData";
+	case FbxLayerElement::eVisibility: return "Visibility";
+	case FbxLayerElement::eTextureDiffuse: return "TextureDiffuse";
+	case FbxLayerElement::eTextureDiffuseFactor: return "TextureDiffuseFactor";
+	case FbxLayerElement::eTextureEmissive: return "TextureEmissive";
+	case FbxLayerElement::eTextureEmissiveFactor: return "TextureEmissiveFactor";
+	case FbxLayerElement::eTextureAmbient: return "TextureAmbient";
+	case FbxLayerElement::eTextureAmbientFactor: return "TextureAmbientFactor";
+	case FbxLayerElement::eTextureSpecular: return "TextureSpecular";
+	case FbxLayerElement::eTextureSpecularFactor: return "TextureSpecularFactor";
+	case FbxLayerElement::eTextureShininess: return "TextureShininess";
+	case FbxLayerElement::eTextureNormalMap: return "TextureNormalMap";
+	case FbxLayerElement::eTextureBump: return "TextureBump";
+	case FbxLayerElement::eTextureTransparency: return "TextureTransparency";
+	case FbxLayerElement::eTextureTransparencyFactor: return "TextureTransparencyFactor";
+	case FbxLayerElement::eTextureReflection: return "TextureReflection";
+	case FbxLayerElement::eTextureReflectionFactor: return "TextureReflectionFactor";
+	case FbxLayerElement::eTextureDisplacement: return "TextureDisplacement";
+	default: return "unknown";
+	}
+}
+
+
 
 

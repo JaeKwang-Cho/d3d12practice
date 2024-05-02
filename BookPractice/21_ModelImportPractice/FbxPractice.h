@@ -20,13 +20,18 @@ public:
 	void TestTraverseLayer() const;
 	void TestTraverseMesh() const;
 
+	void SetMesh();
+
 private:
+	void GetMesh(const FbxMesh* _pMeshNode);
+
 	void PrintMeshInfo(FbxMesh* _pMeshNode) const;
 	void PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const;
 	void PrintNode(FbxNode* _pNode) const;
 	void PrintTabs() const;
 	void PrintAttribute(FbxNodeAttribute* _pAttribute) const;
 	FbxString GetAttributeTypeName(FbxNodeAttribute::EType _type) const;
+	FbxString GetLayerElementTypeName(FbxLayerElement::EType _type) const;
 
 private:
 	// File name
@@ -42,5 +47,14 @@ private:
 	FbxScene* rootScene = nullptr;
 
 	mutable int numOfTabs = 0;
+
+	struct SubMesh
+	{
+		SubMesh() : IndexOffset(0), TriangleCount(0) {}
+
+		int IndexOffset;
+		int TriangleCount;
+	};
+	FbxArray<SubMesh*> mSubMeshes;
 };
 
