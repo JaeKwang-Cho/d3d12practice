@@ -13,6 +13,8 @@
 #include "Ssao.h"
 #include "FbxPractice.h"
 
+#include <format>
+
 const int g_NumFrameResources = 3;
 // fbxPractice
 const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance.fbx";
@@ -99,7 +101,7 @@ private:
 	void BuildSsaoRootSignature();
 	void BuildDescriptorHeaps();
 	void BuildShadersAndInputLayout();
-	void BuildStageGeometry();
+	void BuildFbxGeometry();
 	void BuildMaterials();
 	void BuildRenderItems();
 	void BuildPSOs();
@@ -196,6 +198,9 @@ private:
 	};
 	XMFLOAT3 m_RotatedLightDirections[3];
 
+	//fbx
+	int mCountOfMeshNode = 0;
+
 public:
 	// Heap에서 연속적으로 존재하는 View들이 많을 예정이라 이렇게 Get 함수를 만들었다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE GetCpuSrv(int index)const
@@ -231,13 +236,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 #if defined(DEBUG) | defined(_DEBUG)
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 #endif
-
-	std::unique_ptr<FbxPractice> fbxPractice =  std::make_unique<FbxPractice>();
-	fbxPractice->Init();
-	fbxPractice->ImportFile(danceFbxFilePath.c_str());
-	//fbxPractice->TestTraverseScene();
-	//fbxPractice->TestTraverseMesh();
-	fbxPractice->SetMesh();
 
 	try
 	{
@@ -326,7 +324,7 @@ bool AnimationApp::Initialize()
 	BuildSsaoRootSignature();
 	BuildDescriptorHeaps();
 	BuildShadersAndInputLayout();
-	BuildStageGeometry();
+	BuildFbxGeometry();
 	BuildMaterials();
 	BuildRenderItems();
 	BuildFrameResources();
@@ -1195,162 +1193,81 @@ void AnimationApp::BuildShadersAndInputLayout()
 		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
-	};}
+	};
+}
 
-void AnimationApp::BuildStageGeometry()
+void AnimationApp::BuildFbxGeometry()
 {
-	// 박스, 그리드, 구, 원기둥을 하나씩 만들고
-	GeometryGenerator geoGenerator;
-	GeometryGenerator::MeshData box = geoGenerator.CreateBox(1.5f, 0.5f, 1.5f, 3);
-	GeometryGenerator::MeshData grid = geoGenerator.CreateGrid(20.f, 30.f, 60, 40);
-	GeometryGenerator::MeshData sphere = geoGenerator.CreateSphere(0.5f, 20, 20);
-	GeometryGenerator::MeshData cylinder = geoGenerator.CreateCylinder(0.5f, 0.3f, 3.0f, 20, 20);
-	GeometryGenerator::MeshData quad = geoGenerator.CreateQuad(0.f, -1.f, 1.f, 1.f, 0.0f); // 그림자 디버깅용 창을 하나 만든다.
+	std::unique_ptr<FbxPractice> fbxPractice = std::make_unique<FbxPractice>();
+	fbxPractice->Init();
+	fbxPractice->ImportFile(danceFbxFilePath.c_str());
+	//fbxPractice->TestTraverseScene();
 
-	// 이거를 하나의 버퍼로 전부 연결한다.
+	FbxNode* pRootNode = fbxPractice->GetRootScene()->GetRootNode();
+	mCountOfMeshNode = 0;
+	std::vector<FbxMesh*> MeshArr;
 
-	// 그 전에, 각종 속성 들을 저장해 놓는다.
-	// vertex offset
-	UINT boxVertexOffset = 0;
-	UINT gridVertexOffset = (UINT)box.Vertices.size();
-	UINT sphereVertexOffset = gridVertexOffset + (UINT)grid.Vertices.size();
-	UINT cylinderVertexOffset = sphereVertexOffset + (UINT)sphere.Vertices.size();
-	UINT quadVertexOffset = cylinderVertexOffset + (UINT)cylinder.Vertices.size();
 
-	// index offset
-	UINT boxIndexOffset = 0;
-	UINT gridIndexOffset = (UINT)box.Indices32.size();
-	UINT sphereIndexOffset = gridIndexOffset + (UINT)grid.Indices32.size();
-	UINT cylinderIndexOffset = sphereIndexOffset + (UINT)sphere.Indices32.size();
-	UINT quadIndexOffset = cylinderIndexOffset + (UINT)cylinder.Indices32.size();
-
-	// 한방에 할꺼라서 MeshGeometry에 넣을
-	// SubGeometry로 정의한다.
-	SubmeshGeometry boxSubmesh;
-	boxSubmesh.IndexCount = (UINT)box.Indices32.size();
-	boxSubmesh.StartIndexLocation = boxIndexOffset;
-	boxSubmesh.BaseVertexLocation = boxVertexOffset;
-
-	SubmeshGeometry gridSubmesh;
-	gridSubmesh.IndexCount = (UINT)grid.Indices32.size();
-	gridSubmesh.StartIndexLocation = gridIndexOffset;
-	gridSubmesh.BaseVertexLocation = gridVertexOffset;
-
-	SubmeshGeometry sphereSubmesh;
-	sphereSubmesh.IndexCount = (UINT)sphere.Indices32.size();
-	sphereSubmesh.StartIndexLocation = sphereIndexOffset;
-	sphereSubmesh.BaseVertexLocation = sphereVertexOffset;
-
-	SubmeshGeometry cylinderSubmesh;
-	cylinderSubmesh.IndexCount = (UINT)cylinder.Indices32.size();
-	cylinderSubmesh.StartIndexLocation = cylinderIndexOffset;
-	cylinderSubmesh.BaseVertexLocation = cylinderVertexOffset;
-
-	SubmeshGeometry quadSubmesh;
-	quadSubmesh.IndexCount = (UINT)quad.Indices32.size();
-	quadSubmesh.StartIndexLocation = quadIndexOffset;
-	quadSubmesh.BaseVertexLocation = quadVertexOffset;
-
-	// 이제 vertex 정보를 한곳에 다 옮기고, 색을 지정해준다.
-	size_t totalVertexCount =
-		box.Vertices.size() +
-		grid.Vertices.size() +
-		sphere.Vertices.size() +
-		cylinder.Vertices.size() +
-		quad.Vertices.size();
-
-	std::vector<Vertex> vertices;
-	vertices.resize(totalVertexCount);
-
-	UINT k = 0;
-	for (size_t i = 0; i < box.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = box.Vertices[i].Position;
-		vertices[k].Normal = box.Vertices[i].Normal;
-		vertices[k].TexC = box.Vertices[i].TexC;
-		vertices[k].TangentU = box.Vertices[i].TangentU;
+	OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
+	if (pRootNode != nullptr) {
+		for (int i = 0; i < pRootNode->GetChildCount(); i++) {
+			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
+			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
+				mCountOfMeshNode++;
+				MeshArr.push_back(pRootNode->GetChild(i)->GetMesh());
+			}
+		}
 	}
 
-	for (size_t i = 0; i < grid.Vertices.size(); ++i, ++k)
+	for (int i = 0; i < mCountOfMeshNode; i++)
 	{
-		vertices[k].Pos = grid.Vertices[i].Position;
-		vertices[k].Normal = grid.Vertices[i].Normal;
-		vertices[k].TexC = grid.Vertices[i].TexC;
-		vertices[k].TangentU = grid.Vertices[i].TangentU;
+		std::vector<Vertex> vertices;
+		std::vector<std::uint32_t> indices;
+
+		fbxPractice->GetMeshToApp(MeshArr[i], vertices, indices);
+
+		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
+
+		std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
+		geo->Name = "fbxGeo_" + i;
+
+		ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
+		CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
+
+		ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
+		CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
+
+		geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
+			m_d3dDevice.Get(),
+			m_CommandList.Get(),
+			vertices.data(),
+			vbByteSize,
+			geo->VertexBufferUploader
+		);
+
+		geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
+			m_d3dDevice.Get(),
+			m_CommandList.Get(),
+			indices.data(),
+			ibByteSize,
+			geo->IndexBufferUploader
+		);
+
+		geo->VertexByteStride = sizeof(Vertex);
+		geo->VertexBufferByteSize = vbByteSize;
+		geo->IndexFormat = DXGI_FORMAT_R32_UINT;
+		geo->IndexBufferByteSize = ibByteSize;
+
+		SubmeshGeometry fbxSubMesh;
+		fbxSubMesh.IndexCount = (UINT)indices.size();
+		fbxSubMesh.StartIndexLocation = 0;
+		fbxSubMesh.BaseVertexLocation = 0;
+
+		geo->DrawArgs["fbx"] = fbxSubMesh;
+
+		m_Geometries[geo->Name] = std::move(geo);
 	}
-
-	for (size_t i = 0; i < sphere.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = sphere.Vertices[i].Position;
-		vertices[k].Normal = sphere.Vertices[i].Normal;
-		vertices[k].TexC = sphere.Vertices[i].TexC;
-		vertices[k].TangentU = sphere.Vertices[i].TangentU;
-	}
-
-	for (size_t i = 0; i < cylinder.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = cylinder.Vertices[i].Position;
-		vertices[k].Normal = cylinder.Vertices[i].Normal;
-		vertices[k].TexC = cylinder.Vertices[i].TexC;
-		vertices[k].TangentU = cylinder.Vertices[i].TangentU;
-	}
-
-	for (int i = 0; i < quad.Vertices.size(); ++i, ++k)
-	{
-		vertices[k].Pos = quad.Vertices[i].Position;
-		vertices[k].Normal = quad.Vertices[i].Normal;
-		vertices[k].TexC = quad.Vertices[i].TexC;
-		vertices[k].TangentU = quad.Vertices[i].TangentU;
-	}
-
-	// 이제 index 정보도 한곳에 다 옮긴다.
-	std::vector<std::uint16_t> indices;
-	indices.insert(indices.end(), std::begin(box.GetIndices16()), std::end(box.GetIndices16()));
-	indices.insert(indices.end(), std::begin(grid.GetIndices16()), std::end(grid.GetIndices16()));
-	indices.insert(indices.end(), std::begin(sphere.GetIndices16()), std::end(sphere.GetIndices16()));
-	indices.insert(indices.end(), std::begin(cylinder.GetIndices16()), std::end(cylinder.GetIndices16()));
-	indices.insert(indices.end(), std::begin(quad.GetIndices16()), std::end(quad.GetIndices16()));
-
-	const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
-	const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint16_t);
-
-	std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
-	geo->Name = "shapeGeo";
-
-	ThrowIfFailed(D3DCreateBlob(vbByteSize, &geo->VertexBufferCPU));
-	CopyMemory(geo->VertexBufferCPU->GetBufferPointer(), vertices.data(), vbByteSize);
-
-	ThrowIfFailed(D3DCreateBlob(ibByteSize, &geo->IndexBufferCPU));
-	CopyMemory(geo->IndexBufferCPU->GetBufferPointer(), indices.data(), ibByteSize);
-
-	geo->VertexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		vertices.data(),
-		vbByteSize,
-		geo->VertexBufferUploader
-	);
-
-	geo->IndexBufferGPU = d3dUtil::CreateDefaultBuffer(
-		m_d3dDevice.Get(),
-		m_CommandList.Get(),
-		indices.data(),
-		ibByteSize,
-		geo->IndexBufferUploader
-	);
-
-	geo->VertexByteStride = sizeof(Vertex);
-	geo->VertexBufferByteSize = vbByteSize;
-	geo->IndexFormat = DXGI_FORMAT_R16_UINT;
-	geo->IndexBufferByteSize = ibByteSize;
-
-	geo->DrawArgs["box"] = boxSubmesh;
-	geo->DrawArgs["grid"] = gridSubmesh;
-	geo->DrawArgs["sphere"] = sphereSubmesh;
-	geo->DrawArgs["cylinder"] = cylinderSubmesh;
-	geo->DrawArgs["quad"] = quadSubmesh;
-
-	m_Geometries[geo->Name] = std::move(geo);
 }
 
 void AnimationApp::BuildPSOs()
@@ -1586,132 +1503,43 @@ void AnimationApp::BuildMaterials()
 	skyMat->FresnelR0 = XMFLOAT3(0.1f, 0.1f, 0.1f);
 	skyMat->Roughness = 1.0f;
 
+	std::unique_ptr<Material> whiteMat = std::make_unique<Material>();
+	whiteMat->Name = "whiteMat";
+	whiteMat->MatCBIndex = 4;
+	whiteMat->DiffuseSrvHeapIndex = 5;
+	whiteMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+	whiteMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+	whiteMat->Roughness = 0.3f;
+
 	m_Materials["brickMat"] = std::move(brickMat);
 	m_Materials["mirrorMat"] = std::move(mirrorMat);
 	m_Materials["tileMat"] = std::move(tileMat);
+	m_Materials["whiteMat"] = std::move(whiteMat);
 	m_Materials["skyMat"] = std::move(skyMat);
 }
 
 void AnimationApp::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
-	std::unique_ptr<RenderItem> skyRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&skyRitem->WorldMat, XMMatrixScaling(5000.0f, 5000.0f, 5000.0f));
-	skyRitem->TexTransform = MathHelper::Identity4x4();
-	skyRitem->ObjCBIndex = objCBIndex++;
-	skyRitem->Mat = m_Materials["skyMat"].get();
-	skyRitem->Geo = m_Geometries["shapeGeo"].get();
-	skyRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	skyRitem->IndexCount = skyRitem->Geo->DrawArgs["sphere"].IndexCount;
-	skyRitem->StartIndexLocation = skyRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
-	skyRitem->BaseVertexLocation = skyRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
+	// fbx 아이템
 
-	m_RenderItemLayer[(int)RenderLayer::Sky].push_back(skyRitem.get());
-	m_AllRenderItems.push_back(std::move(skyRitem));
+	for (int i = 0; i < mCountOfMeshNode; i++) {
 
-	std::unique_ptr<RenderItem> quadRitem = std::make_unique<RenderItem>();
-	quadRitem->WorldMat = MathHelper::Identity4x4();
-	quadRitem->TexTransform = MathHelper::Identity4x4();
-	quadRitem->ObjCBIndex = objCBIndex++;
-	quadRitem->Mat = m_Materials["brickMat"].get();
-	quadRitem->Geo = m_Geometries["shapeGeo"].get();
-	quadRitem->PrimitiveType = D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	quadRitem->IndexCount = quadRitem->Geo->DrawArgs["quad"].IndexCount;
-	quadRitem->StartIndexLocation = quadRitem->Geo->DrawArgs["quad"].StartIndexLocation;
-	quadRitem->BaseVertexLocation = quadRitem->Geo->DrawArgs["quad"].BaseVertexLocation;
+		std::unique_ptr<RenderItem> fbxRitem = std::make_unique<RenderItem>();
 
-	m_RenderItemLayer[(int)RenderLayer::Debug].push_back(quadRitem.get());
-	m_AllRenderItems.push_back(std::move(quadRitem));
+		XMStoreFloat4x4(&fbxRitem->WorldMat, XMMatrixScaling(0.2f, 0.2f, 0.2f) * XMMatrixTranslation(0.f, 0.f, 0.f));
+		XMStoreFloat4x4(&fbxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
+		fbxRitem->ObjCBIndex = objCBIndex++;
+		std::string geoName = "fbxGeo_" + i;
+		fbxRitem->Geo = m_Geometries[geoName].get();
+		fbxRitem->Mat = m_Materials["whiteMat"].get();
+		fbxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+		fbxRitem->IndexCount = fbxRitem->Geo->DrawArgs["fbx"].IndexCount;
+		fbxRitem->StartIndexLocation = fbxRitem->Geo->DrawArgs["fbx"].StartIndexLocation;
+		fbxRitem->BaseVertexLocation = fbxRitem->Geo->DrawArgs["fbx"].BaseVertexLocation;
 
-	std::unique_ptr<RenderItem> boxRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&boxRitem->WorldMat, XMMatrixScaling(2.f, 2.f, 2.f) * XMMatrixTranslation(0.f, 0.5f, 0.f));
-	XMStoreFloat4x4(&boxRitem->TexTransform, XMMatrixScaling(1.0f, 1.0f, 1.0f));
-	boxRitem->ObjCBIndex = objCBIndex++;
-	boxRitem->Geo = m_Geometries["shapeGeo"].get();
-	boxRitem->Mat = m_Materials["brickMat"].get();
-	boxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	boxRitem->IndexCount = boxRitem->Geo->DrawArgs["box"].IndexCount;
-	boxRitem->StartIndexLocation = boxRitem->Geo->DrawArgs["box"].StartIndexLocation;
-	boxRitem->BaseVertexLocation = boxRitem->Geo->DrawArgs["box"].BaseVertexLocation;
-
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(boxRitem.get());
-	m_AllRenderItems.push_back(std::move(boxRitem));
-
-	// 그리드 아이템
-	std::unique_ptr<RenderItem> gridRitem = std::make_unique<RenderItem>();
-	XMStoreFloat4x4(&gridRitem->TexTransform, XMMatrixScaling(6.0f, 9.0f, 1.0f));
-	gridRitem->WorldMat = MathHelper::Identity4x4();
-	gridRitem->ObjCBIndex = objCBIndex++;
-	gridRitem->Geo = m_Geometries["shapeGeo"].get();
-	gridRitem->Mat = m_Materials["tileMat"].get();
-	gridRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-	gridRitem->IndexCount = gridRitem->Geo->DrawArgs["grid"].IndexCount;
-	gridRitem->StartIndexLocation = gridRitem->Geo->DrawArgs["grid"].StartIndexLocation;
-	gridRitem->BaseVertexLocation = gridRitem->Geo->DrawArgs["grid"].BaseVertexLocation;
-	m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(gridRitem.get());
-	m_AllRenderItems.push_back(std::move(gridRitem));
-
-	// 원기둥과 구 5개씩 2줄
-	for (int i = 0; i < 5; ++i)
-	{
-		std::unique_ptr<RenderItem> leftCylRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> rightCylRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> leftSphereRitem = std::make_unique<RenderItem>();
-		std::unique_ptr<RenderItem> rightSphereRitem = std::make_unique<RenderItem>();
-
-		//  z 축으로 10칸씩 옮긴다.
-		XMMATRIX leftCylWorld = XMMatrixTranslation(-5.0f, 1.5f, -10.0f + i * 5.0f);
-		XMMATRIX rightCylWorld = XMMatrixTranslation(+5.0f, 1.5f, -10.0f + i * 5.0f);
-		XMMATRIX leftSphereWorld = XMMatrixTranslation(-5.0f, 3.5f, -10.0f + i * 5.0f);
-		XMMATRIX rightSphereWorld = XMMatrixTranslation(+5.0f, 3.5f, -10.0f + i * 5.0f);
-
-		XMStoreFloat4x4(&leftCylRitem->WorldMat, rightCylWorld);
-		XMStoreFloat4x4(&leftCylRitem->TexTransform, XMMatrixIdentity());
-		leftCylRitem->ObjCBIndex = objCBIndex++;
-		leftCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftCylRitem->Mat = m_Materials["brickMat"].get();
-		leftCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		leftCylRitem->IndexCount = leftCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
-		leftCylRitem->StartIndexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
-		leftCylRitem->BaseVertexLocation = leftCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&rightCylRitem->WorldMat, leftCylWorld);
-		XMStoreFloat4x4(&rightCylRitem->TexTransform, XMMatrixIdentity());
-		rightCylRitem->ObjCBIndex = objCBIndex++;
-		rightCylRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightCylRitem->Mat = m_Materials["brickMat"].get();
-		rightCylRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		rightCylRitem->IndexCount = rightCylRitem->Geo->DrawArgs["cylinder"].IndexCount;
-		rightCylRitem->StartIndexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].StartIndexLocation;
-		rightCylRitem->BaseVertexLocation = rightCylRitem->Geo->DrawArgs["cylinder"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&leftSphereRitem->WorldMat, leftSphereWorld);
-		leftSphereRitem->ObjCBIndex = objCBIndex++;
-		leftSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		leftSphereRitem->Mat = m_Materials["mirrorMat"].get();
-		leftSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		leftSphereRitem->IndexCount = leftSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
-		leftSphereRitem->StartIndexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
-		leftSphereRitem->BaseVertexLocation = leftSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
-
-		XMStoreFloat4x4(&rightSphereRitem->WorldMat, rightSphereWorld);
-		rightSphereRitem->ObjCBIndex = objCBIndex++;
-		rightSphereRitem->Geo = m_Geometries["shapeGeo"].get();
-		rightSphereRitem->Mat = m_Materials["mirrorMat"].get();
-		rightSphereRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
-		rightSphereRitem->IndexCount = rightSphereRitem->Geo->DrawArgs["sphere"].IndexCount;
-		rightSphereRitem->StartIndexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].StartIndexLocation;
-		rightSphereRitem->BaseVertexLocation = rightSphereRitem->Geo->DrawArgs["sphere"].BaseVertexLocation;
-
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftCylRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightCylRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(leftSphereRitem.get());
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(rightSphereRitem.get());
-
-		m_AllRenderItems.push_back(std::move(leftCylRitem));
-		m_AllRenderItems.push_back(std::move(rightCylRitem));
-		m_AllRenderItems.push_back(std::move(leftSphereRitem));
-		m_AllRenderItems.push_back(std::move(rightSphereRitem));
+		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(fbxRitem.get());
+		m_AllRenderItems.push_back(std::move(fbxRitem));
 	}
 }
 

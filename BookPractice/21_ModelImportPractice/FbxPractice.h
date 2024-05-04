@@ -1,8 +1,19 @@
-// copyright : AutoDesk FBX
+/****************************************************************************************
+
+Copyright (C) 2015 Autodesk, Inc.
+All rights reserved.
+
+Use of this software is subject to the terms of the Autodesk license agreement
+provided at the time of installation or download, or which otherwise accompanies
+this software in either electronic or hard copy form.
+
+공부용으로 한글 주석 + 개조 중입니다.
+****************************************************************************************/
 
 #pragma once
 
 #include <fbxsdk.h>
+#include <vector>
 
 class FbxPractice
 {
@@ -20,10 +31,10 @@ public:
 	void TestTraverseLayer() const;
 	void TestTraverseMesh() const;
 
-	void SetMesh();
+	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
 
 private:
-	void GetMesh(const FbxMesh* _pMeshNode);
+	void GetMaterialToApp();
 
 	void PrintMeshInfo(FbxMesh* _pMeshNode) const;
 	void PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const;
@@ -51,10 +62,16 @@ private:
 	struct SubMesh
 	{
 		SubMesh() : IndexOffset(0), TriangleCount(0) {}
+		SubMesh(int _indexOffset, int _triangleCount) : IndexOffset(_indexOffset), TriangleCount(_triangleCount) {}
 
 		int IndexOffset;
 		int TriangleCount;
 	};
-	FbxArray<SubMesh*> mSubMeshes;
+	FbxArray<SubMesh*> m_SubMeshes;
+
+public:
+	FbxScene* GetRootScene() const{
+		return rootScene;
+	}
 };
 

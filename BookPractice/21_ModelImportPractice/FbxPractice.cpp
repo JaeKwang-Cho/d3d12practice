@@ -1,4 +1,14 @@
-// copyright : AutoDesk FBX
+/****************************************************************************************
+
+Copyright (C) 2015 Autodesk, Inc.
+All rights reserved.
+
+Use of this software is subject to the terms of the Autodesk license agreement
+provided at the time of installation or download, or which otherwise accompanies
+this software in either electronic or hard copy form.
+
+공부용으로 한글 주석 + 개조 중입니다.
+****************************************************************************************/
 
 #include "FbxPractice.h"
 #include <cassert>
@@ -73,6 +83,11 @@ void FbxPractice::ImportFile(const char* _fileName)
 	rootScene = FbxScene::Create(sdkManager, "rootScene");
 	// Import를 건다.
 	importer->Import(rootScene);
+	// DirectX 좌표계에 맞춘다.
+	rootScene->GetGlobalSettings().SetAxisSystem(FbxAxisSystem::DirectX);
+	FbxGeometryConverter geometryConverter(sdkManager);
+	geometryConverter.Triangulate(rootScene, true);
+
 	// Importer는 안쓰니 삭제한다.
 	importer->Destroy();
 }
@@ -124,39 +139,261 @@ void FbxPractice::TestTraverseMesh() const
 	}
 }
 
-void FbxPractice::SetMesh()
-{
-	FbxNode* pRootNode = rootScene->GetRootNode();
-
-	OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
-	if (pRootNode != nullptr) {
-		for (int i = 0; i < pRootNode->GetChildCount(); i++) {
-			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
-			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
-				GetMesh(pRootNode->GetChild(i)->GetMesh());
-			}
-		}
-	}
-}
-
 // 예제 따라가면서 해보기
-void FbxPractice::GetMesh(const FbxMesh* _pMeshNode)
+void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _vertices, std::vector<std::uint32_t>& _indices)
 {
 	assert(_pMeshNode != nullptr);
-	// 일단... control point의 갯수를 얻는다.
-	int polygonVertexCount = _pMeshNode->GetControlPointsCount();
+	m_SubMeshes.Clear();
 
-	// material...마다 polygon 갯수를 계산한다. (모름)
+	// 일단... control point의 갯수를 얻는다.
+	int polygonCount = _pMeshNode->GetPolygonCount();
+
+	// material...마다 polygon 갯수를 계산한다?
 	FbxLayerElementArrayTemplate<int>* materialIndiceArr = nullptr;
 	FbxGeometryElement::EMappingMode materialMappingMode = FbxGeometryElement::eNone;
 	if (_pMeshNode->GetElementMaterial() != nullptr) {
 		materialIndiceArr = &_pMeshNode->GetElementMaterial()->GetIndexArray();
+		//OutputDebugStringA(std::format("\n\n\nmaterial Count {}\n\n\n", materialIndiceArr->GetCount()).c_str() );
 		materialMappingMode = _pMeshNode->GetElementMaterial()->GetMappingMode();
-		if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon) {
-			
+	}
+
+	// Material MappingMode가 eByPolygon의 경우
+	if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon) 
+	{
+		assert(materialIndiceArr->GetCount() == polygonCount);
+		if (materialIndiceArr->GetCount() == polygonCount) 
+		{
+			for (int polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
+			{
+				// polygon을 인덱스로 하는 MaterialIndexArr에서 Material Index 값만큼
+				const int materialIndex = materialIndiceArr->GetAt(polygonIndex);
+				if (m_SubMeshes.GetCount() < materialIndex + 1)
+				{
+					m_SubMeshes.Resize(materialIndex + 1);
+				}
+				// SubMesh를 만들어준다.
+				if (m_SubMeshes.GetAt(materialIndex) == nullptr)
+				{
+					m_SubMeshes.SetAt(materialIndex, new SubMesh(0, 1));
+				}
+			}
+
+			// 아래 과정은 'hole'이 생기지 않게 보장해주는 작업이라고 한다...
+			for (int i = 0; i < m_SubMeshes.GetCount(); i++) {
+				if (m_SubMeshes.GetAt(i) == nullptr) {
+					m_SubMeshes.SetAt(i, new SubMesh());
+				}
+			}
+
+			// 그리고 Submesh 간의 offset을 기록해준다.
+			const int materialCount = m_SubMeshes.GetCount();
+			int offset = 0;
+			for (int i = 0; i < materialCount; i++) {
+				m_SubMeshes.GetAt(i)->IndexOffset = offset;
+				offset += m_SubMeshes.GetAt(i)->TriangleCount * 3;
+				m_SubMeshes.GetAt(i)->TriangleCount = 0; // 그리고 다시 삼각형 개수를 0으로 만든다.
+			}
+			assert(offset == polygonCount * 3);
+		}
+	}
+	else // 그 이외의
+	{
+		// 모든 면은 같은 Material을 가지도록 한다.
+		if (m_SubMeshes.GetCount() == 0) {
+			m_SubMeshes.Resize(1);
+			m_SubMeshes.SetAt(0, new SubMesh());
 		}
 	}
 
+	// FbxMesh가 가진 정보를 Vertex로 사용할 수 있도록 모은다.
+	// 만약, normal이나 uv가 polygon vertex에 붙어 있다면, vertex의 모든 attribute를 저장한다.
+	bool bHasNormal = _pMeshNode->GetElementNormalCount() > 0;
+	bool bHasUV = _pMeshNode->GetElementUVCount() > 0;
+	bool bAllByControlPoint = false;
+	// 여기서도 Normal과 UV의 MappingMode에 따라 작업이 다르다.
+	FbxGeometryElement::EMappingMode normalMappingMode = FbxGeometryElement::eNone;
+	FbxGeometryElement::EMappingMode uVMappingMode = FbxGeometryElement::eNone;
+
+	// normal이 vertex에 붙어있을 때
+	if (bHasNormal) {
+		normalMappingMode = _pMeshNode->GetElementNormal(0)->GetMappingMode();
+		// 쭉정이 일 때
+		if (normalMappingMode == FbxGeometryElement::eNone) {
+			bHasNormal = false;
+		}
+		// (eByControlPoint를 제외한) 나머지 모드 일 때
+		else if (normalMappingMode != FbxGeometryElement::eByControlPoint) {
+			bAllByControlPoint = false;
+		}
+	}
+	// uv가 vertex에 붙어있을 때
+	if (bHasUV) {
+		uVMappingMode = _pMeshNode->GetElementUV(0)->GetMappingMode();
+		// 쭉정이 일 때
+		if (uVMappingMode == FbxGeometryElement::eNone) {
+			bHasUV = false;
+		}
+		// (eByControlPoint를 제외한) 나머지 모드 일 때
+		else if (uVMappingMode != FbxGeometryElement::eByControlPoint) {
+			bAllByControlPoint = false;
+		}
+	}
+
+	// control point나 vertex 정보를 올릴 메모리를 할당한다.
+	int polygonVertexCount = _pMeshNode->GetControlPointsCount();
+
+	// 컨트롤 포인트로 매핑 좌표가 생성되지 않는 경우
+	if (!bAllByControlPoint) {
+		// 폴리곤 * 3 으로 점 개수를 지정한다.
+		polygonVertexCount = polygonCount * 3;
+	} 
+	// index는 unsigned int
+	std::vector<UINT> indices(polygonCount * 3);
+	indices.resize(polygonCount * 3);
+	_indices.resize(polygonCount * 3);
+	//std::vector<XMFLOAT2> uvs;
+	FbxStringList uvNameList;
+	_pMeshNode->GetUVSetNames(uvNameList);
+	const char* uvName = nullptr;
+	if (bHasUV && uvNameList.GetCount() > 0) {
+		//uvs.resize(polygonCount);
+		uvName = uvNameList[0];
+	}
+
+	// 1_컨트롤 포인트로 매핑 좌표가 생성되는 경우는
+	// 아래와 같이 속성 값을 Array에 넣어준다.
+	const FbxVector4* controlPointArr = _pMeshNode->GetControlPoints();
+	FbxVector4 curVertex;
+	FbxVector4 curNormal;
+	FbxVector2 curUV;
+	if (bAllByControlPoint) {
+		const FbxLayerElementTemplate<FbxVector4>* normalElement = nullptr;
+		const FbxLayerElementTemplate<FbxVector2>* uvElement = nullptr;
+		if (bHasNormal) {
+			normalElement = _pMeshNode->GetElementNormal(0);
+		}
+		if (bHasUV) {
+			uvElement = _pMeshNode->GetElementUV(0);
+		}
+		for (int i = 0; i < polygonVertexCount; i++) {
+			// vertex
+			curVertex = controlPointArr[i];
+			// normal
+			if (bHasNormal) {
+				int normalIndex = i;
+				// 레퍼런스 모드에 따라 인덱스를 얻는 방법이 달라진다.
+				if (normalElement->GetReferenceMode() == FbxLayerElement::eIndexToDirect) {
+					normalIndex = normalElement->GetIndexArray().GetAt(i);
+				}
+				curNormal = normalElement->GetDirectArray().GetAt(normalIndex);
+			}
+			// UV
+			if (bHasUV) {
+				int uvIndex = i;
+				if (uvElement->GetReferenceMode() == FbxLayerElement::eIndexToDirect) {
+					uvIndex = uvElement->GetIndexArray().GetAt(i);
+				}
+				curUV = uvElement->GetDirectArray().GetAt(uvIndex);
+			}
+
+			// App에 값 넣기
+			XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
+			XMFLOAT3 normal = XMFLOAT3(- static_cast<float>(curNormal[0]), - static_cast<float>(curNormal[1]), -static_cast<float>(curNormal[2]));
+			XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
+			XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+			XMFLOAT3 tanU;
+			XMVECTOR vNorm = XMLoadFloat3(&normal);
+			if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+			{
+				XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+				XMStoreFloat3(&tanU, vTanU);
+			}
+			else
+			{
+				up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+				XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+				XMStoreFloat3(&tanU, vTanU);
+			}
+
+			Vertex vertex(pos, normal, uv, tanU);
+			_vertices.push_back(vertex);
+		}
+	}
+
+	int vertexCount = 0;
+	for (int pI = 0; pI < polygonCount; pI++) {
+		// 머테리얼 작업을 해준다... 뭔지 모르겠지만
+		int materialIndex = 0;
+		// eByPolygon의 경우 material index를 얻는 방법이 달라진다.
+		if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon) {
+			materialIndex = materialIndiceArr->GetAt(pI);
+		}
+		// 위에서 eByPolygon의 경우는 SubMesh를 엄청 많이 만들고, Material IndexArray에 맞는 offset을 넣어주었다.
+		// (그렇지 않은 경우는 그냥 1씩 늘려주면서 index를 넣고)
+		// 무튼 아래와 같은 방법으로 indexOffset을 얻는다.
+		const int indexOffset = m_SubMeshes.GetAt(materialIndex)->IndexOffset + m_SubMeshes.GetAt(materialIndex)->TriangleCount * 3;
+		int a = 0;
+		for (int vI = 0; vI < 3; vI++) {
+			// 모든 폴리곤을 돌아다니면서 controlPoint의 Index 역할을 하는 vertex를 얻는다.
+			const int controlPointIndex = _pMeshNode->GetPolygonVertex(pI, vI);
+
+			// control point 값이 -1이 나오면 안된다.
+			if (controlPointIndex >= 0) {
+				// 컨트롤 포인트로 매핑 좌표가 생성되는 경우
+				if (bAllByControlPoint) {
+					// 위에서 이미 속성 값을 넣어주었기 때문에 index 값만 넣어준다.
+					indices[indexOffset + vI] = static_cast<UINT>(controlPointIndex);
+					_indices[indexOffset + vI] = static_cast<UINT>(controlPointIndex);
+				}
+				// 2_폴리곤 + 버텍스로 매핑 좌표가 생성되는 경우
+				// 이제 속성값을 배열에 넣어준다.
+				else
+				{
+					// (eByControlPoint의 경우는 ElementIndexArray에서 index를 얻어서 값을 가져왔는데)
+					// 이 경우를 보면 
+					indices[indexOffset + vI] = static_cast<UINT>(vertexCount);
+					_indices[indexOffset + vI] = static_cast<UINT>(vertexCount);
+					// control point가 vertex가 되고
+					curVertex = controlPointArr[controlPointIndex];
+					// polygon에서 직접 normal과 UV을 가져온다.
+					if (bHasNormal) {
+						_pMeshNode->GetPolygonVertexNormal(pI, vI, curNormal);
+					}
+					if (bHasUV) {
+						bool bUnmappedUV;
+						_pMeshNode->GetPolygonVertexUV(pI, vI, uvName, curUV, bUnmappedUV);
+					}
+
+					XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
+					XMFLOAT3 normal = XMFLOAT3(-static_cast<float>(curNormal[0]), -static_cast<float>(curNormal[1]), -static_cast<float>(curNormal[2]));
+					XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
+					XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+					XMFLOAT3 tanU;
+					XMVECTOR vNorm = XMLoadFloat3(&normal);
+					if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+					{
+						XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+						XMStoreFloat3(&tanU, vTanU);
+					}
+					else
+					{
+						up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+						XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+						XMStoreFloat3(&tanU, vTanU);
+					}
+
+					Vertex vertex(pos, normal, uv, tanU);
+					_vertices.push_back(vertex);
+				}
+			}
+			vertexCount++;
+		}
+		m_SubMeshes.GetAt(materialIndex)->TriangleCount += 1;
+	}
+}
+
+void FbxPractice::GetMaterialToApp()
+{
 }
 
 void FbxPractice::PrintMeshInfo(FbxMesh* _pMeshNode) const
