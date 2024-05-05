@@ -141,7 +141,7 @@ float4 PS(VertexOut pin) : SV_Target
         
     // 이전에 정의 했던 식을 이용해서 넘긴다.    
     float4 directLight = ComputeLighting(gLights, mat, pin.PosW,
-        bumpedNormalW, toEyeW, shadowFactor);
+        pin.NormalW, toEyeW, shadowFactor);
     // 최종 색을 결정하고
     float4 litColor = ambient + directLight;
 
@@ -158,6 +158,7 @@ float4 PS(VertexOut pin) : SV_Target
     float3 fresnelFactor = SchlickFresnel(fresnelR0, bumpedNormalW, r);
     // 거칠기도 반영한다.
     litColor.rgb += shininess * fresnelFactor * reflectionColor.rgb;
+    //litColor.rgb = diffuseAlbedo.rgb;
         
     // diffuse albedo에서 alpha값을 가져온다.
     litColor.a = diffuseAlbedo.a;

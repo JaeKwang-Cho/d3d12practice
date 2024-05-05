@@ -1,5 +1,5 @@
 ﻿//***************************************************************************************
-// AnimationApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
+// FbxTestApp.cpp by Frank Luna (C) 2015 All Rights Reserved.
 //***************************************************************************************
 
 #include "../Common/d3dApp.h"
@@ -63,14 +63,14 @@ enum class RenderLayer : int
 	Count
 };
 
-class AnimationApp : public D3DApp
+class FbxTestApp : public D3DApp
 {
 public:
-	AnimationApp(HINSTANCE hInstance);
-	~AnimationApp();
+	FbxTestApp(HINSTANCE hInstance);
+	~FbxTestApp();
 
-	AnimationApp(const AnimationApp& _other) = delete;
-	AnimationApp& operator=(const AnimationApp& _other) = delete;
+	FbxTestApp(const FbxTestApp& _other) = delete;
+	FbxTestApp& operator=(const FbxTestApp& _other) = delete;
 
 	virtual bool Initialize() override;
 
@@ -239,7 +239,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 
 	try
 	{
-		AnimationApp theApp(hInstance);
+		FbxTestApp theApp(hInstance);
 		if (!theApp.Initialize())
 			return 0;
 		return theApp.Run();
@@ -251,7 +251,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE prevInstance,
 	}
 }
 
-AnimationApp::AnimationApp(HINSTANCE hInstance)
+FbxTestApp::FbxTestApp(HINSTANCE hInstance)
 	: D3DApp(hInstance)
 {
 	// 어떤 레벨이 들어갈지 우리는 이미 알고 있으니, 
@@ -260,7 +260,7 @@ AnimationApp::AnimationApp(HINSTANCE hInstance)
 	m_SceneBounds.Radius = sqrtf(10.0f * 10.0f + 15.0f * 15.0f);
 }
 
-AnimationApp::~AnimationApp()
+FbxTestApp::~FbxTestApp()
 {
 	if (m_d3dDevice != nullptr)
 	{
@@ -268,7 +268,7 @@ AnimationApp::~AnimationApp()
 	}
 }
 
-void AnimationApp::CreateRtvAndDsvDescriptorHeaps()
+void FbxTestApp::CreateRtvAndDsvDescriptorHeaps()
 {
 	// __super::CreateRtvAndDsvDescriptorHeaps();
 
@@ -297,7 +297,7 @@ void AnimationApp::CreateRtvAndDsvDescriptorHeaps()
 		&dsvHeapDesc, IID_PPV_ARGS(m_DsvHeap.GetAddressOf())));
 }
 
-bool AnimationApp::Initialize()
+bool FbxTestApp::Initialize()
 {
 	if (!D3DApp::Initialize())
 		return false;
@@ -345,7 +345,7 @@ bool AnimationApp::Initialize()
 	return true;
 }
 
-void AnimationApp::OnResize()
+void FbxTestApp::OnResize()
 {
 	D3DApp::OnResize();
 
@@ -360,7 +360,7 @@ void AnimationApp::OnResize()
 	}
 }
 
-void AnimationApp::Update(const GameTimer& _gt)
+void FbxTestApp::Update(const GameTimer& _gt)
 {
 	// 더 기능이 많아질테니, 함수로 쪼개서 넣는다.
 	OnKeyboardInput(_gt);
@@ -408,7 +408,7 @@ void AnimationApp::Update(const GameTimer& _gt)
 	UpdateSsaoCB(_gt);
 }
 
-void AnimationApp::Draw(const GameTimer& _gt)
+void FbxTestApp::Draw(const GameTimer& _gt)
 {
 
 	// 현재 FrameResource가 가지고 있는 allocator를 가지고 와서 초기화 한다.
@@ -511,12 +511,12 @@ void AnimationApp::Draw(const GameTimer& _gt)
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
-	m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
+	//m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
+	//DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
 
 	// 하늘을 맨 마지막에 그려주는 것이 depth test 성능상 좋다고 한다. 
-	m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
-	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
+	//m_CommandList->SetPipelineState(m_PSOs["sky"].Get());
+	//DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Sky]);
 
 	// ======================================
 	
@@ -546,7 +546,7 @@ void AnimationApp::Draw(const GameTimer& _gt)
 	
 }
 
-void AnimationApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
+void FbxTestApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 {
 	if ((_btnState & MK_LBUTTON) != 0)
 	{
@@ -558,13 +558,13 @@ void AnimationApp::OnMouseDown(WPARAM _btnState, int _x, int _y)
 	}
 }
 
-void AnimationApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
+void FbxTestApp::OnMouseUp(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
 }
 
-void AnimationApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
+void FbxTestApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 {
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
@@ -589,7 +589,7 @@ void AnimationApp::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void AnimationApp::OnKeyboardInput(const GameTimer _gt)
+void FbxTestApp::OnKeyboardInput(const GameTimer _gt)
 {
 	const float dt = _gt.GetDeltaTime();
 
@@ -614,11 +614,11 @@ void AnimationApp::OnKeyboardInput(const GameTimer _gt)
 	m_Camera.UpdateViewMatrix();
 }
 
-void AnimationApp::AnimateMaterials(const GameTimer& _gt)
+void FbxTestApp::AnimateMaterials(const GameTimer& _gt)
 {
 }
 
-void AnimationApp::UpdateObjectCBs(const GameTimer& _gt)
+void FbxTestApp::UpdateObjectCBs(const GameTimer& _gt)
 {
 	UploadBuffer<ObjectConstants>* currObjectCB = m_CurrFrameResource->ObjectCB.get();
 	for (std::unique_ptr<RenderItem>& e : m_AllRenderItems)
@@ -651,7 +651,7 @@ void AnimationApp::UpdateObjectCBs(const GameTimer& _gt)
 	}
 }
 
-void AnimationApp::UpdateMaterialBuffer(const GameTimer& _gt)
+void FbxTestApp::UpdateMaterialBuffer(const GameTimer& _gt)
 {
 	UploadBuffer<MaterialData>* currMaterialCB = m_CurrFrameResource->MaterialBuffer.get();
 	for (std::pair<const std::string, std::unique_ptr<Material>>& e : m_Materials)
@@ -677,7 +677,7 @@ void AnimationApp::UpdateMaterialBuffer(const GameTimer& _gt)
 	}
 }
 
-void AnimationApp::UpdateShadowTransform(const GameTimer& _gt)
+void FbxTestApp::UpdateShadowTransform(const GameTimer& _gt)
 {
 	// 일단은 첫번째 디렉셔널 라이트에만 그림자를 만든다.
 	XMVECTOR lightDir = XMLoadFloat3(&m_RotatedLightDirections[0]);
@@ -724,7 +724,7 @@ void AnimationApp::UpdateShadowTransform(const GameTimer& _gt)
 	XMStoreFloat4x4(&m_ShadowMat, ShadowMat);
 }
 
-void AnimationApp::UpdateMainPassCB(const GameTimer& _gt)
+void FbxTestApp::UpdateMainPassCB(const GameTimer& _gt)
 {
 	XMMATRIX ViewMat = m_Camera.GetViewMat();
 	XMMATRIX ProjMat = m_Camera.GetProjMat();
@@ -780,7 +780,7 @@ void AnimationApp::UpdateMainPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(0, m_MainPassCB);
 }
 
-void AnimationApp::UpdateShadowPassCB(const GameTimer& _gt)
+void FbxTestApp::UpdateShadowPassCB(const GameTimer& _gt)
 {
 	// 광원 입장에서 보이는 영역을 정의한다.
 	XMMATRIX ViewMat = XMLoadFloat4x4(&m_LightViewMat);
@@ -818,7 +818,7 @@ void AnimationApp::UpdateShadowPassCB(const GameTimer& _gt)
 	currPassCB->CopyData(1, m_ShadowPassCB);
 }
 
-void AnimationApp::UpdateSsaoCB(const GameTimer& _gt)
+void FbxTestApp::UpdateSsaoCB(const GameTimer& _gt)
 {
 	SsaoConstants ssaoCB;
 	XMMATRIX P = m_Camera.GetProjMat();
@@ -853,7 +853,7 @@ void AnimationApp::UpdateSsaoCB(const GameTimer& _gt)
 	currSsaoCB->CopyData(0, ssaoCB);
 }
 
-void AnimationApp::LoadTextures()
+void FbxTestApp::LoadTextures()
 {
 	std::vector<std::string> texNames =
 	{
@@ -898,7 +898,7 @@ void AnimationApp::LoadTextures()
 }
 
 
-void AnimationApp::BuildRootSignature()
+void FbxTestApp::BuildRootSignature()
 {
 	// Table도 쓸거고, Constant도 쓸거다.
 	CD3DX12_ROOT_PARAMETER slotRootParameter[6];
@@ -960,7 +960,7 @@ void AnimationApp::BuildRootSignature()
 		IID_PPV_ARGS(m_RootSignature.GetAddressOf())));
 }
 
-void AnimationApp::BuildSsaoRootSignature()
+void FbxTestApp::BuildSsaoRootSignature()
 {
 	
 	CD3DX12_ROOT_PARAMETER slotRootParameter[4];
@@ -1049,7 +1049,7 @@ void AnimationApp::BuildSsaoRootSignature()
 		IID_PPV_ARGS(m_SsaoRootSignature.GetAddressOf())));
 }
 
-void AnimationApp::BuildDescriptorHeaps()
+void FbxTestApp::BuildDescriptorHeaps()
 {
 	const int textureDescriptorCount = 64;
 
@@ -1150,7 +1150,7 @@ void AnimationApp::BuildDescriptorHeaps()
 	);
 }
 
-void AnimationApp::BuildShadersAndInputLayout()
+void FbxTestApp::BuildShadersAndInputLayout()
 {
 	const D3D_SHADER_MACRO alphaTestDefines[] =
 	{
@@ -1196,7 +1196,7 @@ void AnimationApp::BuildShadersAndInputLayout()
 	};
 }
 
-void AnimationApp::BuildFbxGeometry()
+void FbxTestApp::BuildFbxGeometry()
 {
 	std::unique_ptr<FbxPractice> fbxPractice = std::make_unique<FbxPractice>();
 	fbxPractice->Init();
@@ -1205,8 +1205,7 @@ void AnimationApp::BuildFbxGeometry()
 
 	FbxNode* pRootNode = fbxPractice->GetRootScene()->GetRootNode();
 	mCountOfMeshNode = 0;
-	std::vector<FbxMesh*> MeshArr;
-
+	std::vector<FbxNode*> MeshNodeArr;
 
 	OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
 	if (pRootNode != nullptr) {
@@ -1214,17 +1213,38 @@ void AnimationApp::BuildFbxGeometry()
 			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
 			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
 				mCountOfMeshNode++;
-				MeshArr.push_back(pRootNode->GetChild(i)->GetMesh());
+				MeshNodeArr.push_back(pRootNode->GetChild(i));
 			}
 		}
 	}
 
+	int fbxMatCBIndex = 5;
 	for (int i = 0; i < mCountOfMeshNode; i++)
 	{
 		std::vector<Vertex> vertices;
 		std::vector<std::uint32_t> indices;
 
-		fbxPractice->GetMeshToApp(MeshArr[i], vertices, indices);
+		std::unique_ptr<Material> fbxMat = std::make_unique<Material>();
+		fbxMat->Name = "fbxMat";
+		fbxMat->MatCBIndex = fbxMatCBIndex++;
+		fbxMat->DiffuseSrvHeapIndex = 4;
+		//fbxMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
+		fbxMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
+		//fbxMat->Roughness = 0.3f;
+
+		FbxMaterial outFbxMat;
+
+		fbxPractice->GetMeshToApp(MeshNodeArr[i]->GetMesh(), vertices, indices);
+		fbxPractice->GetMaterialToApp(MeshNodeArr[i]->GetMaterial(0), outFbxMat);
+
+		fbxMat->DiffuseAlbedo = XMFLOAT4(
+			outFbxMat.diffuseColor.color.x, 
+			outFbxMat.diffuseColor.color.y, 
+			outFbxMat.diffuseColor.color.z, 
+			1.f);
+		fbxMat->Roughness = 1.f - outFbxMat.shininess;
+
+		m_Materials["fbxMat" + i] = std::move(fbxMat);
 
 		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
@@ -1270,7 +1290,7 @@ void AnimationApp::BuildFbxGeometry()
 	}
 }
 
-void AnimationApp::BuildPSOs()
+void FbxTestApp::BuildPSOs()
 {
 	// 이렇게 기본 PSO를 따로 뺀 이유는
 	// opaque Rendering을 할 때, ssao map을 작성하면스 depth buffer가 이미
@@ -1439,7 +1459,7 @@ void AnimationApp::BuildPSOs()
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skyPSODesc, IID_PPV_ARGS(&m_PSOs["sky"])));
 }
 
-void AnimationApp::BuildFrameResources()
+void FbxTestApp::BuildFrameResources()
 {
 	// Shadow Map 용으로 하나 더 필요하다.
 	UINT passCBCount = 2;
@@ -1457,7 +1477,7 @@ void AnimationApp::BuildFrameResources()
 	}
 }
 
-void AnimationApp::BuildMaterials()
+void FbxTestApp::BuildMaterials()
 {
 	//0		m_Textures["bricksDiffuseMap"]->Resource.Get(),
 	//1		m_Textures["bricksNormalMap"]->Resource.Get(),
@@ -1518,7 +1538,7 @@ void AnimationApp::BuildMaterials()
 	m_Materials["skyMat"] = std::move(skyMat);
 }
 
-void AnimationApp::BuildRenderItems()
+void FbxTestApp::BuildRenderItems()
 {
 	UINT objCBIndex = 0;
 	// fbx 아이템
@@ -1532,7 +1552,7 @@ void AnimationApp::BuildRenderItems()
 		fbxRitem->ObjCBIndex = objCBIndex++;
 		std::string geoName = "fbxGeo_" + i;
 		fbxRitem->Geo = m_Geometries[geoName].get();
-		fbxRitem->Mat = m_Materials["whiteMat"].get();
+		fbxRitem->Mat = m_Materials["fbxMat" + i].get();
 		fbxRitem->PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
 		fbxRitem->IndexCount = fbxRitem->Geo->DrawArgs["fbx"].IndexCount;
 		fbxRitem->StartIndexLocation = fbxRitem->Geo->DrawArgs["fbx"].StartIndexLocation;
@@ -1543,7 +1563,7 @@ void AnimationApp::BuildRenderItems()
 	}
 }
 
-void AnimationApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
+void FbxTestApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
 
@@ -1583,7 +1603,7 @@ void AnimationApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const st
 	}
 }
 
-void AnimationApp::DrawSceneToShadowMap()
+void FbxTestApp::DrawSceneToShadowMap()
 {
 	// 인스턴스 맴버 값을 이용해서, Rasterization 속성 값을 설정한다.
 	D3D12_VIEWPORT shadowViewPort = m_ShadowMap->GetViewport();
@@ -1621,7 +1641,7 @@ void AnimationApp::DrawSceneToShadowMap()
 	m_CommandList->ResourceBarrier(1, &shadowDS_WRITE_READ);
 }
 
-void AnimationApp::DrawNormalsAndDepth()
+void FbxTestApp::DrawNormalsAndDepth()
 {
 	// 화면에 보이는 normal을 뽑는 것이다.
 	m_CommandList->RSSetViewports(1, &m_ScreenViewport);
@@ -1656,7 +1676,7 @@ void AnimationApp::DrawNormalsAndDepth()
 	m_CommandList->ResourceBarrier(1, &normalMap_RT_READ);
 }
 
-std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> AnimationApp::GetStaticSamplers()
+std::array<const CD3DX12_STATIC_SAMPLER_DESC, 11> FbxTestApp::GetStaticSamplers()
 {
 	// 일반적인 앱에서는 쓰는 샘플러만 사용한다.
 	// 그래서 미리 만들어 놓고 루트서명에 넣어둔다.

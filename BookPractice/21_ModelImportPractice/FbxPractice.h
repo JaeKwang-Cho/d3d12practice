@@ -14,6 +14,27 @@ this software in either electronic or hard copy form.
 
 #include <fbxsdk.h>
 #include <vector>
+#include <DirectXMath.h>
+
+struct ColorChannel
+{
+	ColorChannel() : textureName(0)
+	{
+		color = DirectX::XMFLOAT4();
+	}
+
+	unsigned int textureName;
+	DirectX::XMFLOAT4 color;
+};
+
+struct FbxMaterial {
+	ColorChannel emissiveColor;
+	ColorChannel ambientColor;
+	ColorChannel diffuseColor;
+	ColorChannel specularColor;
+	float shininess = 0;
+};
+
 
 class FbxPractice
 {
@@ -32,9 +53,14 @@ public:
 	void TestTraverseMesh() const;
 
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
+	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial);
 
 private:
-	void GetMaterialToApp();
+	FbxDouble3 GetMaterialProperty(
+		const FbxSurfaceMaterial* _pMaterial,
+		const char* _pPropertyName,
+		const char* _pFactorPropertyName,
+		unsigned int& _pTextureName);
 
 	void PrintMeshInfo(FbxMesh* _pMeshNode) const;
 	void PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const;

@@ -298,7 +298,7 @@ void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _
 
 			// App에 값 넣기
 			XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
-			XMFLOAT3 normal = XMFLOAT3(- static_cast<float>(curNormal[0]), - static_cast<float>(curNormal[1]), -static_cast<float>(curNormal[2]));
+			XMFLOAT3 normal = XMFLOAT3(static_cast<float>(curNormal[0]), static_cast<float>(curNormal[1]), static_cast<float>(curNormal[2]));
 			XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
 			XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 			XMFLOAT3 tanU;
@@ -365,7 +365,7 @@ void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _
 					}
 
 					XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
-					XMFLOAT3 normal = XMFLOAT3(-static_cast<float>(curNormal[0]), -static_cast<float>(curNormal[1]), -static_cast<float>(curNormal[2]));
+					XMFLOAT3 normal = XMFLOAT3(static_cast<float>(curNormal[0]), static_cast<float>(curNormal[1]), static_cast<float>(curNormal[2]));
 					XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
 					XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
 					XMFLOAT3 tanU;
@@ -392,8 +392,85 @@ void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _
 	}
 }
 
-void FbxPractice::GetMaterialToApp()
+void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial)
 {
+	ColorChannel emissiveColor = ColorChannel();
+	ColorChannel ambientColor = ColorChannel();
+	ColorChannel diffuseColor = ColorChannel();
+	ColorChannel specularColor = ColorChannel();
+	float shininess =0;
+	 
+	const FbxDouble3 emissive = GetMaterialProperty(_pMaterial, FbxSurfaceMaterial::sEmissive, FbxSurfaceMaterial::sEmissiveFactor, _outMaterial.emissiveColor.textureName);
+	const FbxDouble3 ambient = GetMaterialProperty(_pMaterial, FbxSurfaceMaterial::sAmbient, FbxSurfaceMaterial::sAmbientFactor, _outMaterial.ambientColor.textureName);
+	const FbxDouble3 diffuse = GetMaterialProperty(_pMaterial, FbxSurfaceMaterial::sDiffuse, FbxSurfaceMaterial::sDiffuseFactor, _outMaterial.diffuseColor.textureName);
+	const FbxDouble3 specular = GetMaterialProperty(_pMaterial, FbxSurfaceMaterial::sSpecular, FbxSurfaceMaterial::sSpecularFactor, _outMaterial.specularColor.textureName);
+
+	FbxProperty shininessProperty = _pMaterial->FindProperty(FbxSurfaceMaterial::sShininess);
+	if (shininessProperty.IsValid()) {
+		_outMaterial.shininess = static_cast<float>(shininessProperty.Get<FbxDouble>());
+	}
+
+	_outMaterial.emissiveColor.color = XMFLOAT4(
+		static_cast<float>(emissive[0]),
+		static_cast<float>(emissive[1]),
+		static_cast<float>(emissive[2]),
+		1.f
+	);
+	_outMaterial.ambientColor.color = XMFLOAT4(
+		static_cast<float>(ambient[0]),
+		static_cast<float>(ambient[1]),
+		static_cast<float>(ambient[2]),
+		1.f
+	);
+	_outMaterial.diffuseColor.color = XMFLOAT4(
+		static_cast<float>(diffuse[0]),
+		static_cast<float>(diffuse[1]),
+		static_cast<float>(diffuse[2]),
+		1.f
+	);
+	_outMaterial.specularColor.color = XMFLOAT4(
+		static_cast<float>(specular[0]),
+		static_cast<float>(specular[1]),
+		static_cast<float>(specular[2]),
+		1.f
+	);
+}
+
+FbxDouble3 FbxPractice::GetMaterialProperty(
+	const FbxSurfaceMaterial* _pMaterial,
+	const char* _pPropertyName,
+	const char* _pFactorPropertyName,
+	unsigned int& _pTextureName)
+{
+	FbxDouble3 result(0, 0, 0);
+	const FbxProperty property = _pMaterial->FindProperty(_pPropertyName);
+	const FbxProperty factorProperty = _pMaterial->FindProperty(_pFactorPropertyName);
+	if (property.IsValid() && factorProperty.IsValid())
+	{
+		result = property.Get<FbxDouble3>();
+		double lFactor = factorProperty.Get<FbxDouble>();
+		if (lFactor != 1)
+		{
+			result[0] *= lFactor;
+			result[1] *= lFactor;
+			result[2] *= lFactor;
+		}
+	}
+
+	if (property.IsValid())
+	{
+		const int textureCount = property.GetSrcObjectCount<FbxFileTexture>();
+		if (textureCount)
+		{
+			const FbxFileTexture* texture = property.GetSrcObject<FbxFileTexture>();
+			if (texture && texture->GetUserDataPtr())
+			{
+				_pTextureName = *(static_cast<UINT*>(texture->GetUserDataPtr()));
+			}
+		}
+	}
+
+	return result;
 }
 
 void FbxPractice::PrintMeshInfo(FbxMesh* _pMeshNode) const
