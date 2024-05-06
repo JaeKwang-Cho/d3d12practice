@@ -51,11 +51,14 @@ public:
 	void TestTraverseScene() const;
 	void TestTraverseLayer() const;
 	void TestTraverseMesh() const;
+	void TestTraverseAnimation() const;
 
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial);
+	void GetAnimationToApp();
 
 private:
+	void PrintDeformerInfo(FbxMesh* _pMeshNode) const;
 	FbxDouble3 GetMaterialProperty(
 		const FbxSurfaceMaterial* _pMaterial,
 		const char* _pPropertyName,

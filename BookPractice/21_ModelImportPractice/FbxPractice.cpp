@@ -70,23 +70,14 @@ void FbxPractice::ImportFile(const char* _fileName)
 		return;
 	}
 
-	// Import Setting을 해준다.
-	ioSettings->SetBoolProp(IMP_FBX_MATERIAL, true);
-	ioSettings->SetBoolProp(IMP_FBX_TEXTURE, true);
-	ioSettings->SetBoolProp(IMP_FBX_LINK, false);
-	ioSettings->SetBoolProp(IMP_FBX_SHAPE, false);
-	ioSettings->SetBoolProp(IMP_FBX_GOBO, false);
-	ioSettings->SetBoolProp(IMP_FBX_ANIMATION, true);
-	ioSettings->SetBoolProp(IMP_FBX_GLOBAL_SETTINGS, true);
-
 	// 모델 정보가 들어갈 Scene을 만들고
 	rootScene = FbxScene::Create(sdkManager, "rootScene");
 	// Import를 건다.
 	importer->Import(rootScene);
 	// DirectX 좌표계에 맞춘다.
 	rootScene->GetGlobalSettings().SetAxisSystem(FbxAxisSystem::DirectX);
-	FbxGeometryConverter geometryConverter(sdkManager);
-	geometryConverter.Triangulate(rootScene, true);
+	//FbxGeometryConverter geometryConverter(sdkManager);
+	//geometryConverter.Triangulate(rootScene, true);
 
 	// Importer는 안쓰니 삭제한다.
 	importer->Destroy();
@@ -136,6 +127,33 @@ void FbxPractice::TestTraverseMesh() const
 				PrintMeshInfo(pRootNode->GetChild(i)->GetMesh());
 			}
 		}
+	}
+}
+
+void FbxPractice::TestTraverseAnimation() const
+{
+	OutputDebugStringA("\n\n***Print AnimStack Info***\n");
+	FbxScene* pRootScene = rootScene;
+	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
+
+
+	FbxNode* pRootNode = pRootScene->GetRootNode();
+
+	for (int i = 0; i < pRootNode->GetChildCount(); i++) {
+		FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
+		if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
+			FbxMesh* pMesh = pRootNode->GetChild(i)->GetMesh();
+			PrintDeformerInfo(pMesh);
+		}
+	}
+
+	for (int i = 0; i < animstackCount; i++) {
+		FbxAnimStack* animStack = pRootScene->GetSrcObject<FbxAnimStack>();
+
+		const char* animStackName = animStack->GetName();
+		OutputDebugStringA(std::format("\t{}th AnimStack Name is '{}' \n", i + 1, animStackName).c_str());
+
+		FbxTakeInfo* takeInfo = pRootScene->GetTakeInfo(animStackName);
 	}
 }
 
@@ -436,6 +454,26 @@ void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMate
 	);
 }
 
+void FbxPractice::GetAnimationToApp()
+{
+	
+}
+
+void FbxPractice::PrintDeformerInfo(FbxMesh* _pMeshNode) const
+{
+	OutputDebugStringA("\n\n***Print Deformer Info***\n");
+	OutputDebugStringA(std::format("\tCurrent Mesh have {} deformers \n", _pMeshNode->GetDeformerCount()).c_str());
+	const FbxDeformer* deformer = _pMeshNode->GetDeformer(0);
+
+	FbxDeformer::EDeformerType deformerType = deformer->GetDeformerType();
+	switch (deformerType) {
+	case FbxDeformer::eUnknown: { OutputDebugStringA("\tFbxDeformer::eUnknown\n"); break; }
+	case FbxDeformer::eSkin: { OutputDebugStringA("\tFbxDeformer::eSkin\n"); break; }
+	case FbxDeformer::eBlendShape: { OutputDebugStringA("\tFbxDeformer::eBlendShape\n"); break; }
+	case FbxDeformer::eVertexCache: { OutputDebugStringA("\tFbxDeformer::eVertexCache\n"); break; }
+	}
+}
+
 FbxDouble3 FbxPractice::GetMaterialProperty(
 	const FbxSurfaceMaterial* _pMaterial,
 	const char* _pPropertyName,
@@ -666,7 +704,7 @@ void FbxPractice::PrintMeshInfo(FbxMesh* _pMeshNode) const
 	if (uvElementCount > 0) {
 		OutputDebugStringA(std::format("\tFbxGeometryBase - Mesh has {} UVElements\n", uvElementCount).c_str());
 		const FbxLayerElementTemplate<FbxVector2>* firstUVElement = _pMeshNode->GetElementUV(0);
-		OutputDebugStringA("\t\tfirst edge crease is ... i don't know\n");
+		OutputDebugStringA("\t\tfirst UVElements is ... i don't know\n");
 	}
 	else {
 		OutputDebugStringA("\tFbxGeometryBase - Mesh has no UVElement\n");

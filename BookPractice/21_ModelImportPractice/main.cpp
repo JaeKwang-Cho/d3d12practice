@@ -1203,7 +1203,10 @@ void FbxTestApp::BuildFbxGeometry()
 	fbxPractice->ImportFile(danceFbxFilePath.c_str());
 	//fbxPractice->TestTraverseScene();
 
-	FbxNode* pRootNode = fbxPractice->GetRootScene()->GetRootNode();
+	FbxScene* pRootScene = fbxPractice->GetRootScene();
+	fbxPractice->TestTraverseAnimation();
+
+	FbxNode* pRootNode = pRootScene->GetRootNode();
 	mCountOfMeshNode = 0;
 	std::vector<FbxNode*> MeshNodeArr;
 
