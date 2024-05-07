@@ -51,6 +51,7 @@ public:
 	void TestTraverseScene() const;
 	void TestTraverseLayer() const;
 	void TestTraverseMesh() const;
+	void TestTraverseSkin() const;
 	void TestTraverseAnimation() const;
 
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);

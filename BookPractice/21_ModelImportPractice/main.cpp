@@ -1202,9 +1202,11 @@ void FbxTestApp::BuildFbxGeometry()
 	fbxPractice->Init();
 	fbxPractice->ImportFile(danceFbxFilePath.c_str());
 	//fbxPractice->TestTraverseScene();
+	//fbxPractice->TestTraverseSkin(); 
+	//fbxPractice->TestTraverseAnimation();
 
 	FbxScene* pRootScene = fbxPractice->GetRootScene();
-	fbxPractice->TestTraverseAnimation();
+	
 
 	FbxNode* pRootNode = pRootScene->GetRootNode();
 	mCountOfMeshNode = 0;

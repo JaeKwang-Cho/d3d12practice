@@ -130,30 +130,160 @@ void FbxPractice::TestTraverseMesh() const
 	}
 }
 
-void FbxPractice::TestTraverseAnimation() const
+void FbxPractice::TestTraverseSkin() const
 {
-	OutputDebugStringA("\n\n***Print AnimStack Info***\n");
+	OutputDebugStringA("\n\n***Print Skin Info***\n");
+
 	FbxScene* pRootScene = rootScene;
-	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
-
-
 	FbxNode* pRootNode = pRootScene->GetRootNode();
+
+	const char* clusterModes[] = { "Normalize", "Additive", "TotalOne" };
 
 	for (int i = 0; i < pRootNode->GetChildCount(); i++) {
 		FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
 		if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
 			FbxMesh* pMesh = pRootNode->GetChild(i)->GetMesh();
-			PrintDeformerInfo(pMesh);
+			int skinCount = pMesh->GetDeformerCount(FbxDeformer::eSkin);
+			for (int j = 0; j < skinCount; j++) {
+				FbxSkin* pSkin = static_cast<FbxSkin*>(pMesh->GetDeformer(j, FbxDeformer::eSkin));
+				int clusterCount = pSkin->GetClusterCount();
+				OutputDebugStringA(std::format("\t{}th Mesh's {}th Skin Deformer has {} clusters\n", i, j+1, clusterCount).c_str());
+				for (int k = 0; k < clusterCount; k++) {
+					OutputDebugStringA(std::format("\t\t* {}th Mesh's {}th Skin Deformer's {}th cluster * \n", i, j+1, k).c_str());
+
+					FbxCluster* pCluster = pSkin->GetCluster(k);
+					int clusterModeIndex = static_cast<int>(pCluster->GetLinkMode());
+					OutputDebugStringA(std::format("\t\t\tCluster's Link Mode : '{}'\n", clusterModes[clusterModeIndex]).c_str());
+					FbxNode* pLink = pCluster->GetLink();
+					OutputDebugStringA(std::format("\t\t\tCluster's Link Name : '{}'\n", pLink->GetName()).c_str());
+
+					int controlPointIndicesCount = pCluster->GetControlPointIndicesCount();
+					int* controlPointIndicesArr = pCluster->GetControlPointIndices();
+					double* weightsArr = pCluster->GetControlPointWeights();
+					OutputDebugStringA(std::format("\t\t\tCluster's control Point Indices & Weights Counts : '{}'\n", controlPointIndicesCount).c_str());
+
+					FbxAMatrix matrix;
+					matrix = pCluster->GetTransformMatrix(matrix);
+					FbxVector4 translationVec = matrix.GetT();
+					FbxVector4 rotationVec = matrix.GetR();
+					FbxVector4 scalingVec = matrix.GetS();
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Translation Vector: ({}, {}, {}, {})\n", 
+						static_cast<float>(translationVec[0]), 
+						static_cast<float>(translationVec[1]), 
+						static_cast<float>(translationVec[2]),
+						static_cast<float>(translationVec[3])
+					).c_str());
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Rotation Vector: ({}, {}, {}, {})\n",
+						static_cast<float>(rotationVec[0]),
+						static_cast<float>(rotationVec[1]),
+						static_cast<float>(rotationVec[2]),
+						static_cast<float>(rotationVec[3])
+					).c_str());
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Scaling Vector: ({}, {}, {}, {})\n",
+						static_cast<float>(scalingVec[0]),
+						static_cast<float>(scalingVec[1]),
+						static_cast<float>(scalingVec[2]),
+						static_cast<float>(scalingVec[3])
+					).c_str());
+
+					matrix = pCluster->GetTransformLinkMatrix(matrix);
+					FbxVector4 linkTranslationVec = matrix.GetT();
+					FbxVector4 linkRotationVec = matrix.GetR();
+					FbxVector4 linkScalingVec = matrix.GetS();
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Link Translation Vector: ({}, {}, {}, {})\n",
+						static_cast<float>(linkTranslationVec[0]),
+						static_cast<float>(linkTranslationVec[1]),
+						static_cast<float>(linkTranslationVec[2]),
+						static_cast<float>(linkTranslationVec[3])
+					).c_str());
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Link Rotation Vector: ({}, {}, {}, {})\n",
+						static_cast<float>(linkRotationVec[0]),
+						static_cast<float>(linkRotationVec[1]),
+						static_cast<float>(linkRotationVec[2]),
+						static_cast<float>(linkRotationVec[3])
+					).c_str());
+
+					OutputDebugStringA(std::format("\t\t\tCluster's Link Scaling Vector: ({}, {}, {}, {})\n",
+						static_cast<float>(linkScalingVec[0]),
+						static_cast<float>(linkScalingVec[1]),
+						static_cast<float>(linkScalingVec[2]),
+						static_cast<float>(linkScalingVec[3])
+					).c_str());
+
+					if (pCluster->GetAssociateModel() != nullptr) {
+						FbxNode* associateModel = pCluster->GetAssociateModel();
+						OutputDebugStringA(std::format("\t\t\tCluster has associateModel : '{}'\n", associateModel->GetName()).c_str());
+					}
+				}
+			}
 		}
 	}
+}
+
+void FbxPractice::TestTraverseAnimation() const
+{
+	OutputDebugStringA("\n\n***Print Animation Info***\n");
+	FbxScene* pRootScene = rootScene;
+	FbxNode* pRootNode = pRootScene->GetRootNode();
+
+	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
 
 	for (int i = 0; i < animstackCount; i++) {
-		FbxAnimStack* animStack = pRootScene->GetSrcObject<FbxAnimStack>();
+		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
 
-		const char* animStackName = animStack->GetName();
-		OutputDebugStringA(std::format("\t{}th AnimStack Name is '{}' \n", i + 1, animStackName).c_str());
+		const char* animStackName = pAnimStack->GetName();
+		OutputDebugStringA(std::format("\t\t{}th AnimStack Name is '{}' \n", i + 1, animStackName).c_str());
 
-		FbxTakeInfo* takeInfo = pRootScene->GetTakeInfo(animStackName);
+		int animLayerCount = pAnimStack->GetMemberCount<FbxAnimLayer>();
+		OutputDebugStringA(std::format("\t\t{}th AnimStack has '{}' AnimLayers \n", i + 1, animLayerCount).c_str());
+		for (int j = 0; j < animLayerCount; j++) {
+			FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
+			OutputDebugStringA(std::format("\t\t{}th AnimStack's {}th AnimLayer's name : {}\n", i + 1, j + 1, pAnimLayer->GetName()).c_str());
+
+			FbxAnimCurveNode* pAnimCurveNode_Translation = pRootNode->GetChild(0)->LclTranslation.GetCurveNode();
+			OutputDebugStringA(std::format("\t\t(Test) Does RootNode(- Hip Skeleton) have any Animation Info (of Translation)? - {}\n", pAnimCurveNode_Translation->IsAnimated()).c_str());
+			FbxTimeSpan timeInterval;
+			bool bHasTimeInterval = pAnimCurveNode_Translation->GetAnimationInterval(timeInterval);
+			if (bHasTimeInterval) {
+				FbxTime animLength = timeInterval.GetDuration();
+				OutputDebugStringA(std::format("\t\tAnimation Length : {}\n", static_cast<float>(animLength.GetSecondDouble())).c_str());
+			}
+
+			int channelsCount = pAnimCurveNode_Translation->GetChannelsCount();
+			OutputDebugStringA(std::format("\t\t(Test) RootNode(- Hip Skeleton) curveNode has {} channels\n", channelsCount).c_str());
+			std::vector<std::string> channelNames;
+			FbxArray<FbxAnimCurve*> animCurves;
+			int keyCount = 0;
+			for (int k = 0; k < channelsCount; k++) {
+				channelNames.push_back(pAnimCurveNode_Translation->GetChannelName(k).Buffer());
+				OutputDebugStringA(std::format("\t\t\t {}th channel name is {}", k+1, channelNames[k]).c_str());
+				animCurves.Add(pAnimCurveNode_Translation->GetCurve(k));
+				keyCount = pAnimCurveNode_Translation->GetCurve(k)->KeyGetCount();
+				OutputDebugStringA(std::format("\t\t\t and It's Key Counts is {}\n", keyCount).c_str());
+			}
+			if (!bHasTimeInterval) {
+				continue;
+			}
+			for (int k = 0; k < animCurves.GetCount(); k++) {
+				FbxAnimCurve* curAnimCurve = animCurves[k];
+				int start = 0;
+				int mid = keyCount / 2;
+				int end = keyCount - 1;
+				
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in start is '{}'\n", 
+					channelNames[k], curAnimCurve->KeyGetValue(start)).c_str());
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in mid is '{}'\n", 
+					channelNames[k], curAnimCurve->KeyGetValue(mid)).c_str());
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in end is '{}'\n", 
+					channelNames[k], curAnimCurve->KeyGetValue(end)).c_str());
+			}
+		}
+		OutputDebugStringA("\n");
 	}
 }
 
@@ -461,16 +591,16 @@ void FbxPractice::GetAnimationToApp()
 
 void FbxPractice::PrintDeformerInfo(FbxMesh* _pMeshNode) const
 {
-	OutputDebugStringA("\n\n***Print Deformer Info***\n");
-	OutputDebugStringA(std::format("\tCurrent Mesh have {} deformers \n", _pMeshNode->GetDeformerCount()).c_str());
+	OutputDebugStringA("\n\t*Print Deformer Info*\n");
+	OutputDebugStringA(std::format("\t\tCurrent Mesh have {} deformers \n", _pMeshNode->GetDeformerCount()).c_str());
 	const FbxDeformer* deformer = _pMeshNode->GetDeformer(0);
 
 	FbxDeformer::EDeformerType deformerType = deformer->GetDeformerType();
 	switch (deformerType) {
-	case FbxDeformer::eUnknown: { OutputDebugStringA("\tFbxDeformer::eUnknown\n"); break; }
-	case FbxDeformer::eSkin: { OutputDebugStringA("\tFbxDeformer::eSkin\n"); break; }
-	case FbxDeformer::eBlendShape: { OutputDebugStringA("\tFbxDeformer::eBlendShape\n"); break; }
-	case FbxDeformer::eVertexCache: { OutputDebugStringA("\tFbxDeformer::eVertexCache\n"); break; }
+	case FbxDeformer::eUnknown: { OutputDebugStringA("\t\tFbxDeformer::eUnknown\n"); break; }
+	case FbxDeformer::eSkin: { OutputDebugStringA("\t\tFbxDeformer::eSkin\n"); break; }
+	case FbxDeformer::eBlendShape: { OutputDebugStringA("\t\tFbxDeformer::eBlendShape\n"); break; }
+	case FbxDeformer::eVertexCache: { OutputDebugStringA("\t\tFbxDeformer::eVertexCache\n"); break; }
 	}
 }
 
