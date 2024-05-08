@@ -11,13 +11,41 @@
 #include "ShadowMap.h"
 #include "../Common/Camera.h"
 #include "Ssao.h"
+
 #include "FbxPractice.h"
+#include "SkinnedData.h"
+#include "LoadM3d.h"
 
 #include <format>
 
 const int g_NumFrameResources = 3;
 // fbxPractice
 const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance.fbx";
+
+// 일단은 스키닝할 모델은 하나밖에 없다.
+struct SkinnedModelInstance
+{
+	SkinnedData* SkinnedInfo = nullptr;
+	std::vector<DirectX::XMFLOAT4X4> FinalTransforms;
+	std::string ClipName;
+	float TimePos = 0.f;
+
+	// 시간에 따라 현재 animation clip에 맞는 bone 위치를
+	// 보간하고, 최종 transform을 계산한다.
+	void UpdateSkinnedAnimation(float _dt)
+	{
+		TimePos += _dt;
+
+		// 애니메이션 루프
+		if (TimePos > SkinnedInfo->GetClipEndTime(ClipName))
+		{
+			TimePos = 0.f;
+		}
+		// 현재 시간에 맞는 final transform을 구한다.
+		SkinnedInfo->GetFinalTransforms(ClipName, TimePos, FinalTransforms);
+
+	}
+};
 
 // vertex, index, CB, PrimitiveType, DrawIndexedInstanced 등
 // 요걸 묶어서 렌더링하기 좀 더 편하게 해주는 구조체이다.
@@ -52,12 +80,18 @@ struct RenderItem
 	UINT IndexCount = 0;
 	UINT StartIndexLocation = 0;
 	int BaseVertexLocation = 0;
+
+	// 스키닝하는 아이템에만 사용하고
+	UINT SkinnedCBIndex = -1;
+	// 그렇지 않으면 nullptr로 둔다.
+	SkinnedModelInstance* SkinnedModelInst = nullptr;
 };
 
 // 스카이 맵을 그리는 lay를 따로 둔다. 
 enum class RenderLayer : int
 {
 	Opaque = 0,
+	SkinnedOpaque,
 	Debug,
 	Sky,
 	Count
@@ -89,6 +123,7 @@ private:
 	void OnKeyboardInput(const GameTimer _gt);
 	void AnimateMaterials(const GameTimer& _gt);
 	void UpdateObjectCBs(const GameTimer& _gt);
+	void UpdateSkinnedCBs(const GameTimer& _gt); // 스키닝할 때 필요한 final bone을 넘겨주는 SkinnedCB를 업데이트 해준다.
 	void UpdateMaterialBuffer(const GameTimer& _gt);
 	void UpdateShadowTransform(const GameTimer& _gt); // 광원에서 텍스쳐로 넘어가는 행렬을 업데이트해준다.
 	void UpdateMainPassCB(const GameTimer& _gt);
@@ -136,6 +171,8 @@ private:
 
 	// input layout도 백터로 가지고 있는다
 	std::vector<D3D12_INPUT_ELEMENT_DESC> m_InputLayout;
+	// skinning 할때는 Vertex에 추가로 넘겨줘야할 것이 있다.
+	std::vector<D3D12_INPUT_ELEMENT_DESC> m_SkinnedInputLayout;
 
 	// RenderItem 리스트
 	std::vector<std::unique_ptr<RenderItem>> m_AllRenderItems;
@@ -200,6 +237,14 @@ private:
 
 	//fbx
 	int mCountOfMeshNode = 0;
+
+	// Mesh Skinning 할 때 쓰이는 맴버들이다.
+	UINT m_SkinnedSrvHeapStart = 0;
+	std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; // 예제에서는 하나만 렌더링한다.
+	SkinnedData m_SkinnedInfo;
+	std::vector<M3DLoader::Subset> m_SkinnedSubsets;
+	std::vector<M3DLoader::M3dMaterial> m_SkinnedMaterials;
+	std::vector<std::string> m_SkinnedTextureNames;
 
 public:
 	// Heap에서 연속적으로 존재하는 View들이 많을 예정이라 이렇게 Get 함수를 만들었다.
@@ -399,6 +444,7 @@ void FbxTestApp::Update(const GameTimer& _gt)
 
 	AnimateMaterials(_gt);
 	UpdateObjectCBs(_gt);
+	UpdateSkinnedCBs(_gt);
 	UpdateMaterialBuffer(_gt);
 	// PassCB에 Shadow Transform이 담기니까, 순서를 잘 맞춰줘야 한다.
 	UpdateShadowTransform(_gt);
@@ -510,6 +556,9 @@ void FbxTestApp::Draw(const GameTimer& _gt)
 	// 일단 불투명한 애들을 먼저 싹 그려준다.
 	m_CommandList->SetPipelineState(m_PSOs["opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+
+	m_CommandList->SetPipelineState(m_PSOs["skinnedOpaque"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
 
 	//m_CommandList->SetPipelineState(m_PSOs["debug"].Get());
 	//DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Debug]);
@@ -649,6 +698,25 @@ void FbxTestApp::UpdateObjectCBs(const GameTimer& _gt)
 			e->NumFramesDirty--;
 		}
 	}
+}
+
+void FbxTestApp::UpdateSkinnedCBs(const GameTimer& _gt)
+{
+	if (m_SkinnedModelInst == nullptr) {
+		return;
+	}
+	UploadBuffer<SkinnedConstants>* currSkinnedCB = m_CurrFrameResource->SkinnedCB.get();
+
+	m_SkinnedModelInst->UpdateSkinnedAnimation(_gt.GetDeltaTime());
+
+	SkinnedConstants skinnedConstants;
+	std::copy(
+		std::begin(m_SkinnedModelInst->FinalTransforms),
+		std::end(m_SkinnedModelInst->FinalTransforms),
+		&skinnedConstants.BoneTransform[0]
+	);
+
+	currSkinnedCB->CopyData(0, skinnedConstants);
 }
 
 void FbxTestApp::UpdateMaterialBuffer(const GameTimer& _gt)
@@ -1166,13 +1234,16 @@ void FbxTestApp::BuildShadersAndInputLayout()
 
 
 	m_Shaders["standardVS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["skinnedVS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["opaquePS"] = d3dUtil::CompileShader(L"Shaders\\21_ModelImportPractice.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["shadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["skinnedShadowVS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["shadowOpaquePS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", nullptr, "PS", "ps_5_1");
 	m_Shaders["shadowAlphaTestedPS"] = d3dUtil::CompileShader(L"Shaders\\Shadow.hlsl", alphaTestDefines, "PS", "ps_5_1");
 
 	m_Shaders["debugVS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "VS", "vs_5_1");
+	m_Shaders["skinnedDrawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", skinnedDefines, "VS", "vs_5_1");
 	m_Shaders["debugPS"] = d3dUtil::CompileShader(L"Shaders\\ShadowDebug.hlsl", nullptr, "PS", "ps_5_1");
 
 	m_Shaders["drawNormalsVS"] = d3dUtil::CompileShader(L"Shaders\\DrawNormals.hlsl", nullptr, "VS", "vs_5_1");
@@ -1194,6 +1265,16 @@ void FbxTestApp::BuildShadersAndInputLayout()
 		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
 		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
 	};
+
+	m_SkinnedInputLayout =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) * 2 , D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 2 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{ "WEIGHTS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, sizeof(XMFLOAT3) * 3 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{ "BONEINDICES", 0, DXGI_FORMAT_R8G8B8A8_UINT, 0, sizeof(XMFLOAT3) * 4 + sizeof(XMFLOAT2), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+	};
 }
 
 void FbxTestApp::BuildFbxGeometry()
@@ -1201,14 +1282,13 @@ void FbxTestApp::BuildFbxGeometry()
 	std::unique_ptr<FbxPractice> fbxPractice = std::make_unique<FbxPractice>();
 	fbxPractice->Init();
 	fbxPractice->ImportFile(danceFbxFilePath.c_str());
-	//fbxPractice->TestTraverseScene();
+	fbxPractice->TestTraverseScene();
 	//fbxPractice->TestTraverseSkin(); 
 	//fbxPractice->TestTraverseAnimation();
 
 	FbxScene* pRootScene = fbxPractice->GetRootScene();
-	
-
 	FbxNode* pRootNode = pRootScene->GetRootNode();
+
 	mCountOfMeshNode = 0;
 	std::vector<FbxNode*> MeshNodeArr;
 
@@ -1219,6 +1299,9 @@ void FbxTestApp::BuildFbxGeometry()
 			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
 				mCountOfMeshNode++;
 				MeshNodeArr.push_back(pRootNode->GetChild(i));
+			}
+			else if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eSkeleton) {
+				fbxPractice->GetBonesToApp(pRootNode->GetChild(i));
 			}
 		}
 	}
@@ -1359,6 +1442,29 @@ void FbxTestApp::BuildPSOs()
 	shadowDrawPSODesc.NumRenderTargets = 0;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&shadowDrawPSODesc, IID_PPV_ARGS(&m_PSOs["shadow_opaque"])));
 
+	//
+	// Skinned 불투명 PSO
+	// 
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedOpaquePSODesc = opaquePSODesc;
+	skinnedOpaquePSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
+	skinnedOpaquePSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["skinnedVS"]->GetBufferPointer()),
+		m_Shaders["skinnedVS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedOpaquePSODesc, IID_PPV_ARGS(&m_PSOs["skinnedOpaque"])));
+
+	//
+	// Skinned Shadow Map 생성 PSO
+	//
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedShadowMapPSODesc = shadowDrawPSODesc;
+	skinnedShadowMapPSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
+	skinnedShadowMapPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["skinnedShadowVS"]->GetBufferPointer()),
+		m_Shaders["skinnedShadowVS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedShadowMapPSODesc, IID_PPV_ARGS(&m_PSOs["skinnedShadow_opaque"])));
 	
 	//
 	// debug Layer용 PSO다.
@@ -1395,6 +1501,18 @@ void FbxTestApp::BuildPSOs()
 	drawNormalsPSODesc.SampleDesc.Quality = 0;
 	drawNormalsPSODesc.DSVFormat = m_DepthStencilFormat;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&drawNormalsPSODesc, IID_PPV_ARGS(&m_PSOs["drawNormals"])));
+
+	//
+	// Skinned Normal을 그리는 PSO
+	//
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC skinnedDrawNormalsPSODesc = drawNormalsPSODesc;
+	skinnedDrawNormalsPSODesc.InputLayout = { m_SkinnedInputLayout.data(), (UINT)m_SkinnedInputLayout.size() };
+	skinnedDrawNormalsPSODesc.VS =
+	{
+		reinterpret_cast<BYTE*>(m_Shaders["skinnedDrawNormalsVS"]->GetBufferPointer()),
+		m_Shaders["skinnedDrawNormalsVS"]->GetBufferSize()
+	};
+	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedDrawNormalsPSODesc, IID_PPV_ARGS(&m_PSOs["skinnedDrawNormals"])));
 
 	//
 	// SSAO Map을 그리는 PSO
@@ -1468,7 +1586,7 @@ void FbxTestApp::BuildFrameResources()
 {
 	// Shadow Map 용으로 하나 더 필요하다.
 	UINT passCBCount = 2;
-	UINT skinnedObjectCount = 0;
+	UINT skinnedObjectCount = 1;
 
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1640,6 +1758,10 @@ void FbxTestApp::DrawSceneToShadowMap()
 	m_CommandList->SetPipelineState(m_PSOs["shadow_opaque"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
 
+	// 스키닝을 하는 물체에 대해서도 Shadow Map을 그려준다.
+	m_CommandList->SetPipelineState(m_PSOs["skinnedShadow_opaque"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
+
 	// Dsv Barrier를 다시 Read로 바꾼다.
 	CD3DX12_RESOURCE_BARRIER shadowDS_WRITE_READ = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_ShadowMap->GetResource(), D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_GENERIC_READ);
@@ -1675,6 +1797,10 @@ void FbxTestApp::DrawNormalsAndDepth()
 
 	m_CommandList->SetPipelineState(m_PSOs["drawNormals"].Get());
 	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::Opaque]);
+
+	// 여기서도 스키닝하는 친구에 대한 Normal Map을 그려준다.
+	m_CommandList->SetPipelineState(m_PSOs["skinnedDrawNormals"].Get());
+	DrawRenderItems(m_CommandList.Get(), m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque]);
 
 	// 다시 베리어를 Read로 바꾼다.
 	CD3DX12_RESOURCE_BARRIER normalMap_RT_READ = CD3DX12_RESOURCE_BARRIER::Transition(normalMap, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_GENERIC_READ);

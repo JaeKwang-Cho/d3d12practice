@@ -35,6 +35,17 @@ struct FbxMaterial {
 	float shininess = 0;
 };
 
+struct BoneInfo
+{
+	const FbxNode* boneNode;
+	std::string name;
+	int	parentIndex;
+	FbxAMatrix matOffset;
+
+	BoneInfo() = default;
+	BoneInfo(const BoneInfo& _other) = delete;
+	BoneInfo& operator=(const BoneInfo& _other) = delete;
+};
 
 class FbxPractice
 {
@@ -54,9 +65,11 @@ public:
 	void TestTraverseSkin() const;
 	void TestTraverseAnimation() const;
 
+	void GetBonesToApp(const FbxNode* _node);
+	void GetAnimationToApp();
+	//void GetBonesRecursive(const FbxNode* _node, int _boneIndex, int _parentIndex);
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial);
-	void GetAnimationToApp();
 
 private:
 	void PrintDeformerInfo(FbxMesh* _pMeshNode) const;
@@ -98,6 +111,10 @@ private:
 		int TriangleCount;
 	};
 	FbxArray<SubMesh*> m_SubMeshes;
+
+	// Animation
+	//std::vector<std::unique_ptr<BoneInfo>> bones;
+	std::vector<BoneInfo*> bones;
 
 public:
 	FbxScene* GetRootScene() const{

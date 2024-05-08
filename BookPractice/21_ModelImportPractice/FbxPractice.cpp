@@ -18,9 +18,15 @@ this software in either electronic or hard copy form.
 #include <fstream>
 
 #include "FrameResource.h"
+#include <stack>
 
 FbxPractice::~FbxPractice()
 {
+	if (bones.size() > 0) {
+		for (int i = 0; i < bones.size(); i++) {
+			delete bones[i];
+		}
+	}
 	if (ioSettings != nullptr)
 	{
 		ioSettings->Destroy();
@@ -285,6 +291,117 @@ void FbxPractice::TestTraverseAnimation() const
 		}
 		OutputDebugStringA("\n");
 	}
+}
+
+void FbxPractice::GetBonesToApp(const FbxNode* _node)
+{
+	BoneInfo* bone = new BoneInfo();
+	bone->boneNode = _node;
+	bone->name = _node->GetName();
+	bone->parentIndex = -1;
+
+	std::stack<BoneInfo*> boneStack;
+	boneStack.push(bone);
+	int curBoneIndex = 0;
+
+	while (!boneStack.empty()) {
+		BoneInfo* curBone = boneStack.top();
+		boneStack.pop();
+
+		const FbxNode* curNode = curBone->boneNode;
+		int curChildCount = curNode->GetChildCount();
+		for (int i = 0; i < curChildCount; i++) {
+			BoneInfo* newBone = new BoneInfo();
+
+			newBone->boneNode = curNode->GetChild(i);
+			newBone->name = newBone->boneNode->GetName();
+			newBone->parentIndex = curBoneIndex;
+			boneStack.push(newBone);
+		}
+
+		bones.push_back(curBone);
+		curBoneIndex = static_cast<int>(bones.size());
+	}
+
+	/*
+	for (int i = 1; i < bones.size(); i++) {
+		const char* nodeName = bones[i]->name.c_str();
+		// Local Transform 값을 가져온다.
+		FbxDouble3 translation = bones[i]->boneNode->LclTranslation.Get();
+		FbxDouble3 rotation = bones[i]->boneNode->LclRotation.Get();
+		FbxDouble3 scaling = bones[i]->boneNode->LclScaling.Get();
+
+		// node 콘텐츠를 출력한다.
+		OutputDebugStringA(std::format("{}th bone -> node name = '{}' / parent index and bone = '{}' - '{}'\n",
+			i, nodeName, bones[i]->parentIndex, bones[bones[i]->parentIndex]->name).c_str());
+	}
+	*/
+}
+
+// bone에 맞는 animation을 로드하기
+void FbxPractice::GetAnimationToApp()
+{
+	여기 할 챠례
+	/*
+	OutputDebugStringA("\n\n***Print Animation Info***\n");
+	FbxScene* pRootScene = rootScene;
+	FbxNode* pRootNode = pRootScene->GetRootNode();
+
+	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
+
+	for (int i = 0; i < animstackCount; i++) {
+		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
+
+		const char* animStackName = pAnimStack->GetName();
+		OutputDebugStringA(std::format("\t\t{}th AnimStack Name is '{}' \n", i + 1, animStackName).c_str());
+
+		int animLayerCount = pAnimStack->GetMemberCount<FbxAnimLayer>();
+		OutputDebugStringA(std::format("\t\t{}th AnimStack has '{}' AnimLayers \n", i + 1, animLayerCount).c_str());
+		for (int j = 0; j < animLayerCount; j++) {
+			FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
+			OutputDebugStringA(std::format("\t\t{}th AnimStack's {}th AnimLayer's name : {}\n", i + 1, j + 1, pAnimLayer->GetName()).c_str());
+
+			FbxAnimCurveNode* pAnimCurveNode_Translation = pRootNode->GetChild(0)->LclTranslation.GetCurveNode();
+			OutputDebugStringA(std::format("\t\t(Test) Does RootNode(- Hip Skeleton) have any Animation Info (of Translation)? - {}\n", pAnimCurveNode_Translation->IsAnimated()).c_str());
+			FbxTimeSpan timeInterval;
+			bool bHasTimeInterval = pAnimCurveNode_Translation->GetAnimationInterval(timeInterval);
+			if (bHasTimeInterval) {
+				FbxTime animLength = timeInterval.GetDuration();
+				OutputDebugStringA(std::format("\t\tAnimation Length : {}\n", static_cast<float>(animLength.GetSecondDouble())).c_str());
+			}
+
+			int channelsCount = pAnimCurveNode_Translation->GetChannelsCount();
+			OutputDebugStringA(std::format("\t\t(Test) RootNode(- Hip Skeleton) curveNode has {} channels\n", channelsCount).c_str());
+			std::vector<std::string> channelNames;
+			FbxArray<FbxAnimCurve*> animCurves;
+			int keyCount = 0;
+			for (int k = 0; k < channelsCount; k++) {
+				channelNames.push_back(pAnimCurveNode_Translation->GetChannelName(k).Buffer());
+				OutputDebugStringA(std::format("\t\t\t {}th channel name is {}", k + 1, channelNames[k]).c_str());
+				animCurves.Add(pAnimCurveNode_Translation->GetCurve(k));
+				keyCount = pAnimCurveNode_Translation->GetCurve(k)->KeyGetCount();
+				OutputDebugStringA(std::format("\t\t\t and It's Key Counts is {}\n", keyCount).c_str());
+			}
+			if (!bHasTimeInterval) {
+				continue;
+			}
+			for (int k = 0; k < animCurves.GetCount(); k++) {
+				FbxAnimCurve* curAnimCurve = animCurves[k];
+				int start = 0;
+				int mid = keyCount / 2;
+				int end = keyCount - 1;
+
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in start is '{}'\n",
+					channelNames[k], curAnimCurve->KeyGetValue(start)).c_str());
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in mid is '{}'\n",
+					channelNames[k], curAnimCurve->KeyGetValue(mid)).c_str());
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in end is '{}'\n",
+					channelNames[k], curAnimCurve->KeyGetValue(end)).c_str());
+			}
+		}
+		OutputDebugStringA("\n");
+	}
+	*/
 }
 
 // 예제 따라가면서 해보기
@@ -582,11 +699,6 @@ void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMate
 		static_cast<float>(specular[2]),
 		1.f
 	);
-}
-
-void FbxPractice::GetAnimationToApp()
-{
-	
 }
 
 void FbxPractice::PrintDeformerInfo(FbxMesh* _pMeshNode) const
@@ -1026,11 +1138,11 @@ void FbxPractice::PrintNode(FbxNode* _pNode) const
 	FbxDouble3 scaling = _pNode->LclScaling.Get();
 
 	// node 콘텐츠를 출력한다.
-	oss << std::format("<node name = '{}' translation ='{}, {}, {})' rotation ='({}, {}, {})' scaling='({}, {}, {})'>\n",
-		nodeName,
-		translation[0], translation[1], translation[2],
-		rotation[0], rotation[1], rotation[2],
-		scaling[0], scaling[1], scaling[2]);
+	oss << std::format("<node name = '{}'", nodeName);
+	//oss << std::format("translation ='{}, {}, {})' rotation ='({}, {}, {})' scaling='({}, {}, {})'>\n",
+		//translation[0], translation[1], translation[2],
+		//rotation[0], rotation[1], rotation[2],
+		//scaling[0], scaling[1], scaling[2]);
 	OutputDebugStringA(oss.str().c_str());
 	oss.clear();
 	/*
