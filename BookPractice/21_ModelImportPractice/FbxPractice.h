@@ -15,6 +15,8 @@ this software in either electronic or hard copy form.
 #include <fbxsdk.h>
 #include <vector>
 #include <DirectXMath.h>
+#include "LoadM3d.h"
+#include "SkinnedData.h"
 
 struct ColorChannel
 {
@@ -27,7 +29,7 @@ struct ColorChannel
 	DirectX::XMFLOAT4 color;
 };
 
-struct FbxMaterial {
+struct OutFbxMaterial {
 	ColorChannel emissiveColor;
 	ColorChannel ambientColor;
 	ColorChannel diffuseColor;
@@ -38,13 +40,7 @@ struct FbxMaterial {
 struct BoneInfo
 {
 	const FbxNode* boneNode;
-	std::string name;
 	int	parentIndex;
-	FbxAMatrix matOffset;
-
-	BoneInfo() = default;
-	BoneInfo(const BoneInfo& _other) = delete;
-	BoneInfo& operator=(const BoneInfo& _other) = delete;
 };
 
 class FbxPractice
@@ -65,11 +61,24 @@ public:
 	void TestTraverseSkin() const;
 	void TestTraverseAnimation() const;
 
-	void GetBonesToApp(const FbxNode* _node);
-	void GetAnimationToApp();
+	void GetFbxPerMeshToApp(
+		FbxNode* _pSkeletonNode,
+		FbxNode* _pMeshNode,
+		std::vector<M3DLoader::SkinnedVertex>& _outVertices,
+		std::vector<std::uint32_t>& _outIndices,
+		OutFbxMaterial& _outMaterials,
+		SkinnedData& _skinInfo
+		);
+
+	void GetBonesToInstance(const FbxNode* _node);
+	void GetBonesToInstanceRecursive(const FbxNode* _node, int _index, int _parentIndex);
+	void GetAnimationToInstance();
+	//
+	void GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	//void GetBonesRecursive(const FbxNode* _node, int _boneIndex, int _parentIndex);
+	void GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
-	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial);
+	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, OutFbxMaterial& _outMaterial);
 
 private:
 	void PrintDeformerInfo(FbxMesh* _pMeshNode) const;
@@ -113,8 +122,12 @@ private:
 	FbxArray<SubMesh*> m_SubMeshes;
 
 	// Animation
-	//std::vector<std::unique_ptr<BoneInfo>> bones;
-	std::vector<BoneInfo*> bones;
+	//std::vector<std::unique_ptr<BoneInfo>> m_bones;
+	std::vector<BoneInfo*> m_bones;
+	std::vector<int> m_boneHierarchy;
+	std::vector<DirectX::XMFLOAT4X4> m_boneOffsets;
+	std::unordered_map<std::string, AnimationClip> m_animations;
+	std::vector<FbxCluster*> m_clusters;
 
 public:
 	FbxScene* GetRootScene() const{

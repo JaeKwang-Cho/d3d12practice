@@ -240,11 +240,14 @@ private:
 
 	// Mesh Skinning 할 때 쓰이는 맴버들이다.
 	UINT m_SkinnedSrvHeapStart = 0;
-	std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; // 예제에서는 하나만 렌더링한다.
-	SkinnedData m_SkinnedInfo;
+	//std::vector< SkinnedModelInstance*> m_SkinnedModelInsts;
+	std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; 
+	//std::vector<SkinnedData> m_SkinnedInfos;
+	SkinnedData m_SkinnedInfo; 
 	std::vector<M3DLoader::Subset> m_SkinnedSubsets;
 	std::vector<M3DLoader::M3dMaterial> m_SkinnedMaterials;
 	std::vector<std::string> m_SkinnedTextureNames;
+
 
 public:
 	// Heap에서 연속적으로 존재하는 View들이 많을 예정이라 이렇게 Get 함수를 만들었다.
@@ -1282,7 +1285,7 @@ void FbxTestApp::BuildFbxGeometry()
 	std::unique_ptr<FbxPractice> fbxPractice = std::make_unique<FbxPractice>();
 	fbxPractice->Init();
 	fbxPractice->ImportFile(danceFbxFilePath.c_str());
-	fbxPractice->TestTraverseScene();
+	//fbxPractice->TestTraverseScene();
 	//fbxPractice->TestTraverseSkin(); 
 	//fbxPractice->TestTraverseAnimation();
 
@@ -1291,17 +1294,19 @@ void FbxTestApp::BuildFbxGeometry()
 
 	mCountOfMeshNode = 0;
 	std::vector<FbxNode*> MeshNodeArr;
+	FbxNode* skeletonNode = nullptr;
 
-	OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
+	//OutputDebugStringA(std::format("***** count of ChildCount : '{}' *****\n", pRootNode->GetChildCount()).c_str());
 	if (pRootNode != nullptr) {
 		for (int i = 0; i < pRootNode->GetChildCount(); i++) {
 			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
 			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
 				mCountOfMeshNode++;
 				MeshNodeArr.push_back(pRootNode->GetChild(i));
+				break;
 			}
 			else if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eSkeleton) {
-				fbxPractice->GetBonesToApp(pRootNode->GetChild(i));
+				skeletonNode = pRootNode->GetChild(i);
 			}
 		}
 	}
@@ -1309,8 +1314,28 @@ void FbxTestApp::BuildFbxGeometry()
 	int fbxMatCBIndex = 5;
 	for (int i = 0; i < mCountOfMeshNode; i++)
 	{
+		std::vector<M3DLoader::SkinnedVertex> vertices;
+		//std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
+		OutFbxMaterial outFbxMat;
+
+		fbxPractice->GetFbxPerMeshToApp(skeletonNode, MeshNodeArr[i], vertices, indices, outFbxMat, m_SkinnedInfo);
+
+		m_SkinnedModelInst = std::make_unique<SkinnedModelInstance>();
+		m_SkinnedModelInst->SkinnedInfo = &m_SkinnedInfo;
+		m_SkinnedModelInst->FinalTransforms.resize(m_SkinnedInfo.BoneCount());
+		m_SkinnedModelInst->ClipName = "Take 001";
+		m_SkinnedModelInst->TimePos = 0.f;
+
+		/*
 		std::vector<Vertex> vertices;
 		std::vector<std::uint32_t> indices;
+
+		OutFbxMaterial outFbxMat;
+
+		fbxPractice->GetMeshToApp(MeshNodeArr[i]->GetMesh(), vertices, indices);
+		fbxPractice->GetMaterialToApp(MeshNodeArr[i]->GetMaterial(0), outFbxMat);
+		*/
 
 		std::unique_ptr<Material> fbxMat = std::make_unique<Material>();
 		fbxMat->Name = "fbxMat";
@@ -1319,11 +1344,6 @@ void FbxTestApp::BuildFbxGeometry()
 		//fbxMat->DiffuseAlbedo = XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f);
 		fbxMat->FresnelR0 = XMFLOAT3(0.02f, 0.02f, 0.02f);
 		//fbxMat->Roughness = 0.3f;
-
-		FbxMaterial outFbxMat;
-
-		fbxPractice->GetMeshToApp(MeshNodeArr[i]->GetMesh(), vertices, indices);
-		fbxPractice->GetMaterialToApp(MeshNodeArr[i]->GetMaterial(0), outFbxMat);
 
 		fbxMat->DiffuseAlbedo = XMFLOAT4(
 			outFbxMat.diffuseColor.color.x, 
@@ -1334,7 +1354,8 @@ void FbxTestApp::BuildFbxGeometry()
 
 		m_Materials["fbxMat" + i] = std::move(fbxMat);
 
-		const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
+		const UINT vbByteSize = (UINT)vertices.size() * sizeof(M3DLoader::SkinnedVertex);
+		//const UINT vbByteSize = (UINT)vertices.size() * sizeof(Vertex);
 		const UINT ibByteSize = (UINT)indices.size() * sizeof(std::uint32_t);
 
 		std::unique_ptr<MeshGeometry> geo = std::make_unique<MeshGeometry>();
@@ -1362,7 +1383,8 @@ void FbxTestApp::BuildFbxGeometry()
 			geo->IndexBufferUploader
 		);
 
-		geo->VertexByteStride = sizeof(Vertex);
+		geo->VertexByteStride = sizeof(M3DLoader::SkinnedVertex);
+		//geo->VertexByteStride = sizeof(Vertex);
 		geo->VertexBufferByteSize = vbByteSize;
 		geo->IndexFormat = DXGI_FORMAT_R32_UINT;
 		geo->IndexBufferByteSize = ibByteSize;
@@ -1452,6 +1474,7 @@ void FbxTestApp::BuildPSOs()
 		reinterpret_cast<BYTE*>(m_Shaders["skinnedVS"]->GetBufferPointer()),
 		m_Shaders["skinnedVS"]->GetBufferSize()
 	};
+	//skinnedOpaquePSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 	ThrowIfFailed(m_d3dDevice->CreateGraphicsPipelineState(&skinnedOpaquePSODesc, IID_PPV_ARGS(&m_PSOs["skinnedOpaque"])));
 
 	//
@@ -1681,7 +1704,7 @@ void FbxTestApp::BuildRenderItems()
 		fbxRitem->StartIndexLocation = fbxRitem->Geo->DrawArgs["fbx"].StartIndexLocation;
 		fbxRitem->BaseVertexLocation = fbxRitem->Geo->DrawArgs["fbx"].BaseVertexLocation;
 
-		m_RenderItemLayer[(int)RenderLayer::Opaque].push_back(fbxRitem.get());
+		m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque].push_back(fbxRitem.get());
 		m_AllRenderItems.push_back(std::move(fbxRitem));
 	}
 }

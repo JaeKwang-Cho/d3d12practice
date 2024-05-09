@@ -39,7 +39,7 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     MaterialData matData = gMaterialData[gMaterialIndex];
     
 #ifdef SKINNED
-        float weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float weights[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     weights[0] = vin.BoneWeights.x;
     weights[1] = vin.BoneWeights.y;
     weights[2] = vin.BoneWeights.z;
@@ -48,6 +48,7 @@ VertexOut VS(VertexIn vin, uint instanceID : SV_InstanceID)
     float3 posL = float3(0.0f, 0.0f, 0.0f);
     float3 normalL = float3(0.0f, 0.0f, 0.0f);
     float3 TangentU = float3(0.0f, 0.0f, 0.0f);
+
     for(int i = 0; i < 4; ++i)
     {
         // Uniform scaling 이라고 가정한다.

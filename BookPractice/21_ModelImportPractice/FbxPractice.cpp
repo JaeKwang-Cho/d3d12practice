@@ -18,13 +18,14 @@ this software in either electronic or hard copy form.
 #include <fstream>
 
 #include "FrameResource.h"
+#include <queue>
 #include <stack>
 
 FbxPractice::~FbxPractice()
 {
-	if (bones.size() > 0) {
-		for (int i = 0; i < bones.size(); i++) {
-			delete bones[i];
+	if (m_bones.size() > 0) {
+		for (int i = 0; i < m_bones.size(); i++) {
+			delete m_bones[i];
 		}
 	}
 	if (ioSettings != nullptr)
@@ -280,7 +281,11 @@ void FbxPractice::TestTraverseAnimation() const
 				int start = 0;
 				int mid = keyCount / 2;
 				int end = keyCount - 1;
-				
+
+				FbxTime fbxTime = timeInterval.GetStart();
+				FbxVector4 pEvaluateLocalTranslation = pRootNode->GetChild(0)->EvaluateLocalTranslation(fbxTime);
+				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) EvaluateLocalTranslation x-value in start is '{}'\n",
+					static_cast<float>(pEvaluateLocalTranslation[0])).c_str());
 				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in start is '{}'\n", 
 					channelNames[k], curAnimCurve->KeyGetValue(start)).c_str());
 				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in mid is '{}'\n", 
@@ -293,118 +298,505 @@ void FbxPractice::TestTraverseAnimation() const
 	}
 }
 
-void FbxPractice::GetBonesToApp(const FbxNode* _node)
+void FbxPractice::GetFbxPerMeshToApp(FbxNode* _pSkeletonNode, FbxNode* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _outVertices,
+	std::vector<std::uint32_t>& _outIndices, OutFbxMaterial& _outMaterials, SkinnedData& _skinInfo)
 {
-	BoneInfo* bone = new BoneInfo();
-	bone->boneNode = _node;
-	bone->name = _node->GetName();
-	bone->parentIndex = -1;
-
-	std::stack<BoneInfo*> boneStack;
-	boneStack.push(bone);
-	int curBoneIndex = 0;
-
-	while (!boneStack.empty()) {
-		BoneInfo* curBone = boneStack.top();
-		boneStack.pop();
-
-		const FbxNode* curNode = curBone->boneNode;
-		int curChildCount = curNode->GetChildCount();
-		for (int i = 0; i < curChildCount; i++) {
-			BoneInfo* newBone = new BoneInfo();
-
-			newBone->boneNode = curNode->GetChild(i);
-			newBone->name = newBone->boneNode->GetName();
-			newBone->parentIndex = curBoneIndex;
-			boneStack.push(newBone);
-		}
-
-		bones.push_back(curBone);
-		curBoneIndex = static_cast<int>(bones.size());
-	}
-
-	/*
-	for (int i = 1; i < bones.size(); i++) {
-		const char* nodeName = bones[i]->name.c_str();
-		// Local Transform 값을 가져온다.
-		FbxDouble3 translation = bones[i]->boneNode->LclTranslation.Get();
-		FbxDouble3 rotation = bones[i]->boneNode->LclRotation.Get();
-		FbxDouble3 scaling = bones[i]->boneNode->LclScaling.Get();
-
-		// node 콘텐츠를 출력한다.
-		OutputDebugStringA(std::format("{}th bone -> node name = '{}' / parent index and bone = '{}' - '{}'\n",
-			i, nodeName, bones[i]->parentIndex, bones[bones[i]->parentIndex]->name).c_str());
-	}
-	*/
-}
-
-// bone에 맞는 animation을 로드하기
-void FbxPractice::GetAnimationToApp()
-{
-	여기 할 챠례
-	/*
-	OutputDebugStringA("\n\n***Print Animation Info***\n");
 	FbxScene* pRootScene = rootScene;
 	FbxNode* pRootNode = pRootScene->GetRootNode();
 
-	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
+	// #1 bone hierarchy를 얻는다..
+	GetBonesToInstance(_pSkeletonNode);
 
-	for (int i = 0; i < animstackCount; i++) {
-		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
+	// #2 cluster로 mesh와 skinning 정보를 얻는다.
+	GetSkinMeshToInstance(_pMeshNode->GetMesh(), _outVertices, _outIndices);
+	
+	// #3 animation을 얻는다.
+	GetAnimationToInstance();
+	
+	// #4 material 정보를 얻는다.
+	GetMaterialToApp(_pMeshNode->GetMaterial(0), _outMaterials);
 
-		const char* animStackName = pAnimStack->GetName();
-		OutputDebugStringA(std::format("\t\t{}th AnimStack Name is '{}' \n", i + 1, animStackName).c_str());
-
-		int animLayerCount = pAnimStack->GetMemberCount<FbxAnimLayer>();
-		OutputDebugStringA(std::format("\t\t{}th AnimStack has '{}' AnimLayers \n", i + 1, animLayerCount).c_str());
-		for (int j = 0; j < animLayerCount; j++) {
-			FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
-			OutputDebugStringA(std::format("\t\t{}th AnimStack's {}th AnimLayer's name : {}\n", i + 1, j + 1, pAnimLayer->GetName()).c_str());
-
-			FbxAnimCurveNode* pAnimCurveNode_Translation = pRootNode->GetChild(0)->LclTranslation.GetCurveNode();
-			OutputDebugStringA(std::format("\t\t(Test) Does RootNode(- Hip Skeleton) have any Animation Info (of Translation)? - {}\n", pAnimCurveNode_Translation->IsAnimated()).c_str());
-			FbxTimeSpan timeInterval;
-			bool bHasTimeInterval = pAnimCurveNode_Translation->GetAnimationInterval(timeInterval);
-			if (bHasTimeInterval) {
-				FbxTime animLength = timeInterval.GetDuration();
-				OutputDebugStringA(std::format("\t\tAnimation Length : {}\n", static_cast<float>(animLength.GetSecondDouble())).c_str());
-			}
-
-			int channelsCount = pAnimCurveNode_Translation->GetChannelsCount();
-			OutputDebugStringA(std::format("\t\t(Test) RootNode(- Hip Skeleton) curveNode has {} channels\n", channelsCount).c_str());
-			std::vector<std::string> channelNames;
-			FbxArray<FbxAnimCurve*> animCurves;
-			int keyCount = 0;
-			for (int k = 0; k < channelsCount; k++) {
-				channelNames.push_back(pAnimCurveNode_Translation->GetChannelName(k).Buffer());
-				OutputDebugStringA(std::format("\t\t\t {}th channel name is {}", k + 1, channelNames[k]).c_str());
-				animCurves.Add(pAnimCurveNode_Translation->GetCurve(k));
-				keyCount = pAnimCurveNode_Translation->GetCurve(k)->KeyGetCount();
-				OutputDebugStringA(std::format("\t\t\t and It's Key Counts is {}\n", keyCount).c_str());
-			}
-			if (!bHasTimeInterval) {
-				continue;
-			}
-			for (int k = 0; k < animCurves.GetCount(); k++) {
-				FbxAnimCurve* curAnimCurve = animCurves[k];
-				int start = 0;
-				int mid = keyCount / 2;
-				int end = keyCount - 1;
-
-				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in start is '{}'\n",
-					channelNames[k], curAnimCurve->KeyGetValue(start)).c_str());
-				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in mid is '{}'\n",
-					channelNames[k], curAnimCurve->KeyGetValue(mid)).c_str());
-				OutputDebugStringA(std::format("\t\t (Test) RootNode(- Hip Skeleton) curveNode '{}' channel value in end is '{}'\n",
-					channelNames[k], curAnimCurve->KeyGetValue(end)).c_str());
-			}
-		}
-		OutputDebugStringA("\n");
-	}
-	*/
+	_skinInfo.Set(m_boneHierarchy, m_boneOffsets, m_animations);
 }
 
-// 예제 따라가면서 해보기
+void FbxPractice::GetBonesToInstance(const FbxNode* _node)
+{
+	m_bones.clear();
+	m_boneHierarchy.clear();
+	GetBonesToInstanceRecursive(_node, 0, -1);
+}
+
+void FbxPractice::GetBonesToInstanceRecursive(const FbxNode* _node, int _index, int _parentIndex)
+{
+	BoneInfo* bone = new BoneInfo();
+	bone->boneNode = _node;
+	bone->parentIndex = _parentIndex;
+
+	m_bones.push_back(bone);
+	m_boneHierarchy.push_back(_parentIndex);
+
+	for (int i = 0; i < _node->GetChildCount(); i++) {
+		GetBonesToInstanceRecursive(_node->GetChild(i), static_cast<int>(m_bones.size()), _index);
+	}
+}
+
+// bone에 맞는 animation을 로드하기
+void FbxPractice::GetAnimationToInstance()
+{
+	m_animations.clear();
+
+	FbxScene* pRootScene = rootScene;
+	FbxTime::EMode timeMode = pRootScene->GetGlobalSettings().GetTimeMode();
+
+	//OutputDebugStringA("GetAnimationToInstance\n");
+	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
+	for (int i = 0; i < animstackCount; i++) {
+		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
+		std::string clipName = pAnimStack->GetName();
+		auto iter = m_animations.find(clipName);
+		if (iter != m_animations.end()) {
+			continue;
+		}
+		AnimationClip clip;
+		int animLayerCount = pAnimStack->GetMemberCount<FbxAnimLayer>();
+		for (int j = 0; j < animLayerCount; j++) {
+
+			FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
+			//FbxAnimCurveNode* firstAnimCurveNode = const_cast<FbxNode*>(m_bones[0]->boneNode)->LclTranslation.GetCurveNode();
+			//FbxTimeSpan timeInterval;
+			//FbxTime animLength;
+			//double animDoubleSeconds;
+			//bool bHasTimeInterval = firstAnimCurveNode->GetAnimationInterval(timeInterval);
+			//if (bHasTimeInterval) {
+			//	animLength = timeInterval.GetDuration();
+			//	animDoubleSeconds = animLength.GetSecondDouble();
+			//}
+			FbxTimeSpan curAnimTimeSpan = pAnimStack->GetLocalTimeSpan();
+			FbxLongLong startFrame = curAnimTimeSpan.GetStart().GetFrameCount(timeMode);
+			FbxLongLong endFrame = curAnimTimeSpan.GetStop().GetFrameCount(timeMode);
+
+			clip.BoneAnimations.resize(m_bones.size());
+			for (int k = 0; k < m_bones.size(); k++) {
+				clip.BoneAnimations[k].Keyframes.resize(endFrame - startFrame);
+				FbxCluster* curCluster = m_clusters[k];
+
+				for (FbxLongLong keyIndex = startFrame; keyIndex < endFrame; keyIndex++) {
+				
+					FbxNode* curBoneNode = const_cast<FbxNode*>(m_bones[k]->boneNode);
+
+					FbxTime curFbxTime = 0;
+					curFbxTime.SetFrame(keyIndex, timeMode);
+					float curSecond = static_cast<float>(curFbxTime.GetSecondDouble());
+					clip.BoneAnimations[k].Keyframes[keyIndex].TimePos = curSecond;
+
+					const char* test = curCluster->GetName();
+					const char* test2 = m_bones[k]->boneNode->GetName();
+					FbxAMatrix nodeTransform = curBoneNode->EvaluateGlobalTransform(curFbxTime);
+					FbxAMatrix linkTrasnform = curCluster->GetLink()->EvaluateGlobalTransform(curFbxTime);
+					FbxAMatrix animTransform = nodeTransform.Inverse() * linkTrasnform;
+
+					FbxAMatrix nodeLocalTransform = curBoneNode->EvaluateLocalTransform(curFbxTime);
+
+					FbxVector4 animTranslation = nodeLocalTransform.GetT();
+					FbxVector4 animRotation = nodeLocalTransform.GetR();
+					FbxVector4 animScaling = nodeLocalTransform.GetS();
+					
+					DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(
+						static_cast<float>(animTranslation[0]),
+						static_cast<float>(animTranslation[1]),
+						static_cast<float>(animTranslation[2])
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranlationVec;
+
+					FbxVector4 fbxRotationVec = FbxVector4(
+						static_cast<float>(animRotation[0]),
+						static_cast<float>(animRotation[1]),
+						static_cast<float>(animRotation[2]),
+						0.0);
+					FbxQuaternion rotationQuat;
+					rotationQuat.ComposeSphericalXYZ(fbxRotationVec);
+					DirectX::XMFLOAT4 rotationVec = DirectX::XMFLOAT4(
+						static_cast<float>(rotationQuat.GetAt(0)),
+						static_cast<float>(rotationQuat.GetAt(1)),
+						static_cast<float>(rotationQuat.GetAt(2)),
+						static_cast<float>(rotationQuat.GetAt(3))
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotationVec;
+
+					DirectX::XMFLOAT3 scalingVec = DirectX::XMFLOAT3(
+						static_cast<float>(animScaling[0]),
+						static_cast<float>(animScaling[1]),
+						static_cast<float>(animScaling[2])
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalingVec;
+				
+				}
+
+				//OutputDebugStringA(std::format("\t{}th : {}\n", k, m_bones[k]->boneNode->GetName()).c_str());
+			}
+		}
+		m_animations[clipName] = clip;
+	}
+}
+
+void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices)
+{
+	m_boneOffsets.clear();
+
+	FbxScene* pRootScene = rootScene;
+	FbxNode* pRootNode = pRootScene->GetRootNode();
+	//OutputDebugStringA("GetSkinMeshToInstance\n");
+
+	// Mesh가 2개 이상이면, cluster도 2개 이상이고 따로따로 RenderItem을 만들어줘야 한다.			
+	GetMeshToInstance(_pMeshNode, _vertices, _indices);
+
+	int skinCount = _pMeshNode->GetDeformerCount(FbxDeformer::eSkin);
+	for (int j = 0; j < skinCount; j++) {
+		FbxSkin* pSkin = static_cast<FbxSkin*>(_pMeshNode->GetDeformer(j, FbxDeformer::eSkin));
+		int clusterCount = pSkin->GetClusterCount();
+		for (int k = 0; k < clusterCount; k++) {
+			FbxCluster* pCluster = pSkin->GetCluster(k);
+			m_clusters.push_back(pCluster);
+			int clusterModeIndex = static_cast<int>(pCluster->GetLinkMode());
+			FbxNode* pLink = pCluster->GetLink();
+
+			int controlPointIndicesCount = pCluster->GetControlPointIndicesCount();
+			int* controlPointIndicesArr = pCluster->GetControlPointIndices();
+			double* weightsArr = pCluster->GetControlPointWeights();
+
+			//OutputDebugStringA(std::format("\t{}th : {}\n", k, pLink->GetName()).c_str());
+
+			// weight 넣기
+			for (int w = 0; w < controlPointIndicesCount; w++) {
+				int vertexIndex = controlPointIndicesArr[w];
+				float weight = static_cast<float>(weightsArr[w]);
+
+				int boneCount = _vertices[vertexIndex].boneCount;
+				switch (boneCount) {
+				case 0: {
+					_vertices[vertexIndex].BoneWeights.x = weight;
+					_vertices[vertexIndex].BoneWeights.y = 0;
+					_vertices[vertexIndex].BoneWeights.z = 0;
+					_vertices[vertexIndex].BoneIndices[0] = k;
+					_vertices[vertexIndex].boneCount += 1;
+				}break;
+				case 1: {
+					float sum = _vertices[vertexIndex].BoneWeights.x + weight;
+					_vertices[vertexIndex].BoneWeights.y = weight;
+					_vertices[vertexIndex].BoneWeights.z = 0;
+					_vertices[vertexIndex].BoneIndices[1] = k;
+					_vertices[vertexIndex].boneCount += 1;
+				}break;
+				case 2: {
+					_vertices[vertexIndex].BoneWeights.z = weight;
+					_vertices[vertexIndex].BoneIndices[2] = k;
+					_vertices[vertexIndex].boneCount += 1;
+				}break;
+				case 3: {
+					_vertices[vertexIndex].BoneIndices[3] = k;
+					_vertices[vertexIndex].boneCount += 1;
+				}break;
+				default:break;
+				}
+			}
+			// offset matrix 넣기
+			FbxAMatrix clusterMatrix;
+			clusterMatrix = pCluster->GetTransformMatrix(clusterMatrix);
+
+			FbxAMatrix clusterLinkMatrix;
+			clusterLinkMatrix = pCluster->GetTransformLinkMatrix(clusterLinkMatrix);
+
+			/*
+			bool hasAssociateModel = false;
+			FbxAMatrix associateModelMatrix = FbxAMatrix();
+			if (hasAssociateModel = pCluster->GetAssociateModel() != nullptr) {
+				associateModelMatrix = pCluster->GetTransformAssociateModelMatrix(associateModelMatrix);
+			}
+			*/
+			// 예제를 따라함
+			FbxAMatrix clusterOffsetMatrix = clusterLinkMatrix.Inverse() * clusterMatrix;
+			FbxVector4 row0 = clusterOffsetMatrix.GetRow(0);
+			FbxVector4 row1 = clusterOffsetMatrix.GetRow(1);
+			FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
+			FbxVector4 row3 = clusterOffsetMatrix.GetRow(3);
+
+			/*
+			DirectX::XMFLOAT4X4 offsetMatrix = DirectX::XMFLOAT4X4(
+				static_cast<float>(row0[0]), static_cast<float>(row0[1]), static_cast<float>(row0[2]), static_cast<float>(row0[3]),
+				static_cast<float>(row1[0]), static_cast<float>(row1[1]), static_cast<float>(row1[2]), static_cast<float>(row1[3]),
+				static_cast<float>(row2[0]), static_cast<float>(row2[1]), static_cast<float>(row2[2]), static_cast<float>(row2[3]),
+				static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
+			);
+
+			*/
+			DirectX::XMFLOAT4X4 offsetMatrix;
+			XMMATRIX identitiy = XMMatrixIdentity();
+			XMStoreFloat4x4(&offsetMatrix, identitiy);
+
+			m_boneOffsets.push_back(offsetMatrix);
+		}
+	}
+}
+
+void FbxPractice::GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices)
+{
+	m_SubMeshes.Clear();
+
+	// 일단... control point의 갯수를 얻는다.
+	int polygonCount = _pMeshNode->GetPolygonCount();
+
+	// material...마다 polygon 갯수를 계산한다?
+	FbxLayerElementArrayTemplate<int>* materialIndiceArr = nullptr;
+	FbxGeometryElement::EMappingMode materialMappingMode = FbxGeometryElement::eNone;
+	if (_pMeshNode->GetElementMaterial() != nullptr) {
+		materialIndiceArr = &_pMeshNode->GetElementMaterial()->GetIndexArray();
+		//OutputDebugStringA(std::format("\n\n\nmaterial Count {}\n\n\n", materialIndiceArr->GetCount()).c_str() );
+		materialMappingMode = _pMeshNode->GetElementMaterial()->GetMappingMode();
+	}
+
+	// Material MappingMode가 eByPolygon의 경우
+	if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon)
+	{
+		assert(materialIndiceArr->GetCount() == polygonCount);
+		if (materialIndiceArr->GetCount() == polygonCount)
+		{
+			for (int polygonIndex = 0; polygonIndex < polygonCount; polygonIndex++)
+			{
+				// polygon을 인덱스로 하는 MaterialIndexArr에서 Material Index 값만큼
+				const int materialIndex = materialIndiceArr->GetAt(polygonIndex);
+				if (m_SubMeshes.GetCount() < materialIndex + 1)
+				{
+					m_SubMeshes.Resize(materialIndex + 1);
+				}
+				// SubMesh를 만들어준다.
+				if (m_SubMeshes.GetAt(materialIndex) == nullptr)
+				{
+					m_SubMeshes.SetAt(materialIndex, new SubMesh(0, 1));
+				}
+			}
+
+			// 아래 과정은 'hole'이 생기지 않게 보장해주는 작업이라고 한다...
+			for (int i = 0; i < m_SubMeshes.GetCount(); i++) {
+				if (m_SubMeshes.GetAt(i) == nullptr) {
+					m_SubMeshes.SetAt(i, new SubMesh());
+				}
+			}
+
+			// 그리고 Submesh 간의 offset을 기록해준다.
+			const int materialCount = m_SubMeshes.GetCount();
+			int offset = 0;
+			for (int i = 0; i < materialCount; i++) {
+				m_SubMeshes.GetAt(i)->IndexOffset = offset;
+				offset += m_SubMeshes.GetAt(i)->TriangleCount * 3;
+				m_SubMeshes.GetAt(i)->TriangleCount = 0; // 그리고 다시 삼각형 개수를 0으로 만든다.
+			}
+			assert(offset == polygonCount * 3);
+		}
+	}
+	else // 그 이외의
+	{
+		// 모든 면은 같은 Material을 가지도록 한다.
+		if (m_SubMeshes.GetCount() == 0) {
+			m_SubMeshes.Resize(1);
+			m_SubMeshes.SetAt(0, new SubMesh());
+		}
+	}
+
+	// FbxMesh가 가진 정보를 Vertex로 사용할 수 있도록 모은다.
+	// 만약, normal이나 uv가 polygon vertex에 붙어 있다면, vertex의 모든 attribute를 저장한다.
+	bool bHasNormal = _pMeshNode->GetElementNormalCount() > 0;
+	bool bHasUV = _pMeshNode->GetElementUVCount() > 0;
+	bool bAllByControlPoint = false;
+	// 여기서도 Normal과 UV의 MappingMode에 따라 작업이 다르다.
+	FbxGeometryElement::EMappingMode normalMappingMode = FbxGeometryElement::eNone;
+	FbxGeometryElement::EMappingMode uVMappingMode = FbxGeometryElement::eNone;
+
+	// normal이 vertex에 붙어있을 때
+	if (bHasNormal) {
+		normalMappingMode = _pMeshNode->GetElementNormal(0)->GetMappingMode();
+		// 쭉정이 일 때
+		if (normalMappingMode == FbxGeometryElement::eNone) {
+			bHasNormal = false;
+		}
+		// (eByControlPoint를 제외한) 나머지 모드 일 때
+		else if (normalMappingMode != FbxGeometryElement::eByControlPoint) {
+			bAllByControlPoint = false;
+		}
+	}
+	// uv가 vertex에 붙어있을 때
+	if (bHasUV) {
+		uVMappingMode = _pMeshNode->GetElementUV(0)->GetMappingMode();
+		// 쭉정이 일 때
+		if (uVMappingMode == FbxGeometryElement::eNone) {
+			bHasUV = false;
+		}
+		// (eByControlPoint를 제외한) 나머지 모드 일 때
+		else if (uVMappingMode != FbxGeometryElement::eByControlPoint) {
+			bAllByControlPoint = false;
+		}
+	}
+
+	// control point나 vertex 정보를 올릴 메모리를 할당한다.
+	int polygonVertexCount = _pMeshNode->GetControlPointsCount();
+
+	// 컨트롤 포인트로 매핑 좌표가 생성되지 않는 경우
+	if (!bAllByControlPoint) {
+		// 폴리곤 * 3 으로 점 개수를 지정한다.
+		polygonVertexCount = polygonCount * 3;
+	}
+	// index는 unsigned int
+	std::vector<UINT> indices(polygonCount * 3);
+	indices.resize(polygonCount * 3);
+	_indices.resize(polygonCount * 3);
+	//std::vector<XMFLOAT2> uvs;
+	FbxStringList uvNameList;
+	_pMeshNode->GetUVSetNames(uvNameList);
+	const char* uvName = nullptr;
+	if (bHasUV && uvNameList.GetCount() > 0) {
+		//uvs.resize(polygonCount);
+		uvName = uvNameList[0];
+	}
+
+	// 1_컨트롤 포인트로 매핑 좌표가 생성되는 경우는
+	// 아래와 같이 속성 값을 Array에 넣어준다.
+	const FbxVector4* controlPointArr = _pMeshNode->GetControlPoints();
+	FbxVector4 curVertex;
+	FbxVector4 curNormal;
+	FbxVector2 curUV;
+	if (bAllByControlPoint) {
+		const FbxLayerElementTemplate<FbxVector4>* normalElement = nullptr;
+		const FbxLayerElementTemplate<FbxVector2>* uvElement = nullptr;
+		if (bHasNormal) {
+			normalElement = _pMeshNode->GetElementNormal(0);
+		}
+		if (bHasUV) {
+			uvElement = _pMeshNode->GetElementUV(0);
+		}
+		for (int i = 0; i < polygonVertexCount; i++) {
+			// vertex
+			curVertex = controlPointArr[i];
+			// normal
+			if (bHasNormal) {
+				int normalIndex = i;
+				// 레퍼런스 모드에 따라 인덱스를 얻는 방법이 달라진다.
+				if (normalElement->GetReferenceMode() == FbxLayerElement::eIndexToDirect) {
+					normalIndex = normalElement->GetIndexArray().GetAt(i);
+				}
+				curNormal = normalElement->GetDirectArray().GetAt(normalIndex);
+			}
+			// UV
+			if (bHasUV) {
+				int uvIndex = i;
+				if (uvElement->GetReferenceMode() == FbxLayerElement::eIndexToDirect) {
+					uvIndex = uvElement->GetIndexArray().GetAt(i);
+				}
+				curUV = uvElement->GetDirectArray().GetAt(uvIndex);
+			}
+
+			// App에 값 넣기
+			XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
+			XMFLOAT3 normal = XMFLOAT3(static_cast<float>(curNormal[0]), static_cast<float>(curNormal[1]), static_cast<float>(curNormal[2]));
+			XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
+			XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+			XMFLOAT3 tanU;
+			XMVECTOR vNorm = XMLoadFloat3(&normal);
+			if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+			{
+				XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+				XMStoreFloat3(&tanU, vTanU);
+			}
+			else
+			{
+				up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+				XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+				XMStoreFloat3(&tanU, vTanU);
+			}
+			M3DLoader::SkinnedVertex vertex;
+			vertex.Pos = pos;
+			vertex.Normal = normal;
+			vertex.TexC = uv;
+			vertex.TangentU = tanU;
+			_vertices.push_back(vertex);
+		}
+	}
+
+	int vertexCount = 0;
+	for (int pI = 0; pI < polygonCount; pI++) {
+		// 머테리얼 작업을 해준다... 뭔지 모르겠지만
+		int materialIndex = 0;
+		// eByPolygon의 경우 material index를 얻는 방법이 달라진다.
+		if (materialIndiceArr != nullptr && materialMappingMode == FbxGeometryElement::eByPolygon) {
+			materialIndex = materialIndiceArr->GetAt(pI);
+		}
+		// 위에서 eByPolygon의 경우는 SubMesh를 엄청 많이 만들고, Material IndexArray에 맞는 offset을 넣어주었다.
+		// (그렇지 않은 경우는 그냥 1씩 늘려주면서 index를 넣고)
+		// 무튼 아래와 같은 방법으로 indexOffset을 얻는다.
+		const int indexOffset = m_SubMeshes.GetAt(materialIndex)->IndexOffset + m_SubMeshes.GetAt(materialIndex)->TriangleCount * 3;
+		int a = 0;
+		for (int vI = 0; vI < 3; vI++) {
+			// 모든 폴리곤을 돌아다니면서 controlPoint의 Index 역할을 하는 vertex를 얻는다.
+			const int controlPointIndex = _pMeshNode->GetPolygonVertex(pI, vI);
+
+			// control point 값이 -1이 나오면 안된다.
+			if (controlPointIndex >= 0) {
+				// 컨트롤 포인트로 매핑 좌표가 생성되는 경우
+				if (bAllByControlPoint) {
+					// 위에서 이미 속성 값을 넣어주었기 때문에 index 값만 넣어준다.
+					indices[indexOffset + vI] = static_cast<UINT>(controlPointIndex);
+					_indices[indexOffset + vI] = static_cast<UINT>(controlPointIndex);
+				}
+				// 2_폴리곤 + 버텍스로 매핑 좌표가 생성되는 경우
+				// 이제 속성값을 배열에 넣어준다.
+				else
+				{
+					// (eByControlPoint의 경우는 ElementIndexArray에서 index를 얻어서 값을 가져왔는데)
+					// 이 경우를 보면 
+					indices[indexOffset + vI] = static_cast<UINT>(vertexCount);
+					_indices[indexOffset + vI] = static_cast<UINT>(vertexCount);
+					// control point가 vertex가 되고
+					curVertex = controlPointArr[controlPointIndex];
+					// polygon에서 직접 normal과 UV을 가져온다.
+					if (bHasNormal) {
+						_pMeshNode->GetPolygonVertexNormal(pI, vI, curNormal);
+					}
+					if (bHasUV) {
+						bool bUnmappedUV;
+						_pMeshNode->GetPolygonVertexUV(pI, vI, uvName, curUV, bUnmappedUV);
+					}
+
+					XMFLOAT3 pos = XMFLOAT3(static_cast<float>(curVertex[0]), static_cast<float>(curVertex[1]), static_cast<float>(curVertex[2]));
+					XMFLOAT3 normal = XMFLOAT3(static_cast<float>(curNormal[0]), static_cast<float>(curNormal[1]), static_cast<float>(curNormal[2]));
+					XMFLOAT2 uv = XMFLOAT2(static_cast<float>(curUV[0]), static_cast<float>(curUV[1]));
+					XMVECTOR up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+					XMFLOAT3 tanU;
+					XMVECTOR vNorm = XMLoadFloat3(&normal);
+					if (fabsf(XMVectorGetX(XMVector3Dot(vNorm, up))) < 1.0f - 0.001f)
+					{
+						XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(up, vNorm));
+						XMStoreFloat3(&tanU, vTanU);
+					}
+					else
+					{
+						up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
+						XMVECTOR vTanU = XMVector3Normalize(XMVector3Cross(vNorm, up));
+						XMStoreFloat3(&tanU, vTanU);
+					}
+
+					M3DLoader::SkinnedVertex vertex;
+					vertex.Pos = pos;
+					vertex.Normal = normal;
+					vertex.TexC = uv;
+					vertex.TangentU = tanU;
+					_vertices.push_back(vertex);
+				}
+			}
+			vertexCount++;
+		}
+		m_SubMeshes.GetAt(materialIndex)->TriangleCount += 1;
+	}
+}
+
+// Mesh 정보를 가져오는 것
 void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _vertices, std::vector<std::uint32_t>& _indices)
 {
 	assert(_pMeshNode != nullptr);
@@ -657,12 +1049,9 @@ void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _
 	}
 }
 
-void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, FbxMaterial& _outMaterial)
+// Material 정보를 가져오는것 (Texture 아직 안함)
+void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, OutFbxMaterial& _outMaterial)
 {
-	ColorChannel emissiveColor = ColorChannel();
-	ColorChannel ambientColor = ColorChannel();
-	ColorChannel diffuseColor = ColorChannel();
-	ColorChannel specularColor = ColorChannel();
 	float shininess =0;
 	 
 	const FbxDouble3 emissive = GetMaterialProperty(_pMaterial, FbxSurfaceMaterial::sEmissive, FbxSurfaceMaterial::sEmissiveFactor, _outMaterial.emissiveColor.textureName);
