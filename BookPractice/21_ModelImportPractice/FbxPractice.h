@@ -73,10 +73,18 @@ public:
 	void GetBonesToInstance(const FbxNode* _node);
 	void GetBonesToInstanceRecursive(const FbxNode* _node, int _index, int _parentIndex);
 	void GetAnimationToInstance();
-	//
-	void GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices);
+	struct boneWeight {
+		DirectX::XMFLOAT3 BoneWeights;
+		BYTE BoneIndices[4];
+
+		boneWeight() {
+			BoneWeights = DirectX::XMFLOAT3(0.f, 0.f, 0.f);
+			BoneIndices[0] = BoneIndices[1] = BoneIndices[2] = BoneIndices[3] = 0;
+		}
+	};
+	void GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints);
 	//void GetBonesRecursive(const FbxNode* _node, int _boneIndex, int _parentIndex);
-	void GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices);
+	void GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints);
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, OutFbxMaterial& _outMaterial);
 

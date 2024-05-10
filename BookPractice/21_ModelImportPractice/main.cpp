@@ -1704,6 +1704,9 @@ void FbxTestApp::BuildRenderItems()
 		fbxRitem->StartIndexLocation = fbxRitem->Geo->DrawArgs["fbx"].StartIndexLocation;
 		fbxRitem->BaseVertexLocation = fbxRitem->Geo->DrawArgs["fbx"].BaseVertexLocation;
 
+		fbxRitem->SkinnedCBIndex = 0;
+		fbxRitem->SkinnedModelInst = m_SkinnedModelInst.get();
+
 		m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque].push_back(fbxRitem.get());
 		m_AllRenderItems.push_back(std::move(fbxRitem));
 	}
@@ -1712,8 +1715,10 @@ void FbxTestApp::BuildRenderItems()
 void FbxTestApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std::vector<RenderItem*>& _renderItems, D3D_PRIMITIVE_TOPOLOGY _Type)
 {
 	UINT objCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(ObjectConstants));
+	UINT skinnedCBByteSize = d3dUtil::CalcConstantBufferByteSize(sizeof(SkinnedConstants));
 
 	ID3D12Resource* objectCB = m_CurrFrameResource->ObjectCB->Resource();
+	ID3D12Resource* skinnedCB = m_CurrFrameResource->SkinnedCB->Resource();
 
 	for (size_t i = 0; i < _renderItems.size(); i++)
 	{
@@ -1743,7 +1748,16 @@ void FbxTestApp::DrawRenderItems(ID3D12GraphicsCommandList* _cmdList, const std:
 		// 이제 Item은 Object Buffer만 넘겨주어도 된다.
 		_cmdList->SetGraphicsRootConstantBufferView(0, objCBAddress);
 
-		_cmdList->SetGraphicsRootConstantBufferView(1, 0);
+		// skinnning을 하는 렌더 아이템이면 그에 맞는 CB view 값을 bind 해준다.
+		if (ri->SkinnedModelInst != nullptr)
+		{
+			D3D12_GPU_VIRTUAL_ADDRESS skinnedCBAddress = skinnedCB->GetGPUVirtualAddress() + ri->SkinnedCBIndex * skinnedCBByteSize;
+			_cmdList->SetGraphicsRootConstantBufferView(1, skinnedCBAddress);
+		}
+		else
+		{
+			_cmdList->SetGraphicsRootConstantBufferView(1, 0);
+		}
 
 		_cmdList->DrawIndexedInstanced(ri->IndexCount, 1, ri->StartIndexLocation, ri->BaseVertexLocation, 0);
 	}

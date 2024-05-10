@@ -83,8 +83,8 @@ void FbxPractice::ImportFile(const char* _fileName)
 	importer->Import(rootScene);
 	// DirectX 좌표계에 맞춘다.
 	rootScene->GetGlobalSettings().SetAxisSystem(FbxAxisSystem::DirectX);
-	//FbxGeometryConverter geometryConverter(sdkManager);
-	//geometryConverter.Triangulate(rootScene, true);
+	FbxGeometryConverter geometryConverter(sdkManager);
+	geometryConverter.Triangulate(rootScene, true);
 
 	// Importer는 안쓰니 삭제한다.
 	importer->Destroy();
@@ -304,16 +304,20 @@ void FbxPractice::GetFbxPerMeshToApp(FbxNode* _pSkeletonNode, FbxNode* _pMeshNod
 	FbxScene* pRootScene = rootScene;
 	FbxNode* pRootNode = pRootScene->GetRootNode();
 
-	// #1 bone hierarchy를 얻는다..
-	GetBonesToInstance(_pSkeletonNode);
+	// #1 cluster로 mesh와 skinning 정보를 얻는다.
+	std::vector<boneWeight> _weightPerConstrolPoints;
+	GetSkinMeshToInstance(_pMeshNode->GetMesh(), _outVertices, _outIndices, _weightPerConstrolPoints);
 
-	// #2 cluster로 mesh와 skinning 정보를 얻는다.
-	GetSkinMeshToInstance(_pMeshNode->GetMesh(), _outVertices, _outIndices);
+	// #2 skinnging 정보와 함께 Mesh를 생성한다.
+	GetMeshToInstance(_pMeshNode->GetMesh(), _outVertices, _outIndices, _weightPerConstrolPoints);
+
+	// #3 bone hierarchy를 얻는다..
+	GetBonesToInstance(_pSkeletonNode);
 	
-	// #3 animation을 얻는다.
+	// #4 animation을 얻는다.
 	GetAnimationToInstance();
 	
-	// #4 material 정보를 얻는다.
+	// #5 material 정보를 얻는다.
 	GetMaterialToApp(_pMeshNode->GetMaterial(0), _outMaterials);
 
 	_skinInfo.Set(m_boneHierarchy, m_boneOffsets, m_animations);
@@ -331,6 +335,12 @@ void FbxPractice::GetBonesToInstanceRecursive(const FbxNode* _node, int _index, 
 	BoneInfo* bone = new BoneInfo();
 	bone->boneNode = _node;
 	bone->parentIndex = _parentIndex;
+	
+	const char* curClusterName = m_clusters[_index]->GetLink()->GetName();
+	const char* curBoneNodeName = _node->GetName();
+	if (strcmp(curClusterName, curBoneNodeName) != 0) {
+		return;
+	}
 
 	m_bones.push_back(bone);
 	m_boneHierarchy.push_back(_parentIndex);
@@ -362,21 +372,12 @@ void FbxPractice::GetAnimationToInstance()
 		for (int j = 0; j < animLayerCount; j++) {
 
 			FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
-			//FbxAnimCurveNode* firstAnimCurveNode = const_cast<FbxNode*>(m_bones[0]->boneNode)->LclTranslation.GetCurveNode();
-			//FbxTimeSpan timeInterval;
-			//FbxTime animLength;
-			//double animDoubleSeconds;
-			//bool bHasTimeInterval = firstAnimCurveNode->GetAnimationInterval(timeInterval);
-			//if (bHasTimeInterval) {
-			//	animLength = timeInterval.GetDuration();
-			//	animDoubleSeconds = animLength.GetSecondDouble();
-			//}
 			FbxTimeSpan curAnimTimeSpan = pAnimStack->GetLocalTimeSpan();
 			FbxLongLong startFrame = curAnimTimeSpan.GetStart().GetFrameCount(timeMode);
 			FbxLongLong endFrame = curAnimTimeSpan.GetStop().GetFrameCount(timeMode);
 
-			clip.BoneAnimations.resize(m_bones.size());
-			for (int k = 0; k < m_bones.size(); k++) {
+			clip.BoneAnimations.resize(m_clusters.size());
+			for (int k = 0; k < m_clusters.size(); k++) {
 				clip.BoneAnimations[k].Keyframes.resize(endFrame - startFrame);
 				FbxCluster* curCluster = m_clusters[k];
 
@@ -432,31 +433,42 @@ void FbxPractice::GetAnimationToInstance()
 				
 				}
 
-				//OutputDebugStringA(std::format("\t{}th : {}\n", k, m_bones[k]->boneNode->GetName()).c_str());
 			}
 		}
 		m_animations[clipName] = clip;
 	}
 }
 
-void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices)
+void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints)
 {
-	m_boneOffsets.clear();
+	FbxGeometryConverter geometryConverter(sdkManager);
+	
 
-	FbxScene* pRootScene = rootScene;
-	FbxNode* pRootNode = pRootScene->GetRootNode();
-	//OutputDebugStringA("GetSkinMeshToInstance\n");
+	m_boneOffsets.clear();
+	int controlPointsCounts = _pMeshNode->GetControlPointsCount();
+	_weightPerConstrolPoints.resize(controlPointsCounts);
 
 	// Mesh가 2개 이상이면, cluster도 2개 이상이고 따로따로 RenderItem을 만들어줘야 한다.			
-	GetMeshToInstance(_pMeshNode, _vertices, _indices);
+	int maxVertexIndex = -1;
 
 	int skinCount = _pMeshNode->GetDeformerCount(FbxDeformer::eSkin);
 	for (int j = 0; j < skinCount; j++) {
 		FbxSkin* pSkin = static_cast<FbxSkin*>(_pMeshNode->GetDeformer(j, FbxDeformer::eSkin));
 		int clusterCount = pSkin->GetClusterCount();
+
+		FbxSkin::EType skinningType = pSkin->GetSkinningType();
+
+		struct ForWeightNormalize {
+			int boneCount = 0;
+			XMFLOAT3 BoneWeightsBeforeNormalize = XMFLOAT3(0.f, 0.f, 0.f);
+		};
+
+		std::unordered_map<int, ForWeightNormalize> mapForNormalize;
+
 		for (int k = 0; k < clusterCount; k++) {
 			FbxCluster* pCluster = pSkin->GetCluster(k);
 			m_clusters.push_back(pCluster);
+			
 			int clusterModeIndex = static_cast<int>(pCluster->GetLinkMode());
 			FbxNode* pLink = pCluster->GetLink();
 
@@ -464,41 +476,78 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 			int* controlPointIndicesArr = pCluster->GetControlPointIndices();
 			double* weightsArr = pCluster->GetControlPointWeights();
 
-			//OutputDebugStringA(std::format("\t{}th : {}\n", k, pLink->GetName()).c_str());
-
+			
+			const char* curClusterName = pCluster->GetName();
 			// weight 넣기
 			for (int w = 0; w < controlPointIndicesCount; w++) {
 				int vertexIndex = controlPointIndicesArr[w];
+				maxVertexIndex = vertexIndex > maxVertexIndex ? vertexIndex : maxVertexIndex;
 				float weight = static_cast<float>(weightsArr[w]);
-
-				int boneCount = _vertices[vertexIndex].boneCount;
+				auto curIter = mapForNormalize.find(vertexIndex);
+				if (curIter == mapForNormalize.end()) {
+					mapForNormalize[vertexIndex] = ForWeightNormalize();
+				}
+				ForWeightNormalize& curVertexStates = mapForNormalize[vertexIndex];
+				int boneCount = curVertexStates.boneCount;
 				switch (boneCount) {
 				case 0: {
-					_vertices[vertexIndex].BoneWeights.x = weight;
-					_vertices[vertexIndex].BoneWeights.y = 0;
-					_vertices[vertexIndex].BoneWeights.z = 0;
-					_vertices[vertexIndex].BoneIndices[0] = k;
-					_vertices[vertexIndex].boneCount += 1;
+					curVertexStates.boneCount++;
+					curVertexStates.BoneWeightsBeforeNormalize.x = weight;
+
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.x = 1.f;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.y = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.z = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[0] = k;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[1] = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[2] = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[3] = 0;
 				}break;
 				case 1: {
-					float sum = _vertices[vertexIndex].BoneWeights.x + weight;
-					_vertices[vertexIndex].BoneWeights.y = weight;
-					_vertices[vertexIndex].BoneWeights.z = 0;
-					_vertices[vertexIndex].BoneIndices[1] = k;
-					_vertices[vertexIndex].boneCount += 1;
+					curVertexStates.boneCount++;
+					curVertexStates.BoneWeightsBeforeNormalize.y = weight;
+
+					float sum = curVertexStates.BoneWeightsBeforeNormalize.x + curVertexStates.BoneWeightsBeforeNormalize.y;
+
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.x = curVertexStates.BoneWeightsBeforeNormalize.x / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.y = curVertexStates.BoneWeightsBeforeNormalize.y / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.z = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[1] = k;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[2] = 0;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[3] = 0;
 				}break;
 				case 2: {
-					_vertices[vertexIndex].BoneWeights.z = weight;
-					_vertices[vertexIndex].BoneIndices[2] = k;
-					_vertices[vertexIndex].boneCount += 1;
+					curVertexStates.boneCount++;
+					curVertexStates.BoneWeightsBeforeNormalize.z = weight;
+
+					float sum = curVertexStates.BoneWeightsBeforeNormalize.x 
+						+ curVertexStates.BoneWeightsBeforeNormalize.y
+						+ curVertexStates.BoneWeightsBeforeNormalize.z;
+
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.x = curVertexStates.BoneWeightsBeforeNormalize.x / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.y = curVertexStates.BoneWeightsBeforeNormalize.y / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.z = curVertexStates.BoneWeightsBeforeNormalize.z / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[2] = k;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[3] = 0;
 				}break;
 				case 3: {
-					_vertices[vertexIndex].BoneIndices[3] = k;
-					_vertices[vertexIndex].boneCount += 1;
+					curVertexStates.boneCount++;
+
+					float sum = curVertexStates.BoneWeightsBeforeNormalize.x
+						+ curVertexStates.BoneWeightsBeforeNormalize.y
+						+ curVertexStates.BoneWeightsBeforeNormalize.z
+						+ weight;
+
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.x = curVertexStates.BoneWeightsBeforeNormalize.x / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.y = curVertexStates.BoneWeightsBeforeNormalize.y / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneWeights.z = curVertexStates.BoneWeightsBeforeNormalize.z / sum;
+					_weightPerConstrolPoints[vertexIndex].BoneIndices[3] = k;
+					//_vertices[vertexIndex].boneCount += 1;
 				}break;
 				default:break;
 				}
 			}
+			//OutputDebugStringA(std::format("{}th cluster's max vertexIndex is {}\n", k, maxVertexIndex).c_str());
+
 			// offset matrix 넣기
 			FbxAMatrix clusterMatrix;
 			clusterMatrix = pCluster->GetTransformMatrix(clusterMatrix);
@@ -520,25 +569,23 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 			FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
 			FbxVector4 row3 = clusterOffsetMatrix.GetRow(3);
 
-			/*
 			DirectX::XMFLOAT4X4 offsetMatrix = DirectX::XMFLOAT4X4(
 				static_cast<float>(row0[0]), static_cast<float>(row0[1]), static_cast<float>(row0[2]), static_cast<float>(row0[3]),
 				static_cast<float>(row1[0]), static_cast<float>(row1[1]), static_cast<float>(row1[2]), static_cast<float>(row1[3]),
 				static_cast<float>(row2[0]), static_cast<float>(row2[1]), static_cast<float>(row2[2]), static_cast<float>(row2[3]),
 				static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
 			);
-
-			*/
+			/*
 			DirectX::XMFLOAT4X4 offsetMatrix;
 			XMMATRIX identitiy = XMMatrixIdentity();
 			XMStoreFloat4x4(&offsetMatrix, identitiy);
-
+			*/
 			m_boneOffsets.push_back(offsetMatrix);
 		}
 	}
 }
 
-void FbxPractice::GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices)
+void FbxPractice::GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints)
 {
 	m_SubMeshes.Clear();
 
@@ -716,7 +763,12 @@ void FbxPractice::GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLo
 			vertex.Normal = normal;
 			vertex.TexC = uv;
 			vertex.TangentU = tanU;
-			_vertices.push_back(vertex);
+			vertex.BoneWeights = _weightPerConstrolPoints[i / 3].BoneWeights;
+			vertex.BoneIndices[0] = _weightPerConstrolPoints[i / 3].BoneIndices[0];
+			vertex.BoneIndices[1] = _weightPerConstrolPoints[i / 3].BoneIndices[1];
+			vertex.BoneIndices[2] = _weightPerConstrolPoints[i / 3].BoneIndices[2];
+			vertex.BoneIndices[3] = _weightPerConstrolPoints[i / 3].BoneIndices[3];
+;			_vertices.push_back(vertex);
 		}
 	}
 
@@ -787,6 +839,11 @@ void FbxPractice::GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLo
 					vertex.Normal = normal;
 					vertex.TexC = uv;
 					vertex.TangentU = tanU;
+					vertex.BoneWeights = _weightPerConstrolPoints[controlPointIndex].BoneWeights;
+					vertex.BoneIndices[0] = _weightPerConstrolPoints[controlPointIndex].BoneIndices[0];
+					vertex.BoneIndices[1] = _weightPerConstrolPoints[controlPointIndex].BoneIndices[1];
+					vertex.BoneIndices[2] = _weightPerConstrolPoints[controlPointIndex].BoneIndices[2];
+					vertex.BoneIndices[3] = _weightPerConstrolPoints[controlPointIndex].BoneIndices[3];
 					_vertices.push_back(vertex);
 				}
 			}

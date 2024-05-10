@@ -24,7 +24,6 @@ public:
         DirectX::XMFLOAT3 TangentU;
         DirectX::XMFLOAT3 BoneWeights;
         BYTE BoneIndices[4];
-        int boneCount = 0;
     };
 
     struct Subset
