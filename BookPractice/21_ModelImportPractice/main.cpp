@@ -20,12 +20,12 @@
 
 const int g_NumFrameResources = 3;
 // fbxPractice
-const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance.fbx";
+const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance_none.fbx";
 
 // 일단은 스키닝할 모델은 하나밖에 없다.
 struct SkinnedModelInstance
 {
-	SkinnedData* SkinnedInfo = nullptr;
+	std::shared_ptr<SkinnedData> SkinnedInfo = nullptr;
 	std::vector<DirectX::XMFLOAT4X4> FinalTransforms;
 	std::string ClipName;
 	float TimePos = 0.f;
@@ -84,7 +84,7 @@ struct RenderItem
 	// 스키닝하는 아이템에만 사용하고
 	UINT SkinnedCBIndex = -1;
 	// 그렇지 않으면 nullptr로 둔다.
-	SkinnedModelInstance* SkinnedModelInst = nullptr;
+	std::shared_ptr<SkinnedModelInstance> SkinnedModelInst = nullptr;
 };
 
 // 스카이 맵을 그리는 lay를 따로 둔다. 
@@ -236,14 +236,14 @@ private:
 	XMFLOAT3 m_RotatedLightDirections[3];
 
 	//fbx
-	int mCountOfMeshNode = 0;
+	int m_CountOfMeshNode = 0;
 
 	// Mesh Skinning 할 때 쓰이는 맴버들이다.
 	UINT m_SkinnedSrvHeapStart = 0;
-	//std::vector< SkinnedModelInstance*> m_SkinnedModelInsts;
-	std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; 
-	//std::vector<SkinnedData> m_SkinnedInfos;
-	SkinnedData m_SkinnedInfo; 
+	std::vector<std::shared_ptr<SkinnedModelInstance>> m_SkinnedModelInsts;
+	//std::unique_ptr<SkinnedModelInstance> m_SkinnedModelInst; 
+	std::vector<std::shared_ptr<SkinnedData>> m_SkinnedInfos;
+	//SkinnedData m_SkinnedInfo; 
 	std::vector<M3DLoader::Subset> m_SkinnedSubsets;
 	std::vector<M3DLoader::M3dMaterial> m_SkinnedMaterials;
 	std::vector<std::string> m_SkinnedTextureNames;
@@ -705,21 +705,24 @@ void FbxTestApp::UpdateObjectCBs(const GameTimer& _gt)
 
 void FbxTestApp::UpdateSkinnedCBs(const GameTimer& _gt)
 {
-	if (m_SkinnedModelInst == nullptr) {
+	if (m_SkinnedInfos.size() <= 0) {
 		return;
 	}
-	UploadBuffer<SkinnedConstants>* currSkinnedCB = m_CurrFrameResource->SkinnedCB.get();
 
-	m_SkinnedModelInst->UpdateSkinnedAnimation(_gt.GetDeltaTime());
+	for (int i = 0; i < m_SkinnedInfos.size(); i++) {
+		UploadBuffer<SkinnedConstants>* currSkinnedCB = m_CurrFrameResource->SkinnedCB.get();
 
-	SkinnedConstants skinnedConstants;
-	std::copy(
-		std::begin(m_SkinnedModelInst->FinalTransforms),
-		std::end(m_SkinnedModelInst->FinalTransforms),
-		&skinnedConstants.BoneTransform[0]
-	);
+		m_SkinnedModelInsts[i]->UpdateSkinnedAnimation(_gt.GetDeltaTime());
 
-	currSkinnedCB->CopyData(0, skinnedConstants);
+		SkinnedConstants skinnedConstants;
+		std::copy(
+			std::begin(m_SkinnedModelInsts[i]->FinalTransforms),
+			std::end(m_SkinnedModelInsts[i]->FinalTransforms),
+			&skinnedConstants.BoneTransform[0]
+		);
+
+		currSkinnedCB->CopyData(i, skinnedConstants);
+	}
 }
 
 void FbxTestApp::UpdateMaterialBuffer(const GameTimer& _gt)
@@ -1292,7 +1295,7 @@ void FbxTestApp::BuildFbxGeometry()
 	FbxScene* pRootScene = fbxPractice->GetRootScene();
 	FbxNode* pRootNode = pRootScene->GetRootNode();
 
-	mCountOfMeshNode = 0;
+	m_CountOfMeshNode = 0;
 	std::vector<FbxNode*> MeshNodeArr;
 	FbxNode* skeletonNode = nullptr;
 
@@ -1301,9 +1304,9 @@ void FbxTestApp::BuildFbxGeometry()
 		for (int i = 0; i < pRootNode->GetChildCount(); i++) {
 			FbxNodeAttribute* nodeAttrib = pRootNode->GetChild(i)->GetNodeAttribute();
 			if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eMesh) {
-				mCountOfMeshNode++;
+				m_CountOfMeshNode++;
 				MeshNodeArr.push_back(pRootNode->GetChild(i));
-				break;
+				//break;
 			}
 			else if (nodeAttrib->GetAttributeType() == FbxNodeAttribute::eSkeleton) {
 				skeletonNode = pRootNode->GetChild(i);
@@ -1312,20 +1315,21 @@ void FbxTestApp::BuildFbxGeometry()
 	}
 
 	int fbxMatCBIndex = 5;
-	for (int i = 0; i < mCountOfMeshNode; i++)
+	for (int i = 0; i < m_CountOfMeshNode; i++)
 	{
 		std::vector<M3DLoader::SkinnedVertex> vertices;
 		//std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 		OutFbxMaterial outFbxMat;
 
-		fbxPractice->GetFbxPerMeshToApp(skeletonNode, MeshNodeArr[i], vertices, indices, outFbxMat, m_SkinnedInfo);
+		m_SkinnedInfos.push_back(std::make_shared<SkinnedData>());
+		fbxPractice->GetFbxPerMeshToApp(skeletonNode, MeshNodeArr[i], vertices, indices, outFbxMat, *m_SkinnedInfos[i].get());
 
-		m_SkinnedModelInst = std::make_unique<SkinnedModelInstance>();
-		m_SkinnedModelInst->SkinnedInfo = &m_SkinnedInfo;
-		m_SkinnedModelInst->FinalTransforms.resize(m_SkinnedInfo.BoneCount());
-		m_SkinnedModelInst->ClipName = "Take 001";
-		m_SkinnedModelInst->TimePos = 0.f;
+		m_SkinnedModelInsts.push_back(std::make_shared<SkinnedModelInstance>());
+		m_SkinnedModelInsts[i]->SkinnedInfo = m_SkinnedInfos[i];
+		m_SkinnedModelInsts[i]->FinalTransforms.resize(m_SkinnedInfos[i]->BoneCount());
+		m_SkinnedModelInsts[i]->ClipName = "Take 001";
+		m_SkinnedModelInsts[i]->TimePos = 0.f;
 
 		/*
 		std::vector<Vertex> vertices;
@@ -1609,7 +1613,7 @@ void FbxTestApp::BuildFrameResources()
 {
 	// Shadow Map 용으로 하나 더 필요하다.
 	UINT passCBCount = 2;
-	UINT skinnedObjectCount = 1;
+	UINT skinnedObjectCount = m_CountOfMeshNode;
 
 	for (int i = 0; i < g_NumFrameResources; ++i)
 	{
@@ -1689,7 +1693,7 @@ void FbxTestApp::BuildRenderItems()
 	UINT objCBIndex = 0;
 	// fbx 아이템
 
-	for (int i = 0; i < mCountOfMeshNode; i++) {
+	for (int i = 0; i < m_CountOfMeshNode; i++) {
 
 		std::unique_ptr<RenderItem> fbxRitem = std::make_unique<RenderItem>();
 
@@ -1704,8 +1708,8 @@ void FbxTestApp::BuildRenderItems()
 		fbxRitem->StartIndexLocation = fbxRitem->Geo->DrawArgs["fbx"].StartIndexLocation;
 		fbxRitem->BaseVertexLocation = fbxRitem->Geo->DrawArgs["fbx"].BaseVertexLocation;
 
-		fbxRitem->SkinnedCBIndex = 0;
-		fbxRitem->SkinnedModelInst = m_SkinnedModelInst.get();
+		fbxRitem->SkinnedCBIndex = i;
+		fbxRitem->SkinnedModelInst = m_SkinnedModelInsts[i];
 
 		m_RenderItemLayer[(int)RenderLayer::SkinnedOpaque].push_back(fbxRitem.get());
 		m_AllRenderItems.push_back(std::move(fbxRitem));

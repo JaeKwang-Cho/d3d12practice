@@ -77,12 +77,35 @@ void FbxPractice::ImportFile(const char* _fileName)
 		return;
 	}
 
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_MATERIAL, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_TEXTURE, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_LINK, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_SHAPE, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_GOBO, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_ANIMATION, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_FBX_GLOBAL_SETTINGS, true);
+
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_KEEPFRAMERATE, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_TIMELINE, true);
+	sdkManager->GetIOSettings()->SetBoolProp(IMP_TIMELINE_SPAN, true);
+
 	// 모델 정보가 들어갈 Scene을 만들고
 	rootScene = FbxScene::Create(sdkManager, "rootScene");
 	// Import를 건다.
 	importer->Import(rootScene);
+
+	//int fileVerMain;
+	//int fileVerMinor;
+	//int fileVerRevis;
+	//importer->GetFileVersion(fileVerMain, fileVerMinor, fileVerRevis);
 	// DirectX 좌표계에 맞춘다.
 	rootScene->GetGlobalSettings().SetAxisSystem(FbxAxisSystem::DirectX);
+
+	FbxTimeSpan timespan;
+	rootScene->GetGlobalSettings().GetTimelineDefaultTimeSpan(timespan);
+	sdkManager->GetIOSettings()->SetIntProp(IMP_MOB_FRAME_COUNT, 500);
+
+	FbxLongLong frameCount = timespan.GetStop().GetFrameCount();
 	FbxGeometryConverter geometryConverter(sdkManager);
 	geometryConverter.Triangulate(rootScene, true);
 
@@ -362,6 +385,7 @@ void FbxPractice::GetAnimationToInstance()
 	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
 	for (int i = 0; i < animstackCount; i++) {
 		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
+
 		std::string clipName = pAnimStack->GetName();
 		auto iter = m_animations.find(clipName);
 		if (iter != m_animations.end()) {
@@ -375,6 +399,7 @@ void FbxPractice::GetAnimationToInstance()
 			FbxTimeSpan curAnimTimeSpan = pAnimStack->GetLocalTimeSpan();
 			FbxLongLong startFrame = curAnimTimeSpan.GetStart().GetFrameCount(timeMode);
 			FbxLongLong endFrame = curAnimTimeSpan.GetStop().GetFrameCount(timeMode);
+			double animLong = curAnimTimeSpan.GetStop().GetSecondDouble();
 
 			clip.BoneAnimations.resize(m_clusters.size());
 			for (int k = 0; k < m_clusters.size(); k++) {
@@ -392,15 +417,18 @@ void FbxPractice::GetAnimationToInstance()
 
 					const char* test = curCluster->GetName();
 					const char* test2 = m_bones[k]->boneNode->GetName();
-					FbxAMatrix nodeTransform = curBoneNode->EvaluateGlobalTransform(curFbxTime);
-					FbxAMatrix linkTrasnform = curCluster->GetLink()->EvaluateGlobalTransform(curFbxTime);
-					FbxAMatrix animTransform = nodeTransform.Inverse() * linkTrasnform;
+					FbxAMatrix nodeTransform = curBoneNode->EvaluateLocalTransform(curFbxTime);
+
+					FbxAMatrix linkTransform = curCluster->GetLink()->EvaluateGlobalTransform(curFbxTime);
+					FbxAMatrix nodeTransformGlobal = curBoneNode->EvaluateGlobalTransform(curFbxTime);
+
 
 					FbxAMatrix nodeLocalTransform = curBoneNode->EvaluateLocalTransform(curFbxTime);
+					FbxAMatrix animTransform = nodeTransformGlobal.Inverse() * linkTransform * nodeLocalTransform;
 
-					FbxVector4 animTranslation = nodeLocalTransform.GetT();
-					FbxVector4 animRotation = nodeLocalTransform.GetR();
-					FbxVector4 animScaling = nodeLocalTransform.GetS();
+					FbxVector4 animTranslation = nodeTransform.GetT();
+					FbxVector4 animRotation = nodeTransform.GetR();
+					FbxVector4 animScaling = nodeTransform.GetS();
 					
 					DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(
 						static_cast<float>(animTranslation[0]),
@@ -443,8 +471,9 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 {
 	FbxGeometryConverter geometryConverter(sdkManager);
 	
-
 	m_boneOffsets.clear();
+	m_clusters.clear();
+
 	int controlPointsCounts = _pMeshNode->GetControlPointsCount();
 	_weightPerConstrolPoints.resize(controlPointsCounts);
 
@@ -564,6 +593,7 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 			*/
 			// 예제를 따라함
 			FbxAMatrix clusterOffsetMatrix = clusterLinkMatrix.Inverse() * clusterMatrix;
+
 			FbxVector4 row0 = clusterOffsetMatrix.GetRow(0);
 			FbxVector4 row1 = clusterOffsetMatrix.GetRow(1);
 			FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
@@ -575,12 +605,12 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 				static_cast<float>(row2[0]), static_cast<float>(row2[1]), static_cast<float>(row2[2]), static_cast<float>(row2[3]),
 				static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
 			);
+			m_boneOffsets.push_back(offsetMatrix);
+
 			/*
 			DirectX::XMFLOAT4X4 offsetMatrix;
 			XMMATRIX identitiy = XMMatrixIdentity();
-			XMStoreFloat4x4(&offsetMatrix, identitiy);
-			*/
-			m_boneOffsets.push_back(offsetMatrix);
+			XMStoreFloat4x4(&offsetMatrix, identitiy);*/
 		}
 	}
 }
