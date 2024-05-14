@@ -43,7 +43,6 @@ struct SkinnedModelInstance
 		}
 		// 현재 시간에 맞는 final transform을 구한다.
 		SkinnedInfo->GetFinalTransforms(ClipName, TimePos, FinalTransforms);
-
 	}
 };
 
@@ -712,7 +711,8 @@ void FbxTestApp::UpdateSkinnedCBs(const GameTimer& _gt)
 	for (int i = 0; i < m_SkinnedInfos.size(); i++) {
 		UploadBuffer<SkinnedConstants>* currSkinnedCB = m_CurrFrameResource->SkinnedCB.get();
 
-		m_SkinnedModelInsts[i]->UpdateSkinnedAnimation(_gt.GetDeltaTime());
+		SkinnedModelInstance* curSkinnedInst = m_SkinnedModelInsts[i].get();
+		curSkinnedInst->UpdateSkinnedAnimation(_gt.GetDeltaTime());
 
 		SkinnedConstants skinnedConstants;
 		std::copy(

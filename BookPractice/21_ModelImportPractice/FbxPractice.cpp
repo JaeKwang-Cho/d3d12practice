@@ -383,6 +383,303 @@ void FbxPractice::GetAnimationToInstance()
 
 	//OutputDebugStringA("GetAnimationToInstance\n");
 	int animstackCount = pRootScene->GetSrcObjectCount<FbxAnimStack>();
+
+	// Get max frame count for each bone.
+	for (int i = 0; i < animstackCount; i++) {
+		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
+
+		std::string clipName = pAnimStack->GetName();
+
+		AnimationClip clip;
+		// 애님 스택이 2개로 나뉘어져 있는걸... 대비하자
+		auto iter = m_animations.find(clipName);
+		if (iter != m_animations.end()) {
+			clip = iter->second;
+		}
+		else {
+			m_animations[clipName] = clip;
+		}
+
+		int animLayerCount = pAnimStack->GetMemberCount<FbxAnimLayer>();
+		
+		for (int j = 0; j < animLayerCount; j++) {
+			clip.BoneAnimations.resize(m_clusters.size());
+
+			for (int k = 0; k < m_clusters.size(); k++) {
+				int maxkeyCount = -1;
+				int maxLinkKeyCount = -1;
+				float animSecond = -1.f;
+				float animLinkSecond = -1.f;
+				FbxCluster* curCluster = m_clusters[k];
+				FbxNode* curLink = curCluster->GetLink();
+				FbxNode* curBoneNode = const_cast<FbxNode*>(m_bones[k]->boneNode);
+				//OutputDebugStringA(std::format("{}'s frame info check....\n", curBoneNode->GetName()).c_str());
+
+				// bone node
+				FbxAnimCurveNode* pAnimCurveNode_Transform[3];
+
+				pAnimCurveNode_Transform[0] = curBoneNode->LclTranslation.GetCurveNode();
+				pAnimCurveNode_Transform[1] = curBoneNode->LclRotation.GetCurveNode();
+				pAnimCurveNode_Transform[2] = curBoneNode->LclScaling.GetCurveNode();
+
+				// cluster link node
+				FbxAnimCurveNode* pAnimCurveLinkNode_Transform[3];
+				pAnimCurveLinkNode_Transform[0] = curLink->LclTranslation.GetCurveNode();
+				pAnimCurveLinkNode_Transform[1] = curLink->LclRotation.GetCurveNode();
+				pAnimCurveLinkNode_Transform[2] = curLink->LclScaling.GetCurveNode();
+
+				FbxTime startTime;
+				FbxTime stopTime;
+				FbxTime linkStartTime;
+				FbxTime linkStopTime;
+				for (int a = 0; a < 3; a++) {
+					// bone node curve
+					if (pAnimCurveNode_Transform[a] != nullptr) {
+
+						FbxTimeSpan timeInterval;
+						bool bHasTimeInterval = pAnimCurveNode_Transform[a]->GetAnimationInterval(timeInterval);
+						if (bHasTimeInterval) {
+							FbxTime animLength = timeInterval.GetDuration();
+							if (animLength.GetSecondDouble() > animSecond) {
+
+								animSecond = static_cast<float>(animLength.GetSecondDouble());
+								startTime = timeInterval.GetStart();
+								stopTime = timeInterval.GetStop();
+							}
+						}
+
+						// bone node curve channel
+						int channelsCount = pAnimCurveNode_Transform[a]->GetChannelsCount();
+						int keyCount = 0;
+
+						for (int b = 0; b < channelsCount; b++) {
+							FbxAnimCurve* curChannelCurve = pAnimCurveNode_Transform[i]->GetCurve(b);
+							if (curChannelCurve == nullptr) {
+								continue;
+							}
+							keyCount = pAnimCurveNode_Transform[i]->GetCurve(b)->KeyGetCount();
+							maxkeyCount = keyCount > maxkeyCount ? keyCount : maxkeyCount;
+						}
+					}
+					
+					// link node curve
+					if (pAnimCurveLinkNode_Transform[a] != nullptr) {
+
+						FbxTimeSpan linkTimeInterval;
+						bool bLinkHasTimeInterval = pAnimCurveLinkNode_Transform[a]->GetAnimationInterval(linkTimeInterval);
+						if (bLinkHasTimeInterval) {
+							FbxTime linkAnimLength = linkTimeInterval.GetDuration();
+							if (linkAnimLength.GetSecondDouble() > animLinkSecond) {
+
+								animLinkSecond = static_cast<float>(linkAnimLength.GetSecondDouble());
+								linkStartTime = linkTimeInterval.GetStart();
+								linkStopTime = linkTimeInterval.GetStop();
+							}
+						}
+
+						// link node curve channel
+						int linkChannelsCount = pAnimCurveLinkNode_Transform[a]->GetChannelsCount();
+						int linkKeyCount = 0;
+
+						for (int b = 0; b < linkChannelsCount; b++) {
+							FbxAnimCurve* curLinkChannelCurve = pAnimCurveLinkNode_Transform[i]->GetCurve(b);
+							if (curLinkChannelCurve == nullptr) {
+								continue;
+							}
+							linkKeyCount = pAnimCurveLinkNode_Transform[i]->GetCurve(b)->KeyGetCount();
+							maxLinkKeyCount = linkKeyCount > maxLinkKeyCount ? linkKeyCount : maxLinkKeyCount;
+						}
+					}
+				}
+				if (maxkeyCount == -1 || maxLinkKeyCount == -1) {
+					m_bones[k]->bHasCurve = false;
+					// 만약 curve가 없다면 continue
+					continue;
+				}
+				else {
+					m_bones[k]->bHasCurve = true;
+					m_bones[k]->maxFrameCount = maxkeyCount;
+					m_bones[k]->animLength = animSecond;
+				}
+
+				FbxLongLong startFrame = startTime.GetFrameCount(timeMode);
+				FbxLongLong endFrame = stopTime.GetFrameCount(timeMode);
+				clip.BoneAnimations[k].Keyframes.resize(endFrame - startFrame);
+
+				// 지금까지 for - loop이 몇개야....
+				for (FbxLongLong keyIndex = startFrame; keyIndex < endFrame; keyIndex++) {
+
+					FbxAMatrix boneTransform = FbxAMatrix();
+					FbxAMatrix linkTransform = FbxAMatrix();
+
+					// 0 - translation / 1 - rotation / 2- scaling
+					for (int transformIndex = 0; transformIndex < 3; transformIndex++) {
+						FbxAnimCurveNode* curAnimCurveNode = pAnimCurveNode_Transform[transformIndex];
+						FbxAnimCurveNode* curAnimCurveLinkNode = pAnimCurveLinkNode_Transform[transformIndex];
+						// 0 - x / 1 - y  / 2 - z
+						float channelVal[3];
+						float channelValLink[3];
+						bool bBoneHasCurve = true;
+						bool bLinkHasCurve = true;
+						if (curAnimCurveNode != nullptr) {
+							for (int channelIndex = 0; channelIndex < 3; channelIndex++) {
+								FbxAnimCurve* curAnimCurve = curAnimCurveNode->GetCurve(channelIndex);
+								channelVal[channelIndex] = curAnimCurve->KeyGetValue(static_cast<int>(keyIndex));
+							}
+						}
+						else {
+							// 커브가 없을 수도 있음...ㅅㅂ
+							bBoneHasCurve = false;
+						}
+
+						if (curAnimCurveLinkNode != nullptr) {
+							for (int channelIndex = 0; channelIndex < 3; channelIndex++) {
+								FbxAnimCurve* curAnimCurveLink = curAnimCurveLinkNode->GetCurve(channelIndex);
+								channelValLink[channelIndex] = curAnimCurveLink->KeyGetValue(static_cast<int>(keyIndex));
+							}
+						}
+						else {
+							// 커브가 없을 수도 있음...ㅅㅂ
+							bLinkHasCurve = false;
+						}
+
+						FbxTime curFbxTime = 0;
+						curFbxTime.SetFrame(keyIndex, timeMode);
+						float curSecond = static_cast<float>(curFbxTime.GetSecondDouble());
+						clip.BoneAnimations[k].Keyframes[keyIndex].TimePos = curSecond;
+
+						switch (transformIndex) {
+						case 0: {
+							if (bBoneHasCurve) {
+								//DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(channelVal[0], channelVal[1], channelVal[2]);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranlationVec;
+								FbxVector4 boneTranslationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
+								boneTransform.SetT(boneTranslationVec);
+							}
+							else {
+								//DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(0.f, 0.f, 0.f);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranlationVec;
+								FbxVector4 boneTranslationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								boneTransform.SetT(boneTranslationVec);
+							}
+							if (bLinkHasCurve) {
+								FbxVector4 linkTranslationVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
+								linkTransform.SetT(linkTranslationVec);
+							}
+							else {
+								FbxVector4 linkTranslationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								linkTransform.SetT(linkTranslationVec);
+							}
+						}break;
+						case 1: {
+							if (bBoneHasCurve) {
+								//FbxVector4 fbxRotationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 0.0);
+								//FbxQuaternion rotationQuat;
+								//rotationQuat.ComposeSphericalXYZ(fbxRotationVec);
+								//DirectX::XMFLOAT4 rotationVec = DirectX::XMFLOAT4(
+								//	static_cast<float>(rotationQuat.GetAt(0)),
+								//	static_cast<float>(rotationQuat.GetAt(1)),
+								//	static_cast<float>(rotationQuat.GetAt(2)),
+								//	static_cast<float>(rotationQuat.GetAt(3))
+								//);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotationVec;
+								FbxVector4 boneRotationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
+								boneTransform.SetR(boneRotationVec);
+							}
+							else 
+							{
+								//FbxVector4 fbxRotationVec = FbxVector4(0.0, 0.0, 0.0, 0.0);
+								//FbxQuaternion rotationQuat;
+								//rotationQuat.ComposeSphericalXYZ(fbxRotationVec);
+								//DirectX::XMFLOAT4 rotationVec = DirectX::XMFLOAT4(
+								//	static_cast<float>(rotationQuat.GetAt(0)),
+								//	static_cast<float>(rotationQuat.GetAt(1)),
+								//	static_cast<float>(rotationQuat.GetAt(2)),
+								//	static_cast<float>(rotationQuat.GetAt(3))
+								//);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotationVec;
+								FbxVector4 boneRotationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								boneTransform.SetR(boneRotationVec);
+							}
+							if (bLinkHasCurve) {
+								FbxVector4 linkRotationVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
+								linkTransform.SetR(linkRotationVec);
+							}
+							else {
+
+								FbxVector4 linkRotationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								linkTransform.SetR(linkRotationVec);
+							}
+						}break;
+						case 2: {
+							if (bBoneHasCurve) {
+								//DirectX::XMFLOAT3 scalingVec = DirectX::XMFLOAT3(channelVal[0], channelVal[1], channelVal[2]);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalingVec;
+								FbxVector4 boneScalingVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
+								boneTransform.SetS(boneScalingVec);
+							}
+							else {
+								//DirectX::XMFLOAT3 scalingVec = DirectX::XMFLOAT3(1.f, 1.f, 1.f);
+								//clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalingVec;
+								FbxVector4 boneScalingVec = FbxVector4(1.0, 1.0, 1.0, 1.0);
+								boneTransform.SetS(boneScalingVec);
+							}
+							if (bLinkHasCurve) {
+								FbxVector4 linkScalingVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
+								linkTransform.SetS(linkScalingVec);
+							}
+							else {
+								FbxVector4 linkScalingVec = FbxVector4(1.0, 1.0, 1.0, 1.0);
+								linkTransform.SetS(linkScalingVec);
+							}
+						}break;
+						default:break;
+						}
+					}
+					FbxAMatrix clusterTransform; 
+					clusterTransform = curCluster->GetTransformLinkMatrix(clusterTransform);
+					FbxAMatrix animTransform = boneTransform;
+					
+					FbxVector4 animTranslation = animTransform.GetT();
+					FbxVector4 animRotation = animTransform.GetR();
+					FbxVector4 animScaling = animTransform.GetS();
+
+					DirectX::XMFLOAT3 tranVec = DirectX::XMFLOAT3(
+						static_cast<float>(animTranslation[0]),
+						static_cast<float>(animTranslation[1]),
+						static_cast<float>(animTranslation[2])
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranVec;
+
+					FbxVector4 fbxRotVec = FbxVector4(
+						static_cast<float>(animRotation[0]),
+						static_cast<float>(animRotation[1]),
+						static_cast<float>(animRotation[2]),
+						0.0);
+					FbxQuaternion rotationQuat;
+					rotationQuat.ComposeSphericalXYZ(fbxRotVec);
+					DirectX::XMFLOAT4 rotVec = DirectX::XMFLOAT4(
+						static_cast<float>(rotationQuat.GetAt(0)),
+						static_cast<float>(rotationQuat.GetAt(1)),
+						static_cast<float>(rotationQuat.GetAt(2)),
+						static_cast<float>(rotationQuat.GetAt(3))
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotVec;
+
+					DirectX::XMFLOAT3 scalVec = DirectX::XMFLOAT3(
+						static_cast<float>(animScaling[0]),
+						static_cast<float>(animScaling[1]),
+						static_cast<float>(animScaling[2])
+					);
+					clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalVec;
+				}
+				//OutputDebugStringA(std::format("\t {}'s frame count : '{}' and anim length : {} sec\n", curBoneNode->GetName(), maxkeyCount, animSecond).c_str());
+				//OutputDebugStringA(std::format("\t {}'s link frame count : '{}' and link anim length : {} sec\n", curLink->GetName(), maxLinkKeyCount, animLinkSecond).c_str());
+			}
+		}
+		m_animations[clipName] = clip;
+	}
+	/*
 	for (int i = 0; i < animstackCount; i++) {
 		FbxAnimStack* pAnimStack = pRootScene->GetSrcObject<FbxAnimStack>();
 
@@ -465,6 +762,7 @@ void FbxPractice::GetAnimationToInstance()
 		}
 		m_animations[clipName] = clip;
 	}
+	*/
 }
 
 void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints)
@@ -593,12 +891,11 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 			*/
 			// 예제를 따라함
 			FbxAMatrix clusterOffsetMatrix = clusterLinkMatrix.Inverse() * clusterMatrix;
-
 			FbxVector4 row0 = clusterOffsetMatrix.GetRow(0);
 			FbxVector4 row1 = clusterOffsetMatrix.GetRow(1);
 			FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
 			FbxVector4 row3 = clusterOffsetMatrix.GetRow(3);
-
+			
 			DirectX::XMFLOAT4X4 offsetMatrix = DirectX::XMFLOAT4X4(
 				static_cast<float>(row0[0]), static_cast<float>(row0[1]), static_cast<float>(row0[2]), static_cast<float>(row0[3]),
 				static_cast<float>(row1[0]), static_cast<float>(row1[1]), static_cast<float>(row1[2]), static_cast<float>(row1[3]),
@@ -606,11 +903,13 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 				static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
 			);
 			m_boneOffsets.push_back(offsetMatrix);
-
+			
 			/*
 			DirectX::XMFLOAT4X4 offsetMatrix;
 			XMMATRIX identitiy = XMMatrixIdentity();
-			XMStoreFloat4x4(&offsetMatrix, identitiy);*/
+			XMStoreFloat4x4(&offsetMatrix, identitiy);
+			m_boneOffsets.push_back(offsetMatrix);
+			*/
 		}
 	}
 }

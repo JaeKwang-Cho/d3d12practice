@@ -18,18 +18,41 @@ Keyframe::~Keyframe()
 
 float BoneAnimation::GetStartTime() const
 {
-	return Keyframes.front().TimePos;
+	if (Keyframes.size() <= 0) {
+		return 0.f;
+	}
+	else {
+		return Keyframes.front().TimePos;
+	}
 }
 
 float BoneAnimation::GetEndTime() const
 {
-	return Keyframes.back().TimePos;
+	if (Keyframes.size() <= 0) {
+		return 0.f;
+	}
+	else {
+		return Keyframes.back().TimePos;
+	}
+	
 }
 
 void BoneAnimation::Interpolate(float _time, DirectX::XMFLOAT4X4& _Mat) const
 {
+	// #0 키 프레임이 존재하지 않을 때
+	if (Keyframes.size() <= 0) {
+		XMFLOAT3 ones = XMFLOAT3(1.f, 1.f, 1.f);
+		XMFLOAT3 zeros = XMFLOAT3(0.f, 0.f, 0.f);
+		XMVECTOR S = XMLoadFloat3(&ones);
+		XMVECTOR P = XMLoadFloat3(&zeros);
+		XMVECTOR Q = XMQuaternionIdentity();
+
+		XMVECTOR zero = XMVectorSet(0.f, 0.f, 0.f, 1.f);
+		// M = (스케일) * (회전 중심이 되도록 반대 이동) * (회전) * (다시 원래 위치로 이동) * (이동)
+		XMStoreFloat4x4(&_Mat, XMMatrixAffineTransformation(S, zero, Q, P));
+	}
 	// #1 아직 애니메이션이 시작하지 않았을 때
-	if (_time <= Keyframes.front().TimePos)
+	else if (_time <= Keyframes.front().TimePos)
 	{
 		XMVECTOR S = XMLoadFloat3(&Keyframes.front().Scale);
 		XMVECTOR P = XMLoadFloat3(&Keyframes.front().Translation);

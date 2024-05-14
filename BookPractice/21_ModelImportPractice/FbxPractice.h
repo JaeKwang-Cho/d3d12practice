@@ -41,6 +41,9 @@ struct BoneInfo
 {
 	const FbxNode* boneNode;
 	int	parentIndex;
+	bool bHasCurve;
+	int maxFrameCount = -1;
+	float animLength = -1.f;
 };
 
 class FbxPractice
