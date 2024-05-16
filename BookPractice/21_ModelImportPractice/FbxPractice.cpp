@@ -103,8 +103,6 @@ void FbxPractice::ImportFile(const char* _fileName)
 
 	FbxTimeSpan timespan;
 	rootScene->GetGlobalSettings().GetTimelineDefaultTimeSpan(timespan);
-	sdkManager->GetIOSettings()->SetIntProp(IMP_MOB_FRAME_COUNT, 500);
-
 	FbxLongLong frameCount = timespan.GetStop().GetFrameCount();
 	FbxGeometryConverter geometryConverter(sdkManager);
 	geometryConverter.Triangulate(rootScene, true);
@@ -336,11 +334,14 @@ void FbxPractice::GetFbxPerMeshToApp(FbxNode* _pSkeletonNode, FbxNode* _pMeshNod
 
 	// #3 bone hierarchy를 얻는다..
 	GetBonesToInstance(_pSkeletonNode);
+
+	// #4 offset matrix를 얻는다..
+	GetOffsetMatrixToInstance();
 	
-	// #4 animation을 얻는다.
+	// #5 animation을 얻는다.
 	GetAnimationToInstance();
 	
-	// #5 material 정보를 얻는다.
+	// #6 material 정보를 얻는다.
 	GetMaterialToApp(_pMeshNode->GetMaterial(0), _outMaterials);
 
 	_skinInfo.Set(m_boneHierarchy, m_boneOffsets, m_animations);
@@ -358,11 +359,16 @@ void FbxPractice::GetBonesToInstanceRecursive(const FbxNode* _node, int _index, 
 	BoneInfo* bone = new BoneInfo();
 	bone->boneNode = _node;
 	bone->parentIndex = _parentIndex;
+	bone->toParentMat.SetIdentity();
 	
 	const char* curClusterName = m_clusters[_index]->GetLink()->GetName();
 	const char* curBoneNodeName = _node->GetName();
 	if (strcmp(curClusterName, curBoneNodeName) != 0) {
 		return;
+	}
+
+	if (_parentIndex > 0) {
+		OutputDebugStringA(std::format("'{}''s parent is '{}'\n", curBoneNodeName, m_bones[_parentIndex]->boneNode->GetName()).c_str());
 	}
 
 	m_bones.push_back(bone);
@@ -413,11 +419,71 @@ void FbxPractice::GetAnimationToInstance()
 				FbxCluster* curCluster = m_clusters[k];
 				FbxNode* curLink = curCluster->GetLink();
 				FbxNode* curBoneNode = const_cast<FbxNode*>(m_bones[k]->boneNode);
+				const char* boneName = curBoneNode->GetName();
+
+				/*
+				FbxEuler::EOrder rotOrder;
+				curBoneNode->GetRotationOrder(FbxNode::eSourcePivot, rotOrder);
+
+				switch (rotOrder) {
+				case FbxEuler::eOrderXYZ: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderXYZ'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxEuler::eOrderXZY: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderXZY'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxEuler::eOrderYXZ: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderYXZ'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxEuler::eOrderYZX: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderYZX'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxEuler::eOrderZXY: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderZXY'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxEuler::eOrderZYX: {
+					OutputDebugStringA(std::format("{}'s rot order is : 'eOrderZYX'\n", curBoneNode->GetName()).c_str());
+				}break;
+				}
+				*/
+				/*
+				FbxTransform::EInheritType inheritType;
+				curBoneNode->GetTransformationInheritType(inheritType);
+
+				switch (inheritType) {
+				case FbxTransform::eInheritRrs: {
+					OutputDebugStringA(std::format("{}'s inheritType is : 'eInheritRrs'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxTransform::eInheritRrSs: {
+					OutputDebugStringA(std::format("{}'s inheritType is : 'eInheritRrSs'\n", curBoneNode->GetName()).c_str());
+				}break;
+				case FbxTransform::eInheritRSrs: {
+					OutputDebugStringA(std::format("{}'s inheritType is : 'eInheritRSrs'\n", curBoneNode->GetName()).c_str());
+				}break;
+				}
+				*/
+
+				// 문서 따라서 transform 순서 지켜보기
+				FbxAMatrix identity;
+				identity.SetIdentity();
+				FbxAMatrix rotationOffset = identity;
+				FbxAMatrix rotationPivot = identity;
+				FbxAMatrix preRotation = identity;
+				FbxAMatrix postRotation = identity;
+				FbxAMatrix scaleOffset = identity;
+				FbxAMatrix scalePivot = identity;
+
+				rotationOffset.SetT(curBoneNode->GetRotationOffset(FbxNode::eSourcePivot));
+				rotationPivot.SetT(curBoneNode->GetRotationPivot(FbxNode::eSourcePivot));
+				preRotation.SetR(curBoneNode->GetPreRotation(FbxNode::eSourcePivot));
+				postRotation.SetR(curBoneNode->GetPostRotation(FbxNode::eSourcePivot));
+				scaleOffset.SetT(curBoneNode->GetScalingOffset(FbxNode::eSourcePivot));
+				scalePivot.SetT(curBoneNode->GetScalingPivot(FbxNode::eSourcePivot));
+
 				//OutputDebugStringA(std::format("{}'s frame info check....\n", curBoneNode->GetName()).c_str());
 
 				// bone node
 				FbxAnimCurveNode* pAnimCurveNode_Transform[3];
-
 				pAnimCurveNode_Transform[0] = curBoneNode->LclTranslation.GetCurveNode();
 				pAnimCurveNode_Transform[1] = curBoneNode->LclRotation.GetCurveNode();
 				pAnimCurveNode_Transform[2] = curBoneNode->LclScaling.GetCurveNode();
@@ -509,8 +575,20 @@ void FbxPractice::GetAnimationToInstance()
 				// 지금까지 for - loop이 몇개야....
 				for (FbxLongLong keyIndex = startFrame; keyIndex < endFrame; keyIndex++) {
 
+					FbxTime curFbxTime = 0;
+					curFbxTime.SetFrame(keyIndex, timeMode);
+
 					FbxAMatrix boneTransform = FbxAMatrix();
 					FbxAMatrix linkTransform = FbxAMatrix();
+
+					// 문서 따라해서 transform 순서 지켜보기
+					FbxAMatrix translationMat = identity;
+					FbxAMatrix rotationMat = identity;
+					FbxAMatrix scalingMat = identity;
+
+					//FbxArray<FbxAMatrix> boneHerarchyPerframe;
+					//boneHerarchyPerframe.Resize(m_clusters.size());
+					//boneHerarchyPerframe[0].SetIdentity();
 
 					// 0 - translation / 1 - rotation / 2- scaling
 					for (int transformIndex = 0; transformIndex < 3; transformIndex++) {
@@ -543,24 +621,22 @@ void FbxPractice::GetAnimationToInstance()
 							bLinkHasCurve = false;
 						}
 
-						FbxTime curFbxTime = 0;
-						curFbxTime.SetFrame(keyIndex, timeMode);
+						
 						float curSecond = static_cast<float>(curFbxTime.GetSecondDouble());
 						clip.BoneAnimations[k].Keyframes[keyIndex].TimePos = curSecond;
 
 						switch (transformIndex) {
 						case 0: {
 							if (bBoneHasCurve) {
-								//DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(channelVal[0], channelVal[1], channelVal[2]);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranlationVec;
 								FbxVector4 boneTranslationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
 								boneTransform.SetT(boneTranslationVec);
+								//translationMat.SetT(boneTranslationVec);
 							}
 							else {
-								//DirectX::XMFLOAT3 tranlationVec = DirectX::XMFLOAT3(0.f, 0.f, 0.f);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranlationVec;
-								FbxVector4 boneTranslationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								//FbxVector4 boneTranslationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
+								FbxVector4 boneTranslationVec = curBoneNode->EvaluateLocalTranslation(curFbxTime, FbxNode::eDestinationPivot);
 								boneTransform.SetT(boneTranslationVec);
+								//translationMat.SetT(boneTranslationVec);
 							}
 							if (bLinkHasCurve) {
 								FbxVector4 linkTranslationVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
@@ -573,33 +649,15 @@ void FbxPractice::GetAnimationToInstance()
 						}break;
 						case 1: {
 							if (bBoneHasCurve) {
-								//FbxVector4 fbxRotationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 0.0);
-								//FbxQuaternion rotationQuat;
-								//rotationQuat.ComposeSphericalXYZ(fbxRotationVec);
-								//DirectX::XMFLOAT4 rotationVec = DirectX::XMFLOAT4(
-								//	static_cast<float>(rotationQuat.GetAt(0)),
-								//	static_cast<float>(rotationQuat.GetAt(1)),
-								//	static_cast<float>(rotationQuat.GetAt(2)),
-								//	static_cast<float>(rotationQuat.GetAt(3))
-								//);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotationVec;
 								FbxVector4 boneRotationVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
 								boneTransform.SetR(boneRotationVec);
+								//rotationMat.SetR(boneRotationVec);
 							}
 							else 
 							{
-								//FbxVector4 fbxRotationVec = FbxVector4(0.0, 0.0, 0.0, 0.0);
-								//FbxQuaternion rotationQuat;
-								//rotationQuat.ComposeSphericalXYZ(fbxRotationVec);
-								//DirectX::XMFLOAT4 rotationVec = DirectX::XMFLOAT4(
-								//	static_cast<float>(rotationQuat.GetAt(0)),
-								//	static_cast<float>(rotationQuat.GetAt(1)),
-								//	static_cast<float>(rotationQuat.GetAt(2)),
-								//	static_cast<float>(rotationQuat.GetAt(3))
-								//);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotationVec;
 								FbxVector4 boneRotationVec = FbxVector4(0.0, 0.0, 0.0, 1.0);
 								boneTransform.SetR(boneRotationVec);
+								//rotationMat.SetR(boneRotationVec);
 							}
 							if (bLinkHasCurve) {
 								FbxVector4 linkRotationVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
@@ -613,16 +671,14 @@ void FbxPractice::GetAnimationToInstance()
 						}break;
 						case 2: {
 							if (bBoneHasCurve) {
-								//DirectX::XMFLOAT3 scalingVec = DirectX::XMFLOAT3(channelVal[0], channelVal[1], channelVal[2]);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalingVec;
 								FbxVector4 boneScalingVec = FbxVector4(channelVal[0], channelVal[1], channelVal[2], 1.0);
 								boneTransform.SetS(boneScalingVec);
+								//scalingMat.SetS(boneScalingVec);
 							}
 							else {
-								//DirectX::XMFLOAT3 scalingVec = DirectX::XMFLOAT3(1.f, 1.f, 1.f);
-								//clip.BoneAnimations[k].Keyframes[keyIndex].Scale = scalingVec;
 								FbxVector4 boneScalingVec = FbxVector4(1.0, 1.0, 1.0, 1.0);
 								boneTransform.SetS(boneScalingVec);
+								//scalingMat.SetS(boneScalingVec);
 							}
 							if (bLinkHasCurve) {
 								FbxVector4 linkScalingVec = FbxVector4(channelValLink[0], channelValLink[1], channelValLink[2], 1.0);
@@ -636,10 +692,50 @@ void FbxPractice::GetAnimationToInstance()
 						default:break;
 						}
 					}
+
+					FbxVector4 boneTranslationVec = curBoneNode->EvaluateLocalTranslation(curFbxTime, FbxNode::eSourcePivot);
+					translationMat.SetT(boneTranslationVec);
+
+					FbxVector4 boneRotationVec = curBoneNode->EvaluateLocalRotation(curFbxTime, FbxNode::eSourcePivot);
+					rotationMat.SetR(boneRotationVec);
+
+					FbxVector4 boneScalingVec = curBoneNode->EvaluateLocalScaling(curFbxTime, FbxNode::eSourcePivot);
+					scalingMat.SetS(boneScalingVec);
+
 					FbxAMatrix clusterTransform; 
 					clusterTransform = curCluster->GetTransformLinkMatrix(clusterTransform);
-					FbxAMatrix animTransform = boneTransform;
 					
+					FbxAMatrix animTransform = 
+						translationMat * 
+						rotationOffset * 
+						rotationPivot  * 
+						preRotation * 
+						rotationMat * 
+						postRotation * 
+						rotationPivot.Inverse() *
+						scaleOffset *
+						scalePivot*
+						scalingMat*
+						scalePivot.Inverse();
+
+
+					//animTransform = curBoneNode->EvaluateLocalTransform(curFbxTime, FbxNode::eDestinationPivot);
+					/*
+					if (k >= 1) {
+						int parentIndex = m_bones[k]->parentIndex;
+						FbxAMatrix parentWorld = identity;
+
+						XMFLOAT3 tranlation3 = clip.BoneAnimations[parentIndex].Keyframes[keyIndex].Translation;
+						XMFLOAT3 rotation3 = clip.BoneAnimations[parentIndex].Keyframes[keyIndex].RotationEuler;
+						XMFLOAT3 scaling3 = clip.BoneAnimations[parentIndex].Keyframes[keyIndex].Scale;
+
+						parentWorld.SetT(FbxVector4(tranlation3.x, tranlation3.y, tranlation3.z));
+						parentWorld.SetR(FbxVector4(rotation3.x, rotation3.y, rotation3.z));
+						parentWorld.SetS(FbxVector4(scaling3.x, scaling3.y, scaling3.z));
+
+						animTransform = parentWorld * animTransform;
+					}
+					*/
 					FbxVector4 animTranslation = animTransform.GetT();
 					FbxVector4 animRotation = animTransform.GetR();
 					FbxVector4 animScaling = animTransform.GetS();
@@ -765,6 +861,47 @@ void FbxPractice::GetAnimationToInstance()
 	*/
 }
 
+void FbxPractice::GetOffsetMatrixToInstance()
+{
+	FbxArray<FbxAMatrix> offsetHierarchy;
+	offsetHierarchy.Resize(static_cast<int>(m_clusters.size()));
+	offsetHierarchy[0].SetIdentity();
+
+	for (size_t i = 0; i < m_clusters.size(); i++) {
+		// offset matrix 넣기
+		FbxCluster* pCluster = m_clusters[i];
+
+		FbxAMatrix clusterMatrix;
+		clusterMatrix = pCluster->GetTransformMatrix(clusterMatrix);
+
+		FbxAMatrix clusterLinkMatrix;
+		clusterLinkMatrix = pCluster->GetTransformLinkMatrix(clusterLinkMatrix);
+
+		/*
+		bool hasAssociateModel = false;
+		FbxAMatrix associateModelMatrix = FbxAMatrix();
+		if (hasAssociateModel = pCluster->GetAssociateModel() != nullptr) {
+			associateModelMatrix = pCluster->GetTransformAssociateModelMatrix(associateModelMatrix);
+		}
+		*/
+		// 예제를 따라함
+		FbxAMatrix clusterOffsetMatrix = clusterLinkMatrix.Inverse() * clusterMatrix;
+
+		FbxVector4 row0 = clusterOffsetMatrix.GetRow(0);
+		FbxVector4 row1 = clusterOffsetMatrix.GetRow(1);
+		FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
+		FbxVector4 row3 = clusterOffsetMatrix.GetRow(3);
+
+		DirectX::XMFLOAT4X4 offsetMatrix = DirectX::XMFLOAT4X4(
+			static_cast<float>(row0[0]), static_cast<float>(row0[1]), static_cast<float>(row0[2]), static_cast<float>(row0[3]),
+			static_cast<float>(row1[0]), static_cast<float>(row1[1]), static_cast<float>(row1[2]), static_cast<float>(row1[3]),
+			static_cast<float>(row2[0]), static_cast<float>(row2[1]), static_cast<float>(row2[2]), static_cast<float>(row2[3]),
+			static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
+		);
+		m_boneOffsets.push_back(offsetMatrix);
+	}
+}
+
 void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints)
 {
 	FbxGeometryConverter geometryConverter(sdkManager);
@@ -791,6 +928,10 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 		};
 
 		std::unordered_map<int, ForWeightNormalize> mapForNormalize;
+
+		FbxArray<FbxAMatrix> offsetHierarchy;
+		offsetHierarchy.Resize(clusterCount);
+		offsetHierarchy[0].SetIdentity();
 
 		for (int k = 0; k < clusterCount; k++) {
 			FbxCluster* pCluster = pSkin->GetCluster(k);
@@ -874,41 +1015,21 @@ void FbxPractice::GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M
 				}
 			}
 			//OutputDebugStringA(std::format("{}th cluster's max vertexIndex is {}\n", k, maxVertexIndex).c_str());
-
+			
 			// offset matrix 넣기
+			/*
 			FbxAMatrix clusterMatrix;
 			clusterMatrix = pCluster->GetTransformMatrix(clusterMatrix);
 
 			FbxAMatrix clusterLinkMatrix;
 			clusterLinkMatrix = pCluster->GetTransformLinkMatrix(clusterLinkMatrix);
 
-			/*
+			
 			bool hasAssociateModel = false;
 			FbxAMatrix associateModelMatrix = FbxAMatrix();
 			if (hasAssociateModel = pCluster->GetAssociateModel() != nullptr) {
 				associateModelMatrix = pCluster->GetTransformAssociateModelMatrix(associateModelMatrix);
 			}
-			*/
-			// 예제를 따라함
-			FbxAMatrix clusterOffsetMatrix = clusterLinkMatrix.Inverse() * clusterMatrix;
-			FbxVector4 row0 = clusterOffsetMatrix.GetRow(0);
-			FbxVector4 row1 = clusterOffsetMatrix.GetRow(1);
-			FbxVector4 row2 = clusterOffsetMatrix.GetRow(2);
-			FbxVector4 row3 = clusterOffsetMatrix.GetRow(3);
-			
-			DirectX::XMFLOAT4X4 offsetMatrix = DirectX::XMFLOAT4X4(
-				static_cast<float>(row0[0]), static_cast<float>(row0[1]), static_cast<float>(row0[2]), static_cast<float>(row0[3]),
-				static_cast<float>(row1[0]), static_cast<float>(row1[1]), static_cast<float>(row1[2]), static_cast<float>(row1[3]),
-				static_cast<float>(row2[0]), static_cast<float>(row2[1]), static_cast<float>(row2[2]), static_cast<float>(row2[3]),
-				static_cast<float>(row3[0]), static_cast<float>(row3[1]), static_cast<float>(row3[2]), static_cast<float>(row3[3])
-			);
-			m_boneOffsets.push_back(offsetMatrix);
-			
-			/*
-			DirectX::XMFLOAT4X4 offsetMatrix;
-			XMMATRIX identitiy = XMMatrixIdentity();
-			XMStoreFloat4x4(&offsetMatrix, identitiy);
-			m_boneOffsets.push_back(offsetMatrix);
 			*/
 		}
 	}
@@ -1435,6 +1556,7 @@ void FbxPractice::GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<Vertex>& _
 	}
 }
 
+
 // Material 정보를 가져오는것 (Texture 아직 안함)
 void FbxPractice::GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, OutFbxMaterial& _outMaterial)
 {
@@ -1905,7 +2027,7 @@ void FbxPractice::PrintLayerInfo(FbxMesh* _pMeshNode, int _meshIndex) const
 void FbxPractice::PrintNode(FbxNode* _pNode) const
 {
 	std::ostringstream oss;
-	PrintTabs();
+	//PrintTabs();
 	const char* nodeName = _pNode->GetName();
 	// Local Transform 값을 가져온다.
 	FbxDouble3 translation = _pNode->LclTranslation.Get();
@@ -1913,7 +2035,7 @@ void FbxPractice::PrintNode(FbxNode* _pNode) const
 	FbxDouble3 scaling = _pNode->LclScaling.Get();
 
 	// node 콘텐츠를 출력한다.
-	oss << std::format("<node name = '{}'", nodeName);
+	oss << std::format("\t'{}'th node name = '{}'\n", numOfBones++ , nodeName);
 	//oss << std::format("translation ='{}, {}, {})' rotation ='({}, {}, {})' scaling='({}, {}, {})'>\n",
 		//translation[0], translation[1], translation[2],
 		//rotation[0], rotation[1], rotation[2],
@@ -1932,7 +2054,7 @@ void FbxPractice::PrintNode(FbxNode* _pNode) const
 
 	// node의 속성값을 출력한다.
 	for (int i = 0; i < _pNode->GetNodeAttributeCount(); i++) {
-		PrintAttribute(_pNode->GetNodeAttributeByIndex(i));
+		//PrintAttribute(_pNode->GetNodeAttributeByIndex(i));
 	}
 
 	// 재귀적으로 자식들도 호출한다.
@@ -1941,8 +2063,8 @@ void FbxPractice::PrintNode(FbxNode* _pNode) const
 	}
 
 	numOfTabs--;
-	PrintTabs();
-	OutputDebugStringA("</node>\n");
+	//PrintTabs();
+	//OutputDebugStringA("</node>\n");
 	//printf("</node>\n");
 }
 

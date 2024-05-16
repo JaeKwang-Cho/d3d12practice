@@ -173,6 +173,7 @@ void SkinnedData::GetFinalTransforms(const std::string& _clipName, float _timePo
 
 	// root bone은 0번이다. 따로 부모가 없으니 자기 자신을 부모로 한다. 
 	// (얘는 그냥 local 좌표계에서 계산하는것과 같은샘)
+
 	toRootTransforms[0] = toParentTransforms[0];
 
 	// 자식 bone을 돌아다니면서 Root 좌표계로 바꾸는 행렬을 계산한다.
@@ -186,11 +187,20 @@ void SkinnedData::GetFinalTransforms(const std::string& _clipName, float _timePo
 		XMMATRIX toRoot = XMMatrixMultiply(toParent, parentToRoot);
 
 		XMStoreFloat4x4(&toRootTransforms[i], toRoot);
+		XMFLOAT4X4 curToRoot = toRootTransforms[i];
+		int j = 0;
 	}
-
+	/*
+	// 일단 그냥 넘겨주는거 테스트
+	for (UINT i = 0; i < numOfBones; i++)
+	{
+		toRootTransforms[i] = toParentTransforms[i];
+	}
+	*/
 	// final transform을 얻기위해 offset transform으로 미리 곱해놓는다.
 	for (UINT i = 0; i < numOfBones; i++)
 	{
+		XMFLOAT4X4 curBoneOffset = m_BonesOffsets[i];
 		XMMATRIX offset = XMLoadFloat4x4(&m_BonesOffsets[i]);
 		XMMATRIX toRoot = XMLoadFloat4x4(&toRootTransforms[i]);
 		XMMATRIX finalTransform = XMMatrixMultiply(offset, toRoot);

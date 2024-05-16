@@ -44,6 +44,7 @@ struct BoneInfo
 	bool bHasCurve;
 	int maxFrameCount = -1;
 	float animLength = -1.f;
+	FbxAMatrix toParentMat;
 };
 
 class FbxPractice
@@ -88,6 +89,10 @@ public:
 	void GetSkinMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints);
 	//void GetBonesRecursive(const FbxNode* _node, int _boneIndex, int _parentIndex);
 	void GetMeshToInstance(const FbxMesh* _pMeshNode, std::vector<M3DLoader::SkinnedVertex>& _vertices, std::vector<std::uint32_t>& _indices, std::vector<boneWeight>& _weightPerConstrolPoints);
+	void GetOffsetMatrixToInstance();
+
+public:
+
 	void GetMeshToApp(const FbxMesh* _pMeshNode, std::vector<struct Vertex>& _vertices, std::vector<std::uint32_t>& _indices);
 	void GetMaterialToApp(const FbxSurfaceMaterial* _pMaterial, OutFbxMaterial& _outMaterial);
 
@@ -121,7 +126,7 @@ private:
 	FbxScene* rootScene = nullptr;
 
 	mutable int numOfTabs = 0;
-
+	mutable int numOfBones = 0;
 	struct SubMesh
 	{
 		SubMesh() : IndexOffset(0), TriangleCount(0) {}
