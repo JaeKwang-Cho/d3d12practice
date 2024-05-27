@@ -692,7 +692,7 @@ void FbxPractice::GetAnimationToInstance()
 						default:break;
 						}
 					}
-
+					
 					FbxVector4 boneTranslationVec = curBoneNode->EvaluateLocalTranslation(curFbxTime, FbxNode::eSourcePivot);
 					translationMat.SetT(boneTranslationVec);
 
@@ -701,9 +701,6 @@ void FbxPractice::GetAnimationToInstance()
 
 					FbxVector4 boneScalingVec = curBoneNode->EvaluateLocalScaling(curFbxTime, FbxNode::eSourcePivot);
 					scalingMat.SetS(boneScalingVec);
-
-					FbxAMatrix clusterTransform; 
-					clusterTransform = curCluster->GetTransformLinkMatrix(clusterTransform);
 					
 					FbxAMatrix animTransform = 
 						translationMat * 
@@ -717,9 +714,7 @@ void FbxPractice::GetAnimationToInstance()
 						scalePivot*
 						scalingMat*
 						scalePivot.Inverse();
-
-
-					//animTransform = curBoneNode->EvaluateLocalTransform(curFbxTime, FbxNode::eDestinationPivot);
+					
 					/*
 					if (k >= 1) {
 						int parentIndex = m_bones[k]->parentIndex;
@@ -737,7 +732,7 @@ void FbxPractice::GetAnimationToInstance()
 					}
 					*/
 					FbxVector4 animTranslation = animTransform.GetT();
-					FbxVector4 animRotation = animTransform.GetR();
+					FbxQuaternion animQuat = animTransform.GetQ();
 					FbxVector4 animScaling = animTransform.GetS();
 
 					DirectX::XMFLOAT3 tranVec = DirectX::XMFLOAT3(
@@ -747,18 +742,11 @@ void FbxPractice::GetAnimationToInstance()
 					);
 					clip.BoneAnimations[k].Keyframes[keyIndex].Translation = tranVec;
 
-					FbxVector4 fbxRotVec = FbxVector4(
-						static_cast<float>(animRotation[0]),
-						static_cast<float>(animRotation[1]),
-						static_cast<float>(animRotation[2]),
-						0.0);
-					FbxQuaternion rotationQuat;
-					rotationQuat.ComposeSphericalXYZ(fbxRotVec);
 					DirectX::XMFLOAT4 rotVec = DirectX::XMFLOAT4(
-						static_cast<float>(rotationQuat.GetAt(0)),
-						static_cast<float>(rotationQuat.GetAt(1)),
-						static_cast<float>(rotationQuat.GetAt(2)),
-						static_cast<float>(rotationQuat.GetAt(3))
+						static_cast<float>(animQuat.GetAt(0)),
+						static_cast<float>(animQuat.GetAt(1)),
+						static_cast<float>(animQuat.GetAt(2)),
+						static_cast<float>(animQuat.GetAt(3))
 					);
 					clip.BoneAnimations[k].Keyframes[keyIndex].RotationQuat = rotVec;
 

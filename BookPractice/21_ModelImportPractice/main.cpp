@@ -20,8 +20,8 @@
 
 const int g_NumFrameResources = 3;
 // fbxPractice
-//const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance_none.fbx";
- const std::string danceFbxFilePath = "Fbxs\\Walking.fbx";
+const std::string danceFbxFilePath = "Fbxs\\Snake_Hip_Hop_Dance_none.fbx";
+//const std::string danceFbxFilePath = "Fbxs\\Walking.fbx";
 // 
 // 일단은 스키닝할 모델은 하나밖에 없다.
 struct SkinnedModelInstance
