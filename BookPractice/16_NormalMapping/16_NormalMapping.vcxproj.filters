@@ -73,7 +73,6 @@
     <None Include="Shaders\16_NormalMapping.hlsl">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="packages.config" />
     <None Include="Shaders\Sky.hlsl">
       <Filter>Shaders</Filter>
     </None>
@@ -89,5 +88,6 @@
     <None Include="Shaders\wave_disp.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>
