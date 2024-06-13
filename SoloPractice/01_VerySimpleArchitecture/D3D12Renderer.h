@@ -18,7 +18,7 @@ private:
 	void CreateFence();
 	void CleanupFence();
 
-	UINT64 GetFence();
+	UINT64 DoFence();
 	void WaitForFenceValue();
 
 	void CleanUpRenderer();

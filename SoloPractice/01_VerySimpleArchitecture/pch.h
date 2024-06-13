@@ -36,6 +36,7 @@
 #include <DirectXColors.h>
 #include <d3dx12.h>
 #include <d3d12sdklayers.h>
+#include <dxgidebug.h>
 
 // 괜히 최신 DirectX 사용하기 (d3d + dxgi)
 #include <dxgi1_6.h>

@@ -84,8 +84,9 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 			if (SUCCEEDED(D3D12CreateDevice(pAdaptor.Get(), featureLevels[flIndex], IID_PPV_ARGS(&m_pD3DDevice)))) {
 				goto EXIT;
 			}
-			//pAdaptor->Release();
-			//pAdaptor = nullptr;
+			// 형변환을 해서 그런가.. 스마트 포인터로 해제가 안된다.
+			(*pTempAdaptor)->Release();
+			(*pTempAdaptor) = nullptr;
 			adaptorIndex++;
 		}
 	}
@@ -95,6 +96,7 @@ EXIT:
 		__debugbreak();
 		goto RETURN;
 	}
+	m_pD3DDevice->SetName(L"device");
 	m_AdaptorDesc = AdaptorDesc;
 
 	// 참고 : goto 아래에 이렇게 바디를 새로 만드는 이유는 goto 때문에, 분기가 될때는 바디가 있어야 변수를 초기화 할 수 있다. -> "컨트롤 전송"
@@ -117,7 +119,7 @@ EXIT:
 			goto RETURN;
 		}
 	}
-
+	m_pCommandQueue->SetName(L"Command Queue");
 	// #6 Descriptor Heap을 생성한다.
 	CreateDescriptorHeap();
 
@@ -174,6 +176,8 @@ EXIT:
 			m_pD3DDevice->CreateRenderTargetView(m_pRenderTargets[i].Get(), nullptr, rtvHandle);
 			// RTV Heap handle을 다음으로 옮겨 백 버퍼도 똑같이 설정한다.
 			rtvHandle.Offset(1, m_rtvDescriptorSize);
+
+			m_pRenderTargets[i]->SetName(L"Render Target Resource");
 		}
 	}
 
@@ -226,9 +230,11 @@ void D3D12Renderer::CreateCommandList()
 	if (FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf())))) {
 		__debugbreak();
 	}
+	m_pCommandAllocator->SetName(L"Command Allocator");
 	if (FAILED(m_pD3DDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCommandAllocator.Get(), nullptr, IID_PPV_ARGS(m_pCommandList.GetAddressOf())))) {
 		__debugbreak();
 	}
+	m_pCommandList->SetName(L"Command List");
 	// 일단 처음에는 close를 해준다.
 	m_pCommandList->Close();
 }
@@ -248,6 +254,7 @@ bool D3D12Renderer::CreateDescriptorHeap()
 	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_pRTVHeap.GetAddressOf())))) {
 		__debugbreak();
 	}
+	m_pRTVHeap->SetName(L"Render Target Heap");
 	// Render Target view의 offset stride size를 저장해 놓는다.
 	m_rtvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
@@ -259,7 +266,7 @@ void D3D12Renderer::CreateFence()
 	if (FAILED(m_pD3DDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pFence.GetAddressOf())))) {
 		__debugbreak();
 	}
-
+	m_pFence->SetName(L"Fence");
 	m_ui64enceValue = 0;
 	// 해당 fence까지 GPU가 작업을 마쳤는지는 window event로 처리한다.
 	m_hFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -274,17 +281,29 @@ void D3D12Renderer::CleanupFence()
 	}
 }
 
-UINT64 D3D12Renderer::GetFence()
+UINT64 D3D12Renderer::DoFence()
 {
-	return UINT64();
+	m_ui64enceValue++;
+	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64enceValue);
+	return m_ui64enceValue;
 }
 
 void D3D12Renderer::WaitForFenceValue()
 {
+	const UINT64 ExpectedFenceValue = m_ui64enceValue;
+	// fence를 기다린다.
+	if (m_pFence->GetCompletedValue() < ExpectedFenceValue) {
+		m_pFence->SetEventOnCompletion(ExpectedFenceValue, m_hFenceEvent);
+		WaitForSingleObject(m_hFenceEvent, INFINITE);
+	}
 }
 
 void D3D12Renderer::CleanUpRenderer()
 {
+	// 혹시 남아있을 GPU 작업을 마무리 한다.
+	WaitForFenceValue();
+
+	CleanupFence();
 }
 
 D3D12Renderer::D3D12Renderer()

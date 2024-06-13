@@ -69,6 +69,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     if (g_pRenderer) {
         delete g_pRenderer;
         g_pRenderer = nullptr;
+
+        // resource leak!!!
+        IDXGIDebug1* pDebug = nullptr;
+        // 해제하지 않은 Resource 들에 대한 정보를 출력하게 한다.
+        // 만약 해제하지 않은 Resource를 참조하는 Resource가 많다면,
+        // 그 Resource들도 전부 해제가 안되어서 엄청 많이 뜰 수도 있다.
+        if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
+        {
+            pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
+            pDebug->Release();
+        }
     }
 #ifdef _DEBUG
     // 여기서 걸리면 위에서 지정해놓은 디버기 플래그에 해당하는 문제가 터진 것이다.
