@@ -214,14 +214,75 @@ RETURN:
 
 void D3D12Renderer::BeginRender()
 {
+	// 화면 클리어 및 이번 프레임 렌더링을 위한 자료구조 초기화
+
+	// d3d12 에서는 화면 클리어 하는 것도 command list로 명령을 작성해야 한다.
+	// 일단 allocator와 list를 초기화 해주고
+	if (FAILED(m_pCommandAllocator->Reset())) {
+		__debugbreak();
+	}
+	// 당장은 PSO가 없기 때문에 nullptr으로 초기화 한다.
+	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+		__debugbreak();
+	}
+
+	// 현재 백버퍼 인덱스에 맞는 RTV를 얻어온다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
+	// 그리고 RT Resource 위에 그릴 수 있게, PRESENT에서 RENDER_TARGET으로 바꿔준다.
+	// (이것 역시 완전 비공기 API인 D3D12를 위해 Resource를 보호하는 방법이다.)
+	D3D12_RESOURCE_BARRIER trans_PRESENT_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_RT);
+
+	// command를 기록한다.
+	// RTV handle과 색을 넣어준다. (z 버퍼는 생략되었다.)
+	m_pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::LightSteelBlue, 0, nullptr);
 }
 
 void D3D12Renderer::EndRender()
 {
+	// 그릴 것을 다 그렸으니 이제 Render target의 상태를 ResourceBarrier 상태를 PRESENT로 바꾼다.
+	D3D12_RESOURCE_BARRIER trans_RT_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+	m_pCommandList->ResourceBarrier(1, &trans_RT_PRESENT);
+
+	// 마지막에 close를 걸고
+	m_pCommandList->Close();
+
+	// queue로 넘겨준다. (여기까지의 과정을 매 프레임마다 하는 것이다.)
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get()};
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
 }
 
 void D3D12Renderer::Present()
 {
+	// back Buffer 화면을 Primary Buffer로 전송
+	UINT SyncInterval = 1; // Vsync on , 0이면 Vsync를 off 하는 것이다.
+
+	UINT uiSyncInterval = SyncInterval;
+	UINT uiPresentFlags = 0;
+
+	// 모니터의 주사율과 GPU Rendering 주기와의 차이에서 생기는 화면이 찢어지는 현상이다.
+	if (!uiSyncInterval) {
+		// 이렇게 해야 Tearing(화면 찢어짐)을 무시하고
+		// Vsync를 꺼준다.
+		uiPresentFlags = DXGI_PRESENT_ALLOW_TEARING;
+	}
+	// 백 버퍼와 프론트 버퍼를 바꾼다.
+	HRESULT hr = m_pSwapChain->Present(uiSyncInterval, uiPresentFlags);
+
+	if (DXGI_ERROR_DEVICE_REMOVED == hr)
+	{
+		__debugbreak();
+	}
+
+	// 백 버퍼로 바뀐 친구를 다음 프레임에 그릴 인덱스로 지정한다.
+	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	// 다음 프레임 작업을 하기 전에
+	// 리소스 동기화를 위해 queue 작업을 GPU가 끝냈는지, fence로 확인한다.
+	DoFence();
+
+	WaitForFenceValue();
 }
 
 void D3D12Renderer::CreateCommandList()

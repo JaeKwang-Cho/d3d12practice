@@ -20,7 +20,11 @@ WCHAR g_szWindowClass[] = L"Main Window";
 int g_ClientWidth = 1280;
 int g_ClientHeight = 720;
 
+// 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
+
+// 렌더링 함수
+void Draw();
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -63,6 +67,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else {
             // Rendering
+            Draw();
         }
     }
 
@@ -88,6 +93,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 #endif
 
     return (int) msg.wParam;
+}
+
+void Draw()
+{
+    // begin
+    g_pRenderer->BeginRender();
+
+    // game business logic
+
+    // rendering objects
+
+    // end
+    g_pRenderer->EndRender();
+
+    // Present
+    g_pRenderer->Present();
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
