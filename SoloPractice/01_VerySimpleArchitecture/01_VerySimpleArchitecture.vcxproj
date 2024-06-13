@@ -73,6 +73,7 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>.</OutDir>
+    <TargetName>$(ProjectName)_x64_debug</TargetName>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -134,12 +135,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="BasicMeshObject.h" />
     <ClInclude Include="D3D12Renderer.h" />
     <ClInclude Include="D3DUtil.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="typedef.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BasicMeshObject.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
     <ClCompile Include="D3DUtil.cpp" />
     <ClCompile Include="main.cpp" />
@@ -147,6 +151,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Shaders\Default.hlsl">
+      <FileType>Document</FileType>
+    </None>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

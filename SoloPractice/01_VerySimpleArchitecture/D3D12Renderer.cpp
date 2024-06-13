@@ -4,6 +4,7 @@
 #include "D3D12Renderer.h"
 #include <dxgidebug.h>
 #include "D3DUtil.h"
+#include "BasicMeshObject.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -14,7 +15,7 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 	m_hWnd = _hWnd;
 
 	// debug layer를 켜는데 사용하는 interface
-	Microsoft::WRL::ComPtr<ID3D12Debug5> pDebugController = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Debug6> pDebugController = nullptr;
 	// DXGI 개체를 생성하는 interface
 	Microsoft::WRL::ComPtr<IDXGIFactory7> pFactory = nullptr;
 	// display subsystem의 스펙을 알아내는 interface
@@ -161,6 +162,20 @@ EXIT:
 		}
 		pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_pSwapChain));
 		m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+		// Window에 맞춰서 Viewport와 Scissor Rect를 정의한다.
+		m_Viewport.Width = static_cast<float>(uiWndWidth);
+		m_Viewport.Height = static_cast<float>(uiWndHeight);
+		m_Viewport.MinDepth = 0.f;
+		m_Viewport.MaxDepth = 1.f;
+
+		m_ScissorRect.left = 0;
+		m_ScissorRect.right = uiWndWidth;
+		m_ScissorRect.top = 0;
+		m_ScissorRect.bottom = uiWndHeight;
+		// 맴버도 채운다.
+		m_dwWidth = static_cast<DWORD>(uiWndWidth);
+		m_dwHeight = static_cast<DWORD>(uiWndHeight);
 	}
 
 	// #8 각각의 Frame에 대해 Frame Resource를 만든다.
@@ -234,8 +249,15 @@ void D3D12Renderer::BeginRender()
 	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_RT);
 
 	// command를 기록한다.
-	// RTV handle과 색을 넣어준다. (z 버퍼는 생략되었다.)
+	// RTV handle과 초기화 할 색을 넣어준다. (z 버퍼는 생략되었다.)
 	m_pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::LightSteelBlue, 0, nullptr);
+
+	// viewport, scissor rect, render target을 설정해줘야
+	// 그 위에 뭔가를 그릴 수 있다.
+	m_pCommandList->RSSetViewports(1, &m_Viewport);
+	m_pCommandList->RSSetScissorRects(1, &m_ScissorRect);
+	// 현재도 z 버퍼는 생략되었다.
+	m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 }
 
 void D3D12Renderer::EndRender()
@@ -283,6 +305,79 @@ void D3D12Renderer::Present()
 	DoFence();
 
 	WaitForFenceValue();
+}
+
+bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
+{
+	// 유효하지 않은 크기나
+	if (!(_dwWidth * _dwHeight)) {
+		return false;
+	}
+	// 크기가 변하지 않았으면, 실행하지 않는다.
+	if (_dwWidth == m_dwWidth && _dwHeight == m_dwHeight) {
+		return false;
+	}
+
+	DXGI_SWAP_CHAIN_DESC1 desc = {};
+	// 스왑 체인 정보를 저장해놓고
+	HRESULT hr = m_pSwapChain->GetDesc1(&desc);
+	if (FAILED(hr)) {
+		__debugbreak();
+	}
+	// 원래 있던 RT Resource는 해제해주고
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+		m_pRenderTargets[i]->Release();
+		m_pRenderTargets[i] = nullptr;
+	}
+	// 새로운 버퍼를 생성한다.
+	hr = m_pSwapChain->ResizeBuffers(SWAP_CHAIN_FRAME_COUNT, _dwWidth, _dwHeight, DXGI_FORMAT_R8G8B8A8_UNORM, m_dwSwapChainFlags);
+	if (FAILED(hr)) {
+		__debugbreak();
+	}
+	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	// 새로운 버퍼를 가리키는 Resource View를 생성한다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart());
+
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+		m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pRenderTargets[i].GetAddressOf()));
+		m_pD3DDevice->CreateRenderTargetView(m_pRenderTargets[i].Get(), nullptr, rtvHandle);
+		rtvHandle.Offset(1, m_rtvDescriptorSize);
+	}
+
+	// 맴버도 업데이트 해준다.
+	m_dwWidth = _dwWidth;
+	m_dwHeight = _dwHeight;
+	m_Viewport.Width = static_cast<float>(_dwWidth);
+	m_Viewport.Height = static_cast<float>(_dwHeight);
+	m_ScissorRect.left = 0;
+	m_ScissorRect.right = _dwWidth;
+	m_ScissorRect.top = 0;
+	m_ScissorRect.bottom = _dwHeight;
+
+	return true;
+}
+
+void* D3D12Renderer::CreateBasicMeshObject_Return_New()
+{
+	BasicMeshObject* pMeshObj = new BasicMeshObject;
+	pMeshObj->Initialize(this);
+	pMeshObj->CreateMesh();
+
+	return pMeshObj;
+}
+
+void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
+{
+	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
+	delete pMeshObj;
+}
+
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle)
+{
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
+	pMeshObj->Draw(m_pCommandList.Get());
 }
 
 void D3D12Renderer::CreateCommandList()
@@ -373,7 +468,8 @@ D3D12Renderer::D3D12Renderer()
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),
 	m_rtvDescriptorSize(0), m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
-	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0)
+	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
+	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0)
 {
 }
 

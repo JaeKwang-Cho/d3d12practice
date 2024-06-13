@@ -4,6 +4,14 @@
 #include "pch.h"
 #include "D3D12Renderer.h"
 
+// D3D 라이브러리 링크
+#pragma comment(lib, "DXGI.lib")
+#pragma comment(lib, "dxguid.lib")
+#pragma comment(lib, "D3D12.lib")
+#pragma comment(lib, "D3DCompiler.lib")
+#pragma comment(lib, "d2d1.lib")
+#pragma comment(lib, "dwrite.lib")
+
 // D3D12 Agility 설정
 // 방법 : https://devblogs.microsoft.com/directx/gettingstarted-dx12agility/#OS
 extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
@@ -22,6 +30,7 @@ int g_ClientHeight = 720;
 
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
+void* g_pMeshObj = nullptr;
 
 // 렌더링 함수
 void Draw();
@@ -55,7 +64,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // D3D 초기화
     g_pRenderer = new D3D12Renderer;
     g_pRenderer->Initialize(g_hWnd, true, true);
-
+    // 간단한 메쉬 만들기
+    g_pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
 
     MSG msg = {};
 
@@ -69,6 +79,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             // Rendering
             Draw();
         }
+    }
+
+    if (g_pMeshObj) {
+        g_pRenderer->DeleteBasicMeshObject(g_pMeshObj);
+        g_pMeshObj = nullptr;
     }
 
     if (g_pRenderer) {
@@ -103,6 +118,7 @@ void Draw()
     // game business logic
 
     // rendering objects
+    g_pRenderer->RenderMeshObject(g_pMeshObj);
 
     // end
     g_pRenderer->EndRender();
@@ -129,6 +145,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
         EndPaint(hWnd, &ps);
+    }
+    break;
+    case WM_SIZE: 
+    {
+        if (g_pRenderer) {
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            DWORD dwWidth = rect.right - rect.left;
+            DWORD dwHeight = rect.bottom - rect.top;
+            g_pRenderer->UpdateWindowSize(dwWidth, dwHeight);
+        }
     }
     break;
     case WM_DESTROY:

@@ -10,11 +10,20 @@
     <Filter Include="Util">
       <UniqueIdentifier>{83708c97-f1a7-4fe1-a2c7-224abcfb1dbe}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\D3D12Renderer">
+      <UniqueIdentifier>{594a5c16-3dd4-4cf9-9b63-f43603932928}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Shaders">
+      <UniqueIdentifier>{8424b605-4608-443c-9963-01fa14b6b84e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\BasicMeshObject">
+      <UniqueIdentifier>{507bfa22-9749-4bbe-a7f9-dcf5627b398d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="typedef">
+      <UniqueIdentifier>{f8d401d7-b609-40d7-a585-5387b38e904a}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="D3D12Renderer.h">
-      <Filter>Renderer</Filter>
-    </ClInclude>
     <ClInclude Include="pch.h">
       <Filter>pch</Filter>
     </ClInclude>
@@ -22,20 +31,35 @@
       <Filter>Util</Filter>
     </ClInclude>
     <ClInclude Include="targetver.h" />
+    <ClInclude Include="D3D12Renderer.h">
+      <Filter>Renderer\D3D12Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicMeshObject.h">
+      <Filter>Renderer\BasicMeshObject</Filter>
+    </ClInclude>
+    <ClInclude Include="typedef.h">
+      <Filter>typedef</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <None Include="Shaders\Default.hlsl">
+      <Filter>Renderer\Shaders</Filter>
+    </None>
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="D3D12Renderer.cpp">
-      <Filter>Renderer</Filter>
-    </ClCompile>
     <ClCompile Include="pch.cpp">
       <Filter>pch</Filter>
     </ClCompile>
     <ClCompile Include="D3DUtil.cpp">
       <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D12Renderer.cpp">
+      <Filter>Renderer\D3D12Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicMeshObject.cpp">
+      <Filter>Renderer\BasicMeshObject</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -11,6 +11,12 @@ public:
 	void BeginRender();
 	void EndRender();
 	void Present();
+
+	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
+	
+	void* CreateBasicMeshObject_Return_New();
+	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
+	void RenderMeshObject(void* _pMeshObjectHandle);
 protected:
 private:
 	void CreateCommandList();
@@ -51,10 +57,18 @@ private:
 	HANDLE m_hFenceEvent = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;
 
-	DWORD m_dwCurContextIndex;
+	DWORD m_dwCurContextIndex; //?
+
+	// window resizing
+	D3D12_VIEWPORT m_Viewport;
+	D3D12_RECT m_ScissorRect;
+	DWORD m_dwWidth;
+	DWORD m_dwHeight;
 
 public:
 	D3D12Renderer();
 	~D3D12Renderer();
+
+	Microsoft::WRL::ComPtr<ID3D12Device5> INL_GetD3DDevice() { return m_pD3DDevice; }
 };
 
