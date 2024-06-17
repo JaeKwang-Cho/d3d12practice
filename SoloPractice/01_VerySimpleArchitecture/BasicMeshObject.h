@@ -12,7 +12,7 @@ class BasicMeshObject
 	static DWORD m_dwInitRefCount;
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
-	void Draw(ID3D12GraphicsCommandList* _pCommandList);
+	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList);
 	bool CreateMesh();
 protected:
 private:

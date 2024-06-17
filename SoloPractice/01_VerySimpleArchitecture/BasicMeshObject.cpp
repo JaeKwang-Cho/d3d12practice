@@ -19,7 +19,7 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(ID3D12GraphicsCommandList* _pCommandList)
+void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList)
 {
 	// root signature를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
@@ -117,6 +117,17 @@ EXIST:
 
 void BasicMeshObject::CleanupSharedResources()
 {
+	if (!m_dwInitRefCount) {
+		return;
+	}
+
+	DWORD refCount = m_dwInitRefCount - 1;
+	// 아직 참조하는 Object가 있다면 삭제하지 않기
+	if (!refCount) {
+		// 얘네는 data section에 있는 애들이라 직접 해제를 해줘야 한다.
+		m_pRootSignature = nullptr;
+		m_pPipelineState = nullptr;
+	}
 }
 
 bool BasicMeshObject::InitRootSignature()
@@ -161,7 +172,7 @@ bool BasicMeshObject::InitPipelineState()
 	HRESULT hr;
 
 	// vertex shader를 컴파일하고
-	hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+	hr = D3DCompileFromFile(L".\\Shaders\\Simple.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 	if (FAILED(hr)) {
 		// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 		if (pErrorBlob != nullptr)
@@ -169,7 +180,7 @@ bool BasicMeshObject::InitPipelineState()
 		__debugbreak();
 	}
 	// pixel shader도 컴파일 한다.
-	hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+	hr = D3DCompileFromFile(L".\\Shaders\\Simple.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 	if (FAILED(hr)) {
 		// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 		if (pErrorBlob != nullptr)
@@ -211,6 +222,8 @@ bool BasicMeshObject::InitPipelineState()
 
 void BasicMeshObject::CleanUpMesh()
 {
+	//m_pVertexBuffer = nullptr;
+	CleanupSharedResources();
 }
 
 BasicMeshObject::BasicMeshObject()
@@ -220,5 +233,6 @@ BasicMeshObject::BasicMeshObject()
 
 BasicMeshObject::~BasicMeshObject()
 {
+	CleanUpMesh();
 }
 

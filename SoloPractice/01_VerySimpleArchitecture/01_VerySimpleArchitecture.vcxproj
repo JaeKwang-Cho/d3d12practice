@@ -137,6 +137,7 @@
   <ItemGroup>
     <ClInclude Include="BasicMeshObject.h" />
     <ClInclude Include="D3D12Renderer.h" />
+    <ClInclude Include="D3D12ResourceManager.h" />
     <ClInclude Include="D3DUtil.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="targetver.h" />
@@ -145,6 +146,7 @@
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
+    <ClCompile Include="D3D12ResourceManager.cpp" />
     <ClCompile Include="D3DUtil.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp" />
@@ -152,6 +154,11 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="Shaders\Default.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Simple.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>
