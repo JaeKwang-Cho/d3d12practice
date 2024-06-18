@@ -73,7 +73,7 @@ public:
 	D3D12Renderer();
 	~D3D12Renderer();
 
-	Microsoft::WRL::ComPtr<ID3D12Device5> INL_GetD3DDevice() { return m_pD3DDevice; }
+	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
 	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
 };
 

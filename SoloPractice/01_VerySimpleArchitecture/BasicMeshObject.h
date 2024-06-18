@@ -1,6 +1,12 @@
 // BasicMeshObject.h from "megayuchi"
-
 #pragma once
+
+// Descriptor Handle Offset을 이렇게 enum 값으로 정한다.
+enum class BASIC_MESH_DESCRIPTOR_INDEX
+{
+	TEX = 0
+};
+
 class D3D12Renderer;
 
 class BasicMeshObject
@@ -10,6 +16,8 @@ class BasicMeshObject
 	static Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
 	static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 	static DWORD m_dwInitRefCount;
+
+	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 1; // 일단은 텍스쳐 한개다.
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList);
@@ -17,6 +25,7 @@ public:
 	bool CreateMesh_UploadHeap();
 	bool CreateMesh_DefaultHeap();
 	bool CreateMesh_WithIndex();
+	bool CreateMesh_WithTexture();
 protected:
 private:
 	bool InitCommonResources();
@@ -24,6 +33,9 @@ private:
 
 	bool InitRootSignature();
 	bool InitPipelineState();
+
+	// Texture Resource를 Shader로 넘기기 위한 Table을 생성한다.
+	bool CreateDescriptorTable();
 
 	void CleanUpMesh();
 public:
@@ -39,6 +51,12 @@ private:
 	// index data
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
+	// texture data
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pTexResource;
+
+	// for Descriptor Table
+	UINT m_srvDescriptorSize;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pDescriptorHeap;
 public:
 	BasicMeshObject();
 	~BasicMeshObject();

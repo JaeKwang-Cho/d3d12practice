@@ -5,6 +5,7 @@
 #include "typedef.h"
 #include "D3D12Renderer.h"
 #include "D3D12ResourceManager.h"
+#include "D3DUtil.h"
 
 #pragma comment(lib, "D3DCompiler.lib")
 
@@ -24,6 +25,13 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pC
 {
 	// root signature를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
+	// Texture를 넘겨줄 Descriptor Heap도 설정하고
+	_pCommandList->SetDescriptorHeaps(1, m_pDescriptorHeap.GetAddressOf());
+	// Descriptor Table도 설정한다. 
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable(m_pDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
+	// (0번 offset에 Texture에 대한 SRV가 있으니, bind 해주면 root signature가 그것을 읽어서 t0에 넣어줄 것이다.)
+
 	// PSO를 설정하고
 	_pCommandList->SetPipelineState(m_pPipelineState.Get());
 	// primitive topology type을 설정하고
@@ -31,16 +39,18 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pC
 	// IA에 Vertex 정보를 bind 해주고
 	_pCommandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
 
-	// Index로 Vertex를 그릴 때는, Index 정보도 bind 해주고
-	_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
-	// _pCommandList->DrawInstanced(3, 1, 0, 0);
-	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0); // 왼쪽 함수를 이용해 삼각형을 그린다.
+	_pCommandList->DrawInstanced(3, 1, 0, 0);
+
+	// Index로 Vertex를 그릴 때는, Index 정보도 bind 해준다.
+	//_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
+	// _pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0); // 왼쪽 함수를 이용해 삼각형을 그린다.
+	 
 }
 
 bool BasicMeshObject::CreateMesh_UploadHeap()
 {
 	// 지금은 임시로 점을 임의로 몇개 찍어서 그려보는 것이다.
-	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	// 대충 찍어보자.
 	BasicVertex Vertices[] =
 	{
@@ -110,7 +120,7 @@ bool BasicMeshObject::CreateMesh_DefaultHeap()
 	bool bResult = false;
 
 	// Default Buffer에 Vertex 정보를 올려보는 것
-	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// 대충 찍어보자.
@@ -138,7 +148,7 @@ bool BasicMeshObject::CreateMesh_WithIndex()
 	bool bResult = false;
 
 	// Default Buffer에 Vertex와 Index를 올리는 것
-	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// vertex buffer.
@@ -166,6 +176,89 @@ bool BasicMeshObject::CreateMesh_WithIndex()
 	if (FAILED(pResourceManager->CreateIndexBuffer(static_cast<DWORD>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices))) {
 		__debugbreak();
 		goto RETURN;
+	}
+
+	bResult = true;
+RETURN:
+	return bResult;
+}
+
+bool BasicMeshObject::CreateMesh_WithTexture()
+{
+	bool bResult = false;
+
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	// uv 좌표도 함께 가진 Vertex buffer를 만든다.
+	BasicVertex Vertices[] =
+	{
+		{ { 0.0f, 0.25f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, { 0.5f, 0.0f } },
+		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } }
+	};
+
+	const UINT  VertexBufferSize = sizeof(Vertices);
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), (DWORD)_countof(Vertices),
+		&m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+	
+	{
+		// 입힐 텍스쳐를 16x16으로 생성한다.
+		const UINT texWidth = 16;
+		const UINT texHeight = 16;
+		// 1픽셀당 32바이트 포멧으로 하고
+		DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+		// 메모리를 할당한 다음
+		BYTE* pImage = static_cast<BYTE*>(malloc(texWidth * texHeight * sizeof(uint32_t)));
+		memset(pImage, 0, texWidth * texHeight * sizeof(uint32_t));
+
+		// 셰이더에서 Vertex Color에 Texture Color가 곱해질 것이다.
+		BOOL bFirstColorIsWhite = TRUE;
+
+		for (UINT y = 0; y < texHeight; y++) {
+			for (UINT x = 0; x < texWidth; x++) {
+				RGBA* pDest = reinterpret_cast<RGBA*>(pImage + (y * texWidth + x) * sizeof(uint32_t));
+
+				pDest->r = rand() % 255;
+				pDest->g = rand() % 255;
+				pDest->b = rand() % 255;
+				// TRUE 니까 흰검흰검 순으로 텍스쳐가 그려진다.
+				if ((bFirstColorIsWhite + x) % 2) {
+					pDest->r = 255;
+					pDest->g = 255;
+					pDest->b = 255;
+				}
+				else {
+					pDest->r = 0;
+					pDest->g = 0;
+					pDest->b = 0;
+				}
+				pDest->a = 255;
+			}
+			bFirstColorIsWhite++;
+			bFirstColorIsWhite %= 2;
+		}
+
+		pResourceManager->CreateTexture(&m_pTexResource, texWidth, texHeight, texFormat, pImage);
+
+		free(pImage);
+	
+		// Texture를 Shader로 넘기기 위한 논리 구조인 Descriptor Table을 생성한다.
+		CreateDescriptorTable();
+
+		// Texture Resource의 정보로 Shader Resource View를 생성한다.
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = texFormat;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+
+		// GPU가 참조할 리소스로서 Shader Resource View를 클래스가 가지고 있는 Descriptor Heap에 0번 offset에 생성한다.
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srv(m_pDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::TEX), m_srvDescriptorSize);
+		pD3DDevice->CreateShaderResourceView(m_pTexResource.Get(), &srvDesc, srv);
 	}
 
 	bResult = true;
@@ -205,16 +298,32 @@ void BasicMeshObject::CleanupSharedResources()
 
 bool BasicMeshObject::InitRootSignature()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
-	// 깡통 root signature를 만든다.
-	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-	rootSignatureDesc.Init(0, nullptr, 0, nullptr,
-		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
 	// 중간에 Serialize를 도와줄 blob을 만들고
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
+
+	// Texture가 넘어가는걸 표현해줄 root signature를 만든다.
+	CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
+	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
+	
+	// table 0번에 저장한다.
+	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};
+	rootParameters[0].InitAsDescriptorTable(_countof(ranges), ranges, D3D12_SHADER_VISIBILITY_ALL);
+
+	// Texture Sample을 할때 사용하는 Sampler를
+	// static sampler로 Root Signature와 함께 넘겨준다.
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	SetDefaultSamplerDesc(&sampler, 0); // s0 : sampler
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+	// 이제 Table Entry와 Sampler를 넘겨주면서 Root Signature를 만든다.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+	rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 1, &sampler,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
 
 	// Serialize 한 다음
 	if (FAILED(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, pSignatureBlob.GetAddressOf(), pErrorBlob.GetAddressOf()))) {
@@ -230,7 +339,7 @@ bool BasicMeshObject::InitRootSignature()
 
 bool BasicMeshObject::InitPipelineState()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 	Microsoft::WRL::ComPtr<ID3DBlob> pPixelShaderBlob = nullptr;
@@ -264,7 +373,8 @@ bool BasicMeshObject::InitPipelineState()
 	// input layout을 정의하고
 	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] = {
 		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}
+		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) + sizeof(XMFLOAT4),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 	};
 
 	// Pipeline State Object (PSO)를 만든다.
@@ -293,6 +403,28 @@ bool BasicMeshObject::InitPipelineState()
 	return true;
 }
 
+bool BasicMeshObject::CreateDescriptorTable()
+{
+	bool bResult = false;
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	// SRV으로 사이즈를 구하고
+	m_srvDescriptorSize = pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	// descriptor heap을 생성한다.
+	D3D12_DESCRIPTOR_HEAP_DESC commonHeapDesc = {};
+	commonHeapDesc.NumDescriptors = DESCRIPTOR_COUNT_FOR_DRAW;
+	commonHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	commonHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+	if (FAILED(pD3DDevice->CreateDescriptorHeap(&commonHeapDesc, IID_PPV_ARGS(m_pDescriptorHeap.GetAddressOf())))) {
+		__debugbreak();
+		goto RETURN;
+	}
+	
+	bResult = true;
+RETURN:
+	return bResult;
+}
+
 void BasicMeshObject::CleanUpMesh()
 {
 	//m_pVertexBuffer = nullptr;
@@ -300,7 +432,9 @@ void BasicMeshObject::CleanUpMesh()
 }
 
 BasicMeshObject::BasicMeshObject()
-	:m_pRenderer(nullptr), m_pVertexBuffer(nullptr), m_VertexBufferView{}
+	:m_pRenderer(nullptr), m_pVertexBuffer(nullptr), m_VertexBufferView{},
+	m_pIndexBuffer(nullptr), m_IndexBufferView{}, m_pTexResource(nullptr),
+	m_srvDescriptorSize(0), m_pDescriptorHeap(nullptr)
 {
 }
 

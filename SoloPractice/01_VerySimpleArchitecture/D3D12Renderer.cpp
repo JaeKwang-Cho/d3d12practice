@@ -370,7 +370,8 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 
 	//pMeshObj->CreateMesh_UploadHeap();
 	//pMeshObj->CreateMesh_DefaultHeap();
-	pMeshObj->CreateMesh_WithIndex();
+	//pMeshObj->CreateMesh_WithIndex();
+	pMeshObj->CreateMesh_WithTexture();
 
 	return pMeshObj;
 }

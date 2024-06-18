@@ -212,6 +212,155 @@ RETURN:
 	return hr;
 }
 
+HRESULT D3D12ResourceManager::CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage)
+{
+	HRESULT hr = S_OK;
+
+	// 텍스쳐도 마찬가지로 upload -> default를 이용해서 GPU에 올린다.
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+
+	D3D12_RESOURCE_DESC textureDesc = {};
+	textureDesc.MipLevels = 1;
+	textureDesc.Format = _format;
+	textureDesc.Width = _width;
+	textureDesc.Height = _height;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	textureDesc.DepthOrArraySize = 1;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.SampleDesc.Quality = 0;
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_HEAP_PROPERTIES heapProps_Upload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+
+	hr = m_pD3DDevice->CreateCommittedResource(
+		&heapProps_Default,
+		D3D12_HEAP_FLAG_NONE,
+		&textureDesc,
+		D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, // 셰이더에서 사용하는 리소스는 그냥 이걸로 퉁치는 느낌
+		nullptr,
+		IID_PPV_ARGS(pTexResource.GetAddressOf())
+	);
+	if (FAILED(hr)) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (_pInitImage) {
+		D3D12_RESOURCE_DESC desc = pTexResource->GetDesc();
+		D3D12_PLACED_SUBRESOURCE_FOOTPRINT footPrint = {};
+
+		UINT rows = 0;
+		UINT64 rowSize = 0;
+		UINT64 TotalBytes = 0;
+		// 현재 텍스쳐 리소스의 정보와 서브 리소스들에 대한 레이아웃을 가져온다.
+		// 너비, 높이, 깊이, RowPitch를 FOOTPRINT 구조체에 받는다.
+		// 아직 어디에 쓰는지 잘 모르겠다...
+		m_pD3DDevice->GetCopyableFootprints(&desc, 0, 1, 0, &footPrint, &rows, &rowSize, &TotalBytes);
+
+		BYTE* pMappedPtr = nullptr;
+		CD3DX12_RANGE writeRange(0, 0);
+
+		// 데이터 업로드 시에 필요한 버퍼의 크기를 구해주는 도우미 함수이다.
+		UINT64 uploadBufferSize = GetRequiredIntermediateSize(pTexResource.Get(), 0, 1);
+		D3D12_RESOURCE_DESC resDesc_BuffSize = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+		// upload buffer를 만든다.
+		hr = m_pD3DDevice->CreateCommittedResource(
+			&heapProps_Upload,
+			D3D12_HEAP_FLAG_NONE,
+			&resDesc_BuffSize,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+		);
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+
+		hr = pUploadBuffer->Map(0, &writeRange, reinterpret_cast<void**>(&pMappedPtr));
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+		// 입력으로 들어온 Texture 정보를 Upload Buffer에 올린다
+		const BYTE* pSrc = _pInitImage;
+		BYTE* pDest = pMappedPtr;
+		for (UINT y = 0; y < _height; y++) {
+			memcpy(pDest, pSrc, _width * sizeof(uint32_t)); // 한 줄씩 복사한다.
+			pSrc += (_width * sizeof(uint32_t));
+			pDest += footPrint.Footprint.RowPitch;
+			// RowPitch는 가로 한줄의 바이트 수이다. (256 바이트 Aligned이다.)
+		}
+		pUploadBuffer->Unmap(0, nullptr);
+
+		UpdateTextureForWrite(pTexResource, pUploadBuffer);
+	}
+
+	*_ppOutResource = pTexResource;
+RETURN:
+	return hr;
+}
+
+void D3D12ResourceManager::UpdateTextureForWrite(Microsoft::WRL::ComPtr<ID3D12Resource> _pDestTexResource, Microsoft::WRL::ComPtr<ID3D12Resource> _pSrcTexResource)
+{
+	// 전반적인 내용은 여기에 있다.
+	// https://learn.microsoft.com/ko-kr/windows/win32/direct3d12/upload-and-readback-of-texture-data
+
+
+	// Texture를 GPU에 업로드 할 때, MipLevel 마다 업로드한다.
+	const DWORD MAX_SUB_RESOURCE_NUM = 32;
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT footPrints[MAX_SUB_RESOURCE_NUM];
+	UINT rows[MAX_SUB_RESOURCE_NUM] = {};
+	UINT64 rowSizes[MAX_SUB_RESOURCE_NUM] = {};
+	UINT64 totalBytes = 0;
+
+	D3D12_RESOURCE_DESC desc = _pDestTexResource->GetDesc();
+	if (desc.MipLevels > static_cast<UINT>(_countof(footPrints))) {
+		__debugbreak();
+	}
+	// 리소스 정보를 얻고
+	m_pD3DDevice->GetCopyableFootprints(&desc, 0, desc.MipLevels, 0, footPrints, rows, rowSizes, &totalBytes);
+
+	if (FAILED(m_pCommandAllocator->Reset())) {
+		__debugbreak();
+	}
+	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+		__debugbreak();
+	}
+
+	D3D12_RESOURCE_BARRIER texRB_SHADERRES_DEST = CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource.Get(), D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+	D3D12_RESOURCE_BARRIER texRB_DEST_SHADERRES = CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+
+	m_pCommandList->ResourceBarrier(1, &texRB_SHADERRES_DEST);
+
+	// 차례대로 GPU에 업로드 한다.
+	for (DWORD i = 0; i < desc.MipLevels; i++) {
+		// 텍스쳐 복사를 위한 구조체를 채우고
+		D3D12_TEXTURE_COPY_LOCATION destLocation = {};
+		destLocation.PlacedFootprint = footPrints[i];
+		destLocation.pResource = _pDestTexResource.Get();
+		destLocation.SubresourceIndex = i;
+		destLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+
+		D3D12_TEXTURE_COPY_LOCATION srcLocation = {};
+		srcLocation.PlacedFootprint = footPrints[i];
+		srcLocation.pResource = _pSrcTexResource.Get();
+		srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+
+		m_pCommandList->CopyTextureRegion(&destLocation, 0, 0, 0, &srcLocation, nullptr);
+	}
+	m_pCommandList->ResourceBarrier(1, &texRB_DEST_SHADERRES);
+	m_pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	DoFence();
+	WaitForFenceValue();	
+}
+
 void D3D12ResourceManager::CreateFence()
 {
 	// GPU 에 생성하는 것이라서 동기화를 시켜줘야 한다.
