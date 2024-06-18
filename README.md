@@ -10,3 +10,10 @@ D3D12 일기장 : [https://dorasima.tistory.com/category/프로그래밍/D3D12](
 Fbx Sdk 삽질 중입니다.
 
 도움을 주었다고 주장하는 곳 : [https://aps.autodesk.com/developer/overview/fbx-sdk/](https://aps.autodesk.com/developer/overview/fbx-sdk)
+
+-------
+나름 기능 확장을 위해.. 뭔가 시도하는 중 입니다.
+당장 시작하는 코드는 [Megayuchi](https://github.com/megayuchi)님꺼 따라했는데, 머.... 진행하다보면 많이 바뀌겠죠?
+
+
+
