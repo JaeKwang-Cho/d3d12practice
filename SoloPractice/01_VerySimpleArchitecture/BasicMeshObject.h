@@ -16,6 +16,7 @@ public:
 	
 	bool CreateMesh_UploadHeap();
 	bool CreateMesh_DefaultHeap();
+	bool CreateMesh_WithIndex();
 protected:
 private:
 	bool InitCommonResources();
@@ -32,8 +33,12 @@ protected:
 private:
 	D3D12Renderer* m_pRenderer;
 
+	// vertex data
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pVertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
+	// index data
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
+	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
 public:
 	BasicMeshObject();
 	~BasicMeshObject();

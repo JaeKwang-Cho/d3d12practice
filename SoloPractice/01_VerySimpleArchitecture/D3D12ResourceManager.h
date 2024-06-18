@@ -10,6 +10,9 @@ public:
 	HRESULT CreateVertexBuffer(
 		UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView,
 		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData);
+	HRESULT CreateIndexBuffer(
+		DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView,
+		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData);
 protected:
 private:
 

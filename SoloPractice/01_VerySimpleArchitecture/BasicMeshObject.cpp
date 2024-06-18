@@ -30,7 +30,11 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pC
 	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	// IA에 Vertex 정보를 bind 해주고
 	_pCommandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
-	_pCommandList->DrawInstanced(3, 1, 0, 0);
+
+	// Index로 Vertex를 그릴 때는, Index 정보도 bind 해주고
+	_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
+	// _pCommandList->DrawInstanced(3, 1, 0, 0);
+	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0); // 왼쪽 함수를 이용해 삼각형을 그린다.
 }
 
 bool BasicMeshObject::CreateMesh_UploadHeap()
@@ -124,6 +128,46 @@ bool BasicMeshObject::CreateMesh_DefaultHeap()
 		goto RETURN;
 	}
 	
+	bResult = true;
+RETURN:
+	return bResult;
+}
+
+bool BasicMeshObject::CreateMesh_WithIndex()
+{
+	bool bResult = false;
+
+	// Default Buffer에 Vertex와 Index를 올리는 것
+	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	// vertex buffer.
+	BasicVertex Vertices[] =
+	{
+		{ { -0.25f, 0.25f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
+		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.0f }, { 0.0f, 0.5f, 0.5f, 1.0f } }
+	};
+	// index buffer
+	uint16_t Indices[] =
+	{
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	const UINT vertexBufferSize = sizeof(Vertices);
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(static_cast<DWORD>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
 	bResult = true;
 RETURN:
 	return bResult;

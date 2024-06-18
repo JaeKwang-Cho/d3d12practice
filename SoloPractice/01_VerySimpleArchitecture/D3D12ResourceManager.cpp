@@ -1,4 +1,4 @@
-// D3D12ResourceManager.h from "megayuchi"
+// D3D12ResourceManager.cpp from "megayuchi"
 
 
 #include "pch.h"
@@ -120,6 +120,96 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwV
 		RETURN:
 			// fence를 쳐서 기다렸기 때문에 upload 버퍼는 없애줘도 된다.
 			return hr;
+}
+
+HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData)
+{
+	HRESULT hr = S_OK;
+
+	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
+	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	UINT indexBufferSize = sizeof(uint16_t) * _dwIndexNum;
+
+	// Index도 upload heap buffer를 이용해서 default heap buffer에 데이터를 올린다.
+	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	D3D12_HEAP_PROPERTIES heapProps_Upload = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	D3D12_RESOURCE_DESC ibDesc_BuffSize = CD3DX12_RESOURCE_DESC::Buffer(indexBufferSize);
+
+	hr = m_pD3DDevice->CreateCommittedResource(
+		&heapProps_Default,
+		D3D12_HEAP_FLAG_NONE,
+		&ibDesc_BuffSize,
+		D3D12_RESOURCE_STATE_COMMON,
+		nullptr,
+		IID_PPV_ARGS(pIndexBuffer.GetAddressOf())
+	);
+	if (FAILED(hr)) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (_pInitData) {
+		if (FAILED(m_pCommandAllocator->Reset())) {
+			__debugbreak();
+		}
+		if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+			__debugbreak();
+		}
+
+		hr = m_pD3DDevice->CreateCommittedResource(
+			&heapProps_Upload,
+			D3D12_HEAP_FLAG_NONE,
+			&ibDesc_BuffSize,
+			D3D12_RESOURCE_STATE_COMMON,
+			nullptr,
+			IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+		);
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+
+		// Index 정보를 upload buffer에 올린다.
+		UINT8* pIndexDataBegin = nullptr;
+		CD3DX12_RANGE writeRange(0, 0);
+
+		hr = pUploadBuffer->Map(0, &writeRange, reinterpret_cast<void**>(&pIndexDataBegin));
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+		memcpy(pIndexDataBegin, _pInitData, indexBufferSize);
+		pUploadBuffer->Unmap(0, nullptr);
+
+		// 이제 Upload Buffer에 있는 값을 Default 버퍼로 복사한다.
+		D3D12_RESOURCE_BARRIER ibRB_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+		D3D12_RESOURCE_BARRIER ibRB_DEST_INDEX = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+
+		m_pCommandList->ResourceBarrier(1, &ibRB_COMM_DEST);
+		m_pCommandList->CopyBufferRegion(pIndexBuffer.Get(), 0, pUploadBuffer.Get(), 0, indexBufferSize);
+		m_pCommandList->ResourceBarrier(1, &ibRB_DEST_INDEX);
+
+		m_pCommandList->Close();
+
+		ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+
+		m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+		DoFence();
+		WaitForFenceValue();
+	}
+
+	// Index Buffer View를 채운다.
+	indexBufferView.BufferLocation = pIndexBuffer->GetGPUVirtualAddress();
+	indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+	indexBufferView.SizeInBytes = indexBufferSize;
+
+	*_pOutIndexBufferView = indexBufferView;
+	*_ppOutBuffer = pIndexBuffer;
+
+RETURN:
+	return hr;
 }
 
 void D3D12ResourceManager::CreateFence()
