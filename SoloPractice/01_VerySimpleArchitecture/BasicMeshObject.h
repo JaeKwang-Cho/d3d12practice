@@ -13,7 +13,9 @@ class BasicMeshObject
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList);
-	bool CreateMesh();
+	
+	bool CreateMesh_UploadHeap();
+	bool CreateMesh_DefaultHeap();
 protected:
 private:
 	bool InitCommonResources();

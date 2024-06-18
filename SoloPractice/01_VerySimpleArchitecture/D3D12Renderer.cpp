@@ -5,6 +5,7 @@
 #include <dxgidebug.h>
 #include "D3DUtil.h"
 #include "BasicMeshObject.h"
+#include "D3D12ResourceManager.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -205,6 +206,10 @@ EXIT:
 	// d3d12는 완전 비둥기(asynchronous) api다.
 	CreateFence();
 
+	// Resource Manager
+	m_pResourceManager = new D3D12ResourceManager;
+	m_pResourceManager->Initialize(m_pD3DDevice);
+
 	bResult = true;
 RETURN:
 	/*
@@ -362,7 +367,9 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
 	pMeshObj->Initialize(this);
-	pMeshObj->CreateMesh();
+
+	//pMeshObj->CreateMesh_UploadHeap();
+	pMeshObj->CreateMesh_DefaultHeap();
 
 	return pMeshObj;
 }
@@ -459,11 +466,18 @@ void D3D12Renderer::CleanUpRenderer()
 	// 혹시 남아있을 GPU 작업을 마무리 한다.
 	WaitForFenceValue();
 
+	if (m_pResourceManager) {
+		delete m_pResourceManager;
+		m_pResourceManager = nullptr;
+	}
+
+
 	CleanupFence();
 }
 
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),
+	m_pResourceManager(nullptr),
 	m_pCommandList(nullptr), m_ui64enceValue(0), m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),

@@ -3,6 +3,7 @@
 #pragma once
 
 const UINT SWAP_CHAIN_FRAME_COUNT = 2;
+class D3D12ResourceManager;
 
 class D3D12Renderer
 {
@@ -39,6 +40,9 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_pCommandAllocator;
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_pCommandList;// 잘 모르지만 제일 최신거 사용해보기22
 
+	// Resource를 GPU에 올려주는 친구
+	D3D12ResourceManager* m_pResourceManager;
+
 	UINT64 m_ui64enceValue;
 
 	D3D_FEATURE_LEVEL m_FeatureLevel;
@@ -70,5 +74,6 @@ public:
 	~D3D12Renderer();
 
 	Microsoft::WRL::ComPtr<ID3D12Device5> INL_GetD3DDevice() { return m_pD3DDevice; }
+	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
 };
 

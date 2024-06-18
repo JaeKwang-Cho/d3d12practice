@@ -4,6 +4,7 @@
 #include "BasicMeshObject.h"
 #include "typedef.h"
 #include "D3D12Renderer.h"
+#include "D3D12ResourceManager.h"
 
 #pragma comment(lib, "D3DCompiler.lib")
 
@@ -32,7 +33,7 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pC
 	_pCommandList->DrawInstanced(3, 1, 0, 0);
 }
 
-bool BasicMeshObject::CreateMesh()
+bool BasicMeshObject::CreateMesh_UploadHeap()
 {
 	// 지금은 임시로 점을 임의로 몇개 찍어서 그려보는 것이다.
 	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
@@ -98,6 +99,34 @@ bool BasicMeshObject::CreateMesh()
 	m_VertexBufferView.SizeInBytes = vertexBufferSize;
 
 	return true;
+}
+
+bool BasicMeshObject::CreateMesh_DefaultHeap()
+{
+	bool bResult = false;
+
+	// Default Buffer에 Vertex 정보를 올려보는 것
+	Microsoft::WRL::ComPtr<ID3D12Device5> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	// 대충 찍어보자.
+	BasicVertex Vertices[] =
+	{
+		{ { 0.0f, 0.33f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ { 0.33f, -0.33f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.33f, -0.33f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+	};
+
+	const UINT vertexBufferSize = sizeof(Vertices);
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+	
+	bResult = true;
+RETURN:
+	return bResult;
 }
 
 bool BasicMeshObject::InitCommonResources()
