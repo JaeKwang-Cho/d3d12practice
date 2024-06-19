@@ -6,6 +6,8 @@
 #include "D3DUtil.h"
 #include "BasicMeshObject.h"
 #include "D3D12ResourceManager.h"
+#include "ConstantBufferPool.h"
+#include "DescriptorPool.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -195,6 +197,7 @@ EXIT:
 
 			m_pRenderTargets[i]->SetName(L"Render Target Resource");
 		}
+		m_srvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
 	// #9 Command List를 만든다.
@@ -209,6 +212,14 @@ EXIT:
 	// Resource Manager
 	m_pResourceManager = new D3D12ResourceManager;
 	m_pResourceManager->Initialize(m_pD3DDevice);
+
+	// Constant Buffer Pool
+	m_pConstantBufferPool = new ConstantBufferPool;
+	m_pConstantBufferPool->Initialize(m_pD3DDevice, AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_DEFAULT)), MAX_DRAW_COUNT_PER_FRAME);
+
+	// Descriptor Pool
+	m_pDescriptorPool = new DescriptorPool;
+	m_pDescriptorPool->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME* BasicMeshObject::DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
 
 	bResult = true;
 RETURN:
@@ -310,6 +321,10 @@ void D3D12Renderer::Present()
 	DoFence();
 
 	WaitForFenceValue();
+
+	// 한 프레임이 끝났으니 0으로 초기화 한다.
+	m_pConstantBufferPool->Reset();
+	m_pDescriptorPool->Reset();
 }
 
 bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
@@ -372,7 +387,8 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 	//pMeshObj->CreateMesh_DefaultHeap();
 	//pMeshObj->CreateMesh_WithIndex();
 	//pMeshObj->CreateMesh_WithTexture();
-	pMeshObj->CreateMesh_WithCB();
+	//pMeshObj->CreateMesh_WithCB();
+	pMeshObj->CreateMesh();
 
 	return pMeshObj;
 }
@@ -475,17 +491,28 @@ void D3D12Renderer::CleanUpRenderer()
 		m_pResourceManager = nullptr;
 	}
 
+	if (m_pConstantBufferPool) {
+		delete m_pConstantBufferPool;
+		m_pConstantBufferPool = nullptr;
+	}
+
+	if (m_pDescriptorPool) {
+		delete m_pDescriptorPool;
+		m_pDescriptorPool = nullptr;
+	}
+
 
 	CleanupFence();
 }
 
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),
-	m_pResourceManager(nullptr),
+	m_pResourceManager(nullptr), m_pConstantBufferPool(nullptr), m_pDescriptorPool(nullptr),
 	m_pCommandList(nullptr), m_ui64enceValue(0), m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),
-	m_rtvDescriptorSize(0), m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
+	m_rtvDescriptorSize(0), m_srvDescriptorSize(0),
+	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0)
 {

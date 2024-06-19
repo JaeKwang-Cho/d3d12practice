@@ -3,10 +3,14 @@
 #pragma once
 
 const UINT SWAP_CHAIN_FRAME_COUNT = 2;
+
 class D3D12ResourceManager;
+class ConstantBufferPool;
+class DescriptorPool;
 
 class D3D12Renderer
 {
+public:
 	static const UINT MAX_DRAW_COUNT_PER_FRAME = 256;
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
@@ -43,6 +47,10 @@ private:
 
 	// Resource를 GPU에 올려주는 친구
 	D3D12ResourceManager* m_pResourceManager;
+	// CBV pool
+	ConstantBufferPool* m_pConstantBufferPool;
+	// DescriptorPool
+	DescriptorPool* m_pDescriptorPool;
 
 	UINT64 m_ui64enceValue;
 
@@ -56,6 +64,8 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
 
 	UINT m_rtvDescriptorSize;
+	UINT m_srvDescriptorSize;
+
 	UINT m_dwSwapChainFlags;
 	UINT m_uiRenderTargetIndex;
 	
@@ -76,5 +86,8 @@ public:
 
 	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
 	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
+	ConstantBufferPool* INL_GetConstantBufferPool() { return m_pConstantBufferPool; }
+	DescriptorPool* INL_DescriptorPool() { return m_pDescriptorPool; }
+	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 };
 

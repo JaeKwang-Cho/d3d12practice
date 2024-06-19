@@ -25,6 +25,12 @@
     <Filter Include="Renderer\ResourceManager">
       <UniqueIdentifier>{bc88916b-ff0c-4068-a7a1-6aaefe8c482f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\ConstantBufferPool">
+      <UniqueIdentifier>{9ec96282-57d4-4b12-957d-60904b869164}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\DescriptorPool">
+      <UniqueIdentifier>{28ad5a8a-f0a8-4486-84b9-93126ef93655}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -45,6 +51,12 @@
     </ClInclude>
     <ClInclude Include="D3D12ResourceManager.h">
       <Filter>Renderer\ResourceManager</Filter>
+    </ClInclude>
+    <ClInclude Include="ConstantBufferPool.h">
+      <Filter>Renderer\ConstantBufferPool</Filter>
+    </ClInclude>
+    <ClInclude Include="DescriptorPool.h">
+      <Filter>Renderer\DescriptorPool</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -72,6 +84,12 @@
     </ClCompile>
     <ClCompile Include="D3D12ResourceManager.cpp">
       <Filter>Renderer\ResourceManager</Filter>
+    </ClCompile>
+    <ClCompile Include="ConstantBufferPool.cpp">
+      <Filter>Renderer\ConstantBufferPool</Filter>
+    </ClCompile>
+    <ClCompile Include="DescriptorPool.cpp">
+      <Filter>Renderer\DescriptorPool</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -51,4 +51,8 @@ using Microsoft::WRL::ComPtr;
 // 자료형
 #include "typedef.h"
 
+// 표준 때문에 어거지로 정한 값
+extern D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT;
+extern D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD;
+
 

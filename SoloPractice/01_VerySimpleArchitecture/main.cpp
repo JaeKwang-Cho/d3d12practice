@@ -28,6 +28,10 @@ WCHAR g_szWindowClass[] = L"Main Window";
 int g_ClientWidth = 1280;
 int g_ClientHeight = 720;
 
+// D3D12 전역변수
+D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
 void* g_pMeshObj = nullptr;
@@ -124,8 +128,15 @@ void RunGame()
     Update();
 
     // rendering objects
+    // 하나의 object에 대해서 2번 렌더링을 다르게 한다.
+    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, 0.f);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, g_fOffsetY);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, 0.f);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, -g_fOffsetY);
     g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, g_fOffsetY);
-
+    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, -g_fOffsetY);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, g_fOffsetY);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, -g_fOffsetY);
     // end
     g_pRenderer->EndRender();
 
@@ -141,6 +152,15 @@ void Update()
         g_fSpeed *= -1.0f;
     }
     if (g_fOffsetX < -0.75f)
+    {
+        g_fSpeed *= -1.0f;
+    }
+    g_fOffsetY += g_fSpeed;
+    if (g_fOffsetY > 0.75f)
+    {
+        g_fSpeed *= -1.0f;
+    }
+    if (g_fOffsetY < -0.75f)
     {
         g_fSpeed *= -1.0f;
     }

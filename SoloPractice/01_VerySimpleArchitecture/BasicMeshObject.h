@@ -19,16 +19,19 @@ class BasicMeshObject
 	static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 	static DWORD m_dwInitRefCount;
 
-	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
+public:
+	// static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
+	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 1; // 지금은 일단 CB 하나만 넘어간다. Pool에서도 Draw당 View 1개씩만 가져온다.
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos);
-	
-	bool CreateMesh_UploadHeap();
-	bool CreateMesh_DefaultHeap();
-	bool CreateMesh_WithIndex();
-	bool CreateMesh_WithTexture();
-	bool CreateMesh_WithCB();
+
+	bool CreateMesh();
+	//bool CreateMesh_UploadHeap();
+	//bool CreateMesh_DefaultHeap();
+	//bool CreateMesh_WithIndex();
+	//bool CreateMesh_WithTexture();
+	//bool CreateMesh_WithCB();
 protected:
 private:
 	bool InitCommonResources();
@@ -38,7 +41,7 @@ private:
 	bool InitPipelineState();
 
 	// Texture Resource를 Shader로 넘기기 위한 Table을 생성한다.
-	bool CreateDescriptorTable();
+	//bool CreateDescriptorTable();
 
 	void CleanUpMesh();
 public:

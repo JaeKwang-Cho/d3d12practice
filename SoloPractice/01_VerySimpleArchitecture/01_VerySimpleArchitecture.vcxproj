@@ -136,18 +136,22 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="BasicMeshObject.h" />
+    <ClInclude Include="ConstantBufferPool.h" />
     <ClInclude Include="D3D12Renderer.h" />
     <ClInclude Include="D3D12ResourceManager.h" />
     <ClInclude Include="D3DUtil.h" />
+    <ClInclude Include="DescriptorPool.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="typedef.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
+    <ClCompile Include="ConstantBufferPool.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
     <ClCompile Include="D3D12ResourceManager.cpp" />
     <ClCompile Include="D3DUtil.cpp" />
+    <ClCompile Include="DescriptorPool.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp" />
   </ItemGroup>
