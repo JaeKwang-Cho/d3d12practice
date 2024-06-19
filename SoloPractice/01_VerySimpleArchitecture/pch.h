@@ -35,6 +35,8 @@
 #include <DirectXColors.h>
 #include <DirectXMath.h>
 
+using namespace DirectX;
+
 // 괜히 최신 DirectX 사용하기 (d3d + dxgi)
 #include <dxgi1_6.h>
 #include <d2d1_3.h>
@@ -45,5 +47,8 @@ using Microsoft::WRL::ComPtr;
 
 // 어써트
 #include <cassert>
+
+// 자료형
+#include "typedef.h"
 
 

@@ -371,7 +371,8 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 	//pMeshObj->CreateMesh_UploadHeap();
 	//pMeshObj->CreateMesh_DefaultHeap();
 	//pMeshObj->CreateMesh_WithIndex();
-	pMeshObj->CreateMesh_WithTexture();
+	//pMeshObj->CreateMesh_WithTexture();
+	pMeshObj->CreateMesh_WithCB();
 
 	return pMeshObj;
 }
@@ -383,10 +384,11 @@ void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 	delete pMeshObj;
 }
 
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle)
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
-	pMeshObj->Draw(m_pCommandList.Get());
+	XMFLOAT2 pos(_xOffset, _yOffset);
+	pMeshObj->Draw(m_pCommandList.Get(), &pos);
 }
 
 void D3D12Renderer::CreateCommandList()

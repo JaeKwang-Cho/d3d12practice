@@ -1,9 +1,5 @@
 #pragma once
 
-#include <DirectXMath.h>
-
-using namespace DirectX;
-
 struct BasicVertex {
 	XMFLOAT3 position;
 	XMFLOAT4 color;
@@ -19,4 +15,9 @@ union RGBA
 		BYTE a;
 	};
 	BYTE bColorFactor[4];
+};
+
+struct CONSTANT_BUFFER_DEFAULT
+{
+	XMFLOAT4 offset;
 };

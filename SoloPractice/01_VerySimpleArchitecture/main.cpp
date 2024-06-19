@@ -31,9 +31,14 @@ int g_ClientHeight = 720;
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
 void* g_pMeshObj = nullptr;
-
+// test
+float g_fOffsetX = 0.f;
+float g_fOffsetY = 0.f;
+float g_fSpeed = 0.01f;
+ 
 // 렌더링 함수
-void Draw();
+void RunGame();
+void Update();
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -77,7 +82,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else {
             // Rendering
-            Draw();
+            RunGame();
         }
     }
 
@@ -110,21 +115,35 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     return (int) msg.wParam;
 }
 
-void Draw()
+void RunGame()
 {
     // begin
     g_pRenderer->BeginRender();
 
     // game business logic
+    Update();
 
     // rendering objects
-    g_pRenderer->RenderMeshObject(g_pMeshObj);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, g_fOffsetY);
 
     // end
     g_pRenderer->EndRender();
 
     // Present
     g_pRenderer->Present();
+}
+
+void Update()
+{
+    g_fOffsetX += g_fSpeed;
+    if (g_fOffsetX > 0.75f)
+    {
+        g_fSpeed *= -1.0f;
+    }
+    if (g_fOffsetX < -0.75f)
+    {
+        g_fSpeed *= -1.0f;
+    }
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

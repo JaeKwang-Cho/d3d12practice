@@ -21,8 +21,11 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList)
+void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos)
 {
+	m_pSysConstBufferDefault->offset.x = _pPos->x;
+	m_pSysConstBufferDefault->offset.y = _pPos->y;
+
 	// root signature를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
 	// Texture를 넘겨줄 Descriptor Heap도 설정하고
@@ -43,7 +46,7 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pC
 
 	// Index로 Vertex를 그릴 때는, Index 정보도 bind 해준다.
 	//_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
-	// _pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0); // 왼쪽 함수를 이용해 삼각형을 그린다.
+	//_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0); // 왼쪽 함수를 이용해 삼각형을 그린다.
 	 
 }
 
@@ -266,6 +269,59 @@ RETURN:
 	return bResult;
 }
 
+bool BasicMeshObject::CreateMesh_WithCB()
+{
+	bool bResult = CreateMesh_WithTexture();
+	if (!bResult) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	// Constant Buffer를 만든다.
+	{
+		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+		// CB는 하드웨어 성능상의 이유로 256-bytes aligned이여야 한다.
+		const UINT constantBufferSize = static_cast<UINT>(AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_DEFAULT)));
+
+		D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+		D3D12_RESOURCE_DESC cbDesc_Size = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);
+		// Upload Buffer로 만들어줘서, 상시 업데이트가 가능하도록 만들자.
+		HRESULT hr = pD3DDevice->CreateCommittedResource(
+			&heapProps_Default,
+			D3D12_HEAP_FLAG_NONE,
+			&cbDesc_Size,
+			D3D12_RESOURCE_STATE_COMMON,
+			nullptr,
+			IID_PPV_ARGS(m_pConstantBuffer.GetAddressOf())
+		);
+		if (FAILED(hr)) {
+			__debugbreak();
+		}
+
+		// Constant Buffer View도 생성해준다.
+		D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+		cbvDesc.BufferLocation = m_pConstantBuffer->GetGPUVirtualAddress();
+		cbvDesc.SizeInBytes = constantBufferSize;
+		// heap 위의 위치를 지정해주고
+		CD3DX12_CPU_DESCRIPTOR_HANDLE cbv(m_pDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::CBV), m_srvDescriptorSize);
+		pD3DDevice->CreateConstantBufferView(&cbvDesc, cbv);
+
+		// 초기 값을 지정해주고, 지속적으로 업데이트를 해주기 위해 Unmap을 하지 않는다. 
+		CD3DX12_RANGE writeRange(0, 0);
+		hr = m_pConstantBuffer->Map(0, &writeRange, reinterpret_cast<void**>(&m_pSysConstBufferDefault));
+		if (FAILED(hr)) {
+			__debugbreak();
+		}
+		m_pSysConstBufferDefault->offset.x = 0.f;
+		m_pSysConstBufferDefault->offset.y = 0.f;
+	}
+	bResult = true;
+RETURN:
+	return bResult;
+}
+
 bool BasicMeshObject::InitCommonResources()
 {
 	// root signature와 PSO를 싱글톤으로 사용한다.
@@ -305,9 +361,10 @@ bool BasicMeshObject::InitRootSignature()
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
-	// Texture가 넘어가는걸 표현해줄 root signature를 만든다.
-	CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
-	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
+	// CB와 Texture가 넘어가는걸 표현해줄 root signature를 만든다.
+	CD3DX12_DESCRIPTOR_RANGE ranges[2] = {};
+	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 : Constant Buffer View
+	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
 	
 	// table 0번에 저장한다.
 	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};

@@ -4,7 +4,9 @@
 // Descriptor Handle Offset을 이렇게 enum 값으로 정한다.
 enum class BASIC_MESH_DESCRIPTOR_INDEX
 {
-	TEX = 0
+	CBV = 0, // Contant Buffer View
+	TEX = 1, 
+	END
 };
 
 class D3D12Renderer;
@@ -17,15 +19,16 @@ class BasicMeshObject
 	static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 	static DWORD m_dwInitRefCount;
 
-	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 1; // 일단은 텍스쳐 한개다.
+	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> _pCommandList);
+	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos);
 	
 	bool CreateMesh_UploadHeap();
 	bool CreateMesh_DefaultHeap();
 	bool CreateMesh_WithIndex();
 	bool CreateMesh_WithTexture();
+	bool CreateMesh_WithCB();
 protected:
 private:
 	bool InitCommonResources();
@@ -53,6 +56,9 @@ private:
 	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
 	// texture data
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pTexResource;
+	// constant buffer
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pConstantBuffer;
+	CONSTANT_BUFFER_DEFAULT* m_pSysConstBufferDefault;
 
 	// for Descriptor Table
 	UINT m_srvDescriptorSize;

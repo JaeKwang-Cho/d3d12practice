@@ -1,31 +1,12 @@
-// Default Shader
-// position, color
-
-/*
-struct PSInput
-{
-    float4 position : SV_POSITION;
-    float4 color : COLOR;
-};
-
-PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
-{
-    PSInput result;
-
-    result.position = position;
-    result.color = color;
-
-    return result;
-}
-
-float4 PSMain(PSInput input) : SV_TARGET
-{
-    return input.color;
-}
-*/
+// Simple.hlsl from "megayuchi"
 
 Texture2D texDiffuse : register(t0);
 SamplerState samplerDiffuse : register(s0);
+
+cbuffer CONSTANT_BUFFER_DEFAULT : register(b0)
+{
+    float4 g_Offset;
+};
 
 struct VSInput
 {
@@ -47,6 +28,7 @@ PSInput VS(VSInput _vin)
     
     vout.color = _vin.color;
     vout.pos = float4(_vin.pos, 1.0f);
+    vout.pos.xy += g_Offset.xy;
     vout.TexCoord = _vin.TexCoord;
 
     return vout;

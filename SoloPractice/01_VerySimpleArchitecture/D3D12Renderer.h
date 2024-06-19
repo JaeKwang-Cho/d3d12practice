@@ -7,6 +7,7 @@ class D3D12ResourceManager;
 
 class D3D12Renderer
 {
+	static const UINT MAX_DRAW_COUNT_PER_FRAME = 256;
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
 	void BeginRender();
@@ -17,7 +18,7 @@ public:
 	
 	void* CreateBasicMeshObject_Return_New();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
-	void RenderMeshObject(void* _pMeshObjectHandle);
+	void RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset);
 protected:
 private:
 	void CreateCommandList();
