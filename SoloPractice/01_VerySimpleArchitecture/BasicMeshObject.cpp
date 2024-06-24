@@ -23,7 +23,7 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, D3D12_CPU_DESCRIPTOR_HANDLE _srv)
+void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld, D3D12_CPU_DESCRIPTOR_HANDLE _srv)
 {
 	// D3D12는 완전 비동기 API이고, GPU와 CPU의 타임라인이 동기화 되어있지 않다.
 	// 그래서 draw를 할 때, shader에 넘어가는 resource들이 구분되어서 안전하게 있어야 한다.
@@ -53,8 +53,17 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 
 	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCB->pSystemMemAddr);
 	// 값을 업데이트 하고
-	pConstantBufferDefault->offset.x = _pPos->x;
-	pConstantBufferDefault->offset.y = _pPos->y;
+	XMMATRIX viewMat;
+	XMMATRIX projMat;
+	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
+
+	pConstantBufferDefault->matView = XMMatrixTranspose(viewMat);
+	pConstantBufferDefault->matProj = XMMatrixTranspose(projMat);
+	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
+
+	XMMATRIX wvpMat = (*_pMatWorld) * viewMat * projMat;
+
+	pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
 
 	// 루트 시그니처를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
@@ -77,7 +86,8 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	_pCommandList->SetPipelineState(m_pPipelineState.Get());
 	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	_pCommandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
-	_pCommandList->DrawInstanced(3, 1, 0, 0);
+	_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
+	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 }
 
 bool BasicMeshObject::CreateMesh()
@@ -91,14 +101,26 @@ bool BasicMeshObject::CreateMesh()
 	// 대충 찍어보자.
 	BasicVertex Vertices[] =
 	{
-		{ { 0.0f, 0.33f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } , { 0.5f, 0.0f } },
-		{ { 0.33f, -0.33f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } , { 1.0f, 1.0f }  },
-		{ { -0.33f, -0.33f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } , { 0.0f, 1.0f } }
+		{ { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
+		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
+		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
+	};
+
+	uint16_t Indices[] =
+	{
+		0, 1, 2,
+		0, 2, 3
 	};
 
 	const UINT vertexBufferSize = sizeof(Vertices);
 
 	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(static_cast<DWORD>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices))) {
 		__debugbreak();
 		goto RETURN;
 	}
@@ -229,13 +251,20 @@ bool BasicMeshObject::InitPipelineState()
 	psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderBlob->GetBufferPointer(), pPixelShaderBlob->GetBufferSize());
 
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState.DepthEnable = false;
+
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthEnable = true; // 이제 depth 버퍼를 사용한다.
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL; // depth값이 작은 것(z가 작아서 앞에 있는 것)을 그린다.
 	psoDesc.DepthStencilState.StencilEnable = false;
 
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 	psoDesc.NumRenderTargets = 1;
 	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT; // 생성했던 리소스와 동일한 포맷을 이용한다.
+
 	psoDesc.SampleDesc.Count = 1;
 	psoDesc.SampleMask = UINT_MAX; // 지 혼자 0으로 초기회 된다.
 	
@@ -253,10 +282,9 @@ void BasicMeshObject::CleanUpMesh()
 }
 
 BasicMeshObject::BasicMeshObject()
-	:m_pRenderer(nullptr), m_pVertexBuffer(nullptr), m_VertexBufferView{},
-	m_pIndexBuffer(nullptr), m_IndexBufferView{}, m_pTexResource(nullptr),
-	m_pConstantBuffer(nullptr), m_pSysConstBufferDefault(nullptr),
-	m_srvDescriptorSize(0), m_pDescriptorHeap(nullptr)
+	:m_pRenderer(nullptr), 
+	m_pVertexBuffer(nullptr), m_VertexBufferView{},
+	m_pIndexBuffer(nullptr), m_IndexBufferView{}
 {
 }
 

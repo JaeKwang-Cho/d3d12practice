@@ -21,7 +21,10 @@ union RGBA
 
 struct CONSTANT_BUFFER_DEFAULT
 {
-	XMFLOAT4 offset;
+	XMMATRIX matWorld;
+	XMMATRIX matView;
+	XMMATRIX matProj;
+	XMMATRIX matWVP;
 };
 
 struct TEXTURE_HANDLE

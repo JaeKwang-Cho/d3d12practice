@@ -125,8 +125,8 @@ EXIT:
 		}
 	}
 	m_pCommandQueue->SetName(L"Command Queue");
-	// #6 Descriptor Heap을 생성한다.
-	CreateDescriptorHeap();
+	// #6 RTV용 Descriptor Heap을 생성한다.
+	CreateDescriptorHeapForRTV();
 
 	// #7 swap chain과 그에 필요한 ID3DResource를 만든다.
 
@@ -201,10 +201,14 @@ EXIT:
 		m_srvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
-	// #9 Command List를 만든다.
+	// #9 depth-stencil 전용 Heap과 그위에 resource view를 만든다.
+	CreateDescriptorHeapForDSV();
+	CreateDepthStencil(m_dwWidth, m_dwHeight);
+
+	// #10 Command List를 만든다.
 	CreateCommandList();
 
-	// #10 fence를 정의한다.
+	// #11 fence를 정의한다.
 	// synchronization objects가 필요한 이유는, d3d12는 GPU에서 리소스를 사용하기 전에
 	// 그것을 해제해 버릴 수 있다. 그래서 이렇게 fence를 쳐줘서 없애기 전에 확인 해준다.
 	// d3d12는 완전 비둥기(asynchronous) api다.
@@ -225,6 +229,8 @@ EXIT:
 	// SingleDescriptorAllocator
 	m_pSingleDescriptorAllocator = new SingleDescriptorAllocator;
 	m_pSingleDescriptorAllocator->Initialize(m_pD3DDevice, MAX_DESCRIPRTOR_COUNT, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+
+	InitCamera();
 
 	bResult = true;
 RETURN:
@@ -269,16 +275,21 @@ void D3D12Renderer::BeginRender()
 	D3D12_RESOURCE_BARRIER trans_PRESENT_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_RT);
 
+	// DSV도 얻어온다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
+
 	// command를 기록한다.
-	// RTV handle과 초기화 할 색을 넣어준다. (z 버퍼는 생략되었다.)
+	// RTV handle과 초기화 할 색을 넣어준다.
 	m_pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::LightSteelBlue, 0, nullptr);
+	// DSV도 적절히 초기화 해준다.
+	m_pCommandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
 
 	// viewport, scissor rect, render target을 설정해줘야
 	// 그 위에 뭔가를 그릴 수 있다.
 	m_pCommandList->RSSetViewports(1, &m_Viewport);
 	m_pCommandList->RSSetScissorRects(1, &m_ScissorRect);
-	// 현재도 z 버퍼는 생략되었다.
-	m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+	// 이제 z버퍼를 함께 넣어준다.
+	m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 }
 
 void D3D12Renderer::EndRender()
@@ -380,6 +391,8 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 	m_ScissorRect.top = 0;
 	m_ScissorRect.bottom = _dwHeight;
 
+	InitCamera();
+
 	return true;
 }
 
@@ -405,16 +418,15 @@ void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 	delete pMeshObj;
 }
 
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset, void* _pTexHandle)
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, void* _pTexHandle)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
-	XMFLOAT2 pos(_xOffset, _yOffset);
 
 	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
 	if (_pTexHandle) {
 		srv = ((TEXTURE_HANDLE*)_pTexHandle)->srv;
 	}
-	pMeshObj->Draw(m_pCommandList.Get(), &pos, srv);
+	pMeshObj->Draw(m_pCommandList.Get(), pMatWorld, srv);
 }
 
 void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
@@ -501,10 +513,8 @@ void D3D12Renderer::CreateCommandList()
 	m_pCommandList->Close();
 }
 
-bool D3D12Renderer::CreateDescriptorHeap()
+bool D3D12Renderer::CreateDescriptorHeapForRTV()
 {
-	HRESULT hr = S_OK;
-
 	// Render Target용 Descriptor heap을 만든다.
 	// Render Target도 ID3D12Resource를 사용한다.
 	// 그래서 RT도 GPU가 사용할 버퍼(물리 메모리)를 만들어줘야 하는 것이다.
@@ -521,6 +531,89 @@ bool D3D12Renderer::CreateDescriptorHeap()
 	m_rtvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
 	return true;
+}
+
+bool D3D12Renderer::CreateDescriptorHeapForDSV()
+{
+	// Depth-Stencil용 DescriptorHeap을 만든다.
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1; // 일단 기본으로 하나만 만든다.
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(m_pDSVHeap.GetAddressOf())))) {
+		__debugbreak();
+	}
+	m_dsvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+
+	return true;
+}
+
+bool D3D12Renderer::CreateDepthStencil(UINT _width, UINT _height)
+{
+	// Depth-Stencil 값을 저장할 Texture View를 생성한다.
+	D3D12_DEPTH_STENCIL_VIEW_DESC dsDesc = {};
+	dsDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	dsDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	dsDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	// 초기화할 값을 설정한다.
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+	depthOptimizedClearValue.DepthStencil.Depth = 1.f;
+	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+	CD3DX12_RESOURCE_DESC depthDesc(
+		D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+		0,
+		_width,
+		_height,
+		1,
+		1,
+		DXGI_FORMAT_R32_TYPELESS,
+		1,
+		0,
+		D3D12_TEXTURE_LAYOUT_UNKNOWN,
+		D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+	);
+
+	// resource를 만들고
+	if (FAILED(m_pD3DDevice->CreateCommittedResource(
+		&HEAP_PROPS_DEFAULT,
+		D3D12_HEAP_FLAG_NONE,
+		&depthDesc,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthOptimizedClearValue,
+		IID_PPV_ARGS(m_pDepthStencil.GetAddressOf())
+	))) {
+		__debugbreak();
+	}
+
+	// heap에 view로 올린다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
+	m_pD3DDevice->CreateDepthStencilView(m_pDepthStencil.Get(), &dsDesc, dsvHandle);
+
+	return true;
+}
+
+void D3D12Renderer::InitCamera()
+{
+	// 가장 기본적인 카메라 설정으로 한다.
+	XMVECTOR eyePos = XMVectorSet(0.f, 0.f, -1.f, 1.f);
+	XMVECTOR eyeDir = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMVECTOR upDir = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+
+	// View (DirectX는 기본적으로 왼손 좌표계)
+	m_matView = XMMatrixLookAtLH(eyePos, eyeDir, upDir);
+
+	// FOV
+	float fovY = XM_PIDIV4;
+
+	// Projection
+	float fAspectRatio = (float)m_dwWidth / (float)m_dwHeight;
+	float fNear = 0.1f;
+	float fFar = 1000.f;
+
+	m_matProj = XMMatrixPerspectiveFovLH(fovY, fAspectRatio, fNear, fFar);
 }
 
 void D3D12Renderer::CreateFence()
@@ -593,12 +686,13 @@ D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),
 	m_pResourceManager(nullptr), m_pConstantBufferPool(nullptr), m_pDescriptorPool(nullptr), m_pSingleDescriptorAllocator(nullptr),
 	m_pCommandList(nullptr), m_ui64enceValue(0), m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
-	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
+	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, m_pDepthStencil(nullptr),
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),
-	m_rtvDescriptorSize(0), m_srvDescriptorSize(0),
+	m_rtvDescriptorSize(0), m_srvDescriptorSize(0), m_dsvDescriptorSize(0),
 	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
-	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0)
+	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
+	m_matView{}, m_matProj{}
 {
 }
 
@@ -606,3 +700,4 @@ D3D12Renderer::~D3D12Renderer()
 {
 	CleanUpRenderer();
 }
+

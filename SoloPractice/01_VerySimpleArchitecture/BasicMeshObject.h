@@ -24,7 +24,7 @@ public:
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	// 추가적으로 SRV Handle을 입력으로 받는다.
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, D3D12_CPU_DESCRIPTOR_HANDLE _srv);
+	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld, D3D12_CPU_DESCRIPTOR_HANDLE _srv);
 
 	bool CreateMesh();
 	//bool CreateMesh_UploadHeap();
@@ -57,15 +57,6 @@ private:
 	// index data
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
-	// texture data
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pTexResource;
-	// constant buffer
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pConstantBuffer;
-	CONSTANT_BUFFER_DEFAULT* m_pSysConstBufferDefault;
-
-	// for Descriptor Table
-	UINT m_srvDescriptorSize;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pDescriptorHeap;
 public:
 	BasicMeshObject();
 	~BasicMeshObject();

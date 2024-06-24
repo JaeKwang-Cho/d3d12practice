@@ -24,14 +24,20 @@ public:
 	
 	void* CreateBasicMeshObject_Return_New();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
-	void RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset, void* _pTexHandle);
+	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, void* _pTexHandle);
 
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
 	void DeleteTexture(void* _pTexHandle);
 protected:
 private:
 	void CreateCommandList();
-	bool CreateDescriptorHeap();
+
+	bool CreateDescriptorHeapForRTV();
+	bool CreateDescriptorHeapForDSV();
+	bool CreateDepthStencil(UINT _width, UINT _height);
+
+	void InitCamera();
+
 	void CreateFence();
 	void CleanupFence();
 
@@ -66,12 +72,14 @@ private:
 
 	Microsoft::WRL::ComPtr<IDXGISwapChain4> m_pSwapChain;
 	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pRenderTargets[SWAP_CHAIN_FRAME_COUNT];
+	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pDepthStencil;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pRTVHeap;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pDSVHeap;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
 
 	UINT m_rtvDescriptorSize;
 	UINT m_srvDescriptorSize;
+	UINT m_dsvDescriptorSize;
 
 	UINT m_dwSwapChainFlags;
 	UINT m_uiRenderTargetIndex;
@@ -87,6 +95,10 @@ private:
 	DWORD m_dwWidth;
 	DWORD m_dwHeight;
 
+	// Camera 
+	XMMATRIX m_matView;
+	XMMATRIX m_matProj;
+
 public:
 	D3D12Renderer();
 	~D3D12Renderer();
@@ -96,6 +108,12 @@ public:
 	ConstantBufferPool* INL_GetConstantBufferPool() { return m_pConstantBufferPool; }
 	DescriptorPool* INL_DescriptorPool() { return m_pDescriptorPool; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
-	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator;	}
+	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
+	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj) {
+		*_pOutMatView = m_matView;
+		*_pOutMatProj = m_matProj;
+		//*_pOutMatView = XMMatrixTranspose(m_matView);
+		//*_pOutMatProj = XMMatrixTranspose(m_matProj);
+	}
 };
 

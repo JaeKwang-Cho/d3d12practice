@@ -39,6 +39,12 @@ void* g_pMeshObj = nullptr;
 void* g_pTexHandle0 = nullptr;
 void* g_pTexHandle1 = nullptr;
 
+float g_fRot0 = 0.0f;
+float g_fRot1 = 0.0f;
+
+XMMATRIX g_matWorld0 = {};
+XMMATRIX g_matWorld1 = {};
+
 // test
 float g_fOffsetX = 0.f;
 float g_fOffsetY = 0.f;
@@ -145,14 +151,8 @@ void RunGame()
 
     // rendering objects
     // 하나의 object에 대해서 2번 렌더링을 다르게 한다.
-    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, 0.f, g_pTexHandle0);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, g_fOffsetY, g_pTexHandle1);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, 0.f);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, -g_fOffsetY);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, g_fOffsetY);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, -g_fOffsetY);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, g_fOffsetY);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, -g_fOffsetY);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld0, g_pTexHandle0);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld1, g_pTexHandle1);
     // end
     g_pRenderer->EndRender();
 
@@ -162,31 +162,30 @@ void RunGame()
 
 void Update()
 {
-    bool bDirChange = false;
-    g_fOffsetX += g_fSpeed;
-    if (g_fOffsetX > 0.75f)
+    g_matWorld0 = XMMatrixIdentity();
+    XMMATRIX matRot0 = XMMatrixRotationX(g_fRot0);
+    XMMATRIX matTrans0 = XMMatrixTranslation(-0.15f, 0.0f, 0.25f);
+
+    g_matWorld0 = XMMatrixMultiply(matRot0, matTrans0);
+
+    g_matWorld1 = XMMatrixIdentity();
+    XMMATRIX matRot1 = XMMatrixRotationY(g_fRot1);
+    XMMATRIX matTrans1 = XMMatrixTranslation(0.15f, 0.0f, 0.25f);
+
+    g_matWorld1 = XMMatrixMultiply(matRot1, matTrans1);
+
+    bool bChangeTex = false;
+    g_fRot0 += 0.05f;
+    if (g_fRot0 > 2.0f * XM_PI)
     {
-        g_fSpeed *= -1.0f;
+        g_fRot0 = 0.0f;
+        bChangeTex = TRUE;
     }
-    if (g_fOffsetX < -0.75f)
+
+    g_fRot1 += 0.1f;
+    if (g_fRot1 > 2.0f * XM_PI)
     {
-        g_fSpeed *= -1.0f;
-    }
-    g_fOffsetY += g_fSpeed;
-    if (g_fOffsetY > 0.75f)
-    {
-        g_fSpeed *= -1.0f;
-        bDirChange = true;
-    }
-    if (g_fOffsetY < -0.75f)
-    {
-        g_fSpeed *= -1.0f;
-        bDirChange = true;
-    }
-    if (bDirChange) {
-        void* pTemp = g_pTexHandle0;
-        g_pTexHandle0 = g_pTexHandle1;
-        g_pTexHandle1 = pTemp;
+        g_fRot1 = 0.0f;
     }
 }
 
