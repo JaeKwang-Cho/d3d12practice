@@ -23,7 +23,7 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos)
+void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, D3D12_CPU_DESCRIPTOR_HANDLE _srv)
 {
 	// D3D12는 완전 비동기 API이고, GPU와 CPU의 타임라인이 동기화 되어있지 않다.
 	// 그래서 draw를 할 때, shader에 넘어가는 resource들이 구분되어서 안전하게 있어야 한다.
@@ -64,6 +64,12 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	// CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvDest(cpuDescriptorTable, static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::CBV), srvDescriptorSize);
 	pD3DDevice->CopyDescriptorsSimple(1, cbvDest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
+
+	// 입력으로 들어온 SRV를 descriptor table을 통해 현재 bind된 Heap에 복사한다.
+	if (_srv.ptr) {
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest(cpuDescriptorTable, static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::TEX), srvDescriptorSize);
+		pD3DDevice->CopyDescriptorsSimple(1, srvDest, _srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
 
 	// 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다.
 	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
@@ -142,9 +148,9 @@ bool BasicMeshObject::InitRootSignature()
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
 	// CB와 Texture가 넘어가는걸 표현해줄 root signature를 만든다.
-	CD3DX12_DESCRIPTOR_RANGE ranges[1] = {};
+	CD3DX12_DESCRIPTOR_RANGE ranges[2] = {};
 	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 : Constant Buffer View
-	//ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
+	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
 	
 	// table 0번에 저장한다.
 	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};

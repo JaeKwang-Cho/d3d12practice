@@ -1,6 +1,6 @@
 // Simple.hlsl from "megayuchi"
 
-//Texture2D texDiffuse : register(t0);
+Texture2D texDiffuse : register(t0);
 SamplerState samplerDiffuse : register(s0);
 
 cbuffer CONSTANT_BUFFER_DEFAULT : register(b0)
@@ -36,7 +36,6 @@ PSInput VS(VSInput _vin)
 
 float4 PS(PSInput _pin) : SV_Target
 {
-    //float4 texColor = texDiffuse.Sample(samplerDiffuse, _pin.TexCoord);
-    //return texColor * _pin.color;
-    return _pin.color;
+    float4 texColor = texDiffuse.Sample(samplerDiffuse, _pin.TexCoord);
+    return texColor * _pin.color;
 }

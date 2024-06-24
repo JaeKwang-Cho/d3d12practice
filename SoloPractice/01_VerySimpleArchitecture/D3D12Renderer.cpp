@@ -8,6 +8,7 @@
 #include "D3D12ResourceManager.h"
 #include "ConstantBufferPool.h"
 #include "DescriptorPool.h"
+#include "SingleDescriptorAllocator.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -221,6 +222,10 @@ EXIT:
 	m_pDescriptorPool = new DescriptorPool;
 	m_pDescriptorPool->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME* BasicMeshObject::DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
 
+	// SingleDescriptorAllocator
+	m_pSingleDescriptorAllocator = new SingleDescriptorAllocator;
+	m_pSingleDescriptorAllocator->Initialize(m_pD3DDevice, MAX_DESCRIPRTOR_COUNT, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
+
 	bResult = true;
 RETURN:
 	/*
@@ -400,11 +405,85 @@ void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 	delete pMeshObj;
 }
 
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset)
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset, void* _pTexHandle)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
 	XMFLOAT2 pos(_xOffset, _yOffset);
-	pMeshObj->Draw(m_pCommandList.Get(), &pos);
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
+	if (_pTexHandle) {
+		srv = ((TEXTURE_HANDLE*)_pTexHandle)->srv;
+	}
+	pMeshObj->Draw(m_pCommandList.Get(), &pos, srv);
+}
+
+void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
+{
+	TEXTURE_HANDLE* pTexHandle = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
+
+	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	UINT pixSize = sizeof(uint32_t);
+	BYTE* pImage = (BYTE*)malloc(_texWidth * _texHeight * pixSize);
+	memset(pImage, 0, _texWidth *_texHeight * pixSize);
+
+	BOOL bWhiteStart = TRUE;
+
+	for (UINT y = 0; y < _texHeight; y++) {
+		for (UINT x = 0; x < _texWidth; x++) {
+			RGBA* pDest = (RGBA*)(pImage + pixSize * (y * _texWidth + x));
+
+			if ((bWhiteStart + x) % 2) {
+				pDest->r = _r;
+				pDest->g = _g;
+				pDest->b = _b;
+			}
+			else {
+				pDest->r = 0;
+				pDest->g = 0;
+				pDest->b = 0;
+			}
+			pDest->a = 255;
+		}
+		bWhiteStart++;
+		bWhiteStart %= 2;
+	}
+
+
+	HRESULT hr = m_pResourceManager->CreateTexture(&pTexResource, _texWidth, _texHeight, texFormat, pImage);
+	if (SUCCEEDED(hr)) {
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = texFormat;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+
+		// SingleDescriptorAllocator에서 한 자리를 받아 Texture Resource에 View를 할당한다.
+		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
+			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
+
+			pTexHandle = new TEXTURE_HANDLE;
+			pTexHandle->pTexResource = pTexResource;
+			pTexHandle->srv = srv;
+		}
+	}
+	free(pImage);
+	pImage = nullptr;
+
+	return pTexHandle;
+}
+
+void D3D12Renderer::DeleteTexture(void* _pTexHandle)
+{
+	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTexHandle;
+	// 스마트 포인터를 사용하지 않으면 release를 해줘야 한다.
+	pTexHandle->pTexResource = nullptr;
+	m_pSingleDescriptorAllocator->FreeDescriptorHandle(pTexHandle->srv);
+
+	delete pTexHandle;
 }
 
 void D3D12Renderer::CreateCommandList()
@@ -501,13 +580,18 @@ void D3D12Renderer::CleanUpRenderer()
 		m_pDescriptorPool = nullptr;
 	}
 
+	if (m_pSingleDescriptorAllocator) {
+		delete m_pSingleDescriptorAllocator;
+		m_pSingleDescriptorAllocator = nullptr;
+	}
+
 
 	CleanupFence();
 }
 
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),
-	m_pResourceManager(nullptr), m_pConstantBufferPool(nullptr), m_pDescriptorPool(nullptr),
+	m_pResourceManager(nullptr), m_pConstantBufferPool(nullptr), m_pDescriptorPool(nullptr), m_pSingleDescriptorAllocator(nullptr),
 	m_pCommandList(nullptr), m_ui64enceValue(0), m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),

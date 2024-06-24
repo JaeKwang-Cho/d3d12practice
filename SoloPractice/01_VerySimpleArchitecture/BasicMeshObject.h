@@ -20,11 +20,11 @@ class BasicMeshObject
 	static DWORD m_dwInitRefCount;
 
 public:
-	// static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
-	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 1; // 지금은 일단 CB 하나만 넘어간다. Pool에서도 Draw당 View 1개씩만 가져온다.
+	static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos);
+	// 추가적으로 SRV Handle을 입력으로 받는다.
+	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, D3D12_CPU_DESCRIPTOR_HANDLE _srv);
 
 	bool CreateMesh();
 	//bool CreateMesh_UploadHeap();

@@ -1,3 +1,5 @@
+// typedef.h from "megayuchi"
+
 #pragma once
 
 struct BasicVertex {
@@ -20,4 +22,10 @@ union RGBA
 struct CONSTANT_BUFFER_DEFAULT
 {
 	XMFLOAT4 offset;
+};
+
+struct TEXTURE_HANDLE
+{
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource;
+	D3D12_CPU_DESCRIPTOR_HANDLE srv;
 };

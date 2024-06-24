@@ -35,6 +35,10 @@ D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYP
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
 void* g_pMeshObj = nullptr;
+
+void* g_pTexHandle0 = nullptr;
+void* g_pTexHandle1 = nullptr;
+
 // test
 float g_fOffsetX = 0.f;
 float g_fOffsetY = 0.f;
@@ -75,6 +79,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pRenderer->Initialize(g_hWnd, true, true);
     // 간단한 메쉬 만들기
     g_pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
+    // 간단한 텍스쳐 만들기
+    g_pTexHandle0 = g_pRenderer->CreateTileTexture(16, 16, 192, 128, 255);
+    g_pTexHandle1 = g_pRenderer->CreateTileTexture(32, 32, 128, 255, 192);
 
     MSG msg = {};
 
@@ -94,7 +101,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         g_pRenderer->DeleteBasicMeshObject(g_pMeshObj);
         g_pMeshObj = nullptr;
     }
-
+    if (g_pTexHandle0)
+    {
+        g_pRenderer->DeleteTexture(g_pTexHandle0);
+        g_pTexHandle0 = nullptr;
+    }
+    if (g_pTexHandle1)
+    {
+        g_pRenderer->DeleteTexture(g_pTexHandle1);
+        g_pTexHandle1 = nullptr;
+    }
     if (g_pRenderer) {
         delete g_pRenderer;
         g_pRenderer = nullptr;
@@ -129,14 +145,14 @@ void RunGame()
 
     // rendering objects
     // 하나의 object에 대해서 2번 렌더링을 다르게 한다.
-    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, 0.f);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, g_fOffsetY);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, 0.f);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, -g_fOffsetY);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, g_fOffsetY);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, -g_fOffsetY);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, g_fOffsetY);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, -g_fOffsetY);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, 0.f, g_pTexHandle0);
+    g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, g_fOffsetY, g_pTexHandle1);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, 0.f);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, 0.f, -g_fOffsetY);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, g_fOffsetY);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, -g_fOffsetY);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, -g_fOffsetX, g_fOffsetY);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj, g_fOffsetX, -g_fOffsetY);
     // end
     g_pRenderer->EndRender();
 
@@ -146,6 +162,7 @@ void RunGame()
 
 void Update()
 {
+    bool bDirChange = false;
     g_fOffsetX += g_fSpeed;
     if (g_fOffsetX > 0.75f)
     {
@@ -159,10 +176,17 @@ void Update()
     if (g_fOffsetY > 0.75f)
     {
         g_fSpeed *= -1.0f;
+        bDirChange = true;
     }
     if (g_fOffsetY < -0.75f)
     {
         g_fSpeed *= -1.0f;
+        bDirChange = true;
+    }
+    if (bDirChange) {
+        void* pTemp = g_pTexHandle0;
+        g_pTexHandle0 = g_pTexHandle1;
+        g_pTexHandle1 = pTemp;
     }
 }
 

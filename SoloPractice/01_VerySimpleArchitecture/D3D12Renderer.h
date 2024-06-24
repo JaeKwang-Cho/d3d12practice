@@ -7,11 +7,13 @@ const UINT SWAP_CHAIN_FRAME_COUNT = 2;
 class D3D12ResourceManager;
 class ConstantBufferPool;
 class DescriptorPool;
+class SingleDescriptorAllocator;
 
 class D3D12Renderer
 {
 public:
-	static const UINT MAX_DRAW_COUNT_PER_FRAME = 256;
+	static const UINT MAX_DRAW_COUNT_PER_FRAME = 256; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
+	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
 	void BeginRender();
@@ -22,7 +24,10 @@ public:
 	
 	void* CreateBasicMeshObject_Return_New();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
-	void RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset);
+	void RenderMeshObject(void* _pMeshObjectHandle, float _xOffset, float _yOffset, void* _pTexHandle);
+
+	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
+	void DeleteTexture(void* _pTexHandle);
 protected:
 private:
 	void CreateCommandList();
@@ -40,10 +45,10 @@ public:
 protected:
 private:
 	HWND m_hWnd;
-	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice; // 잘 모르지만 제일 최신거 사용해보기
+	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice; 
 	Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_pCommandQueue;
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_pCommandAllocator;
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_pCommandList;// 잘 모르지만 제일 최신거 사용해보기22
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_pCommandList;
 
 	// Resource를 GPU에 올려주는 친구
 	D3D12ResourceManager* m_pResourceManager;
@@ -51,6 +56,8 @@ private:
 	ConstantBufferPool* m_pConstantBufferPool;
 	// DescriptorPool
 	DescriptorPool* m_pDescriptorPool;
+	// Descriptor(View)를 모아서 관리해주는 친구
+	SingleDescriptorAllocator* m_pSingleDescriptorAllocator;
 
 	UINT64 m_ui64enceValue;
 
@@ -89,5 +96,6 @@ public:
 	ConstantBufferPool* INL_GetConstantBufferPool() { return m_pConstantBufferPool; }
 	DescriptorPool* INL_DescriptorPool() { return m_pDescriptorPool; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
+	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator;	}
 };
 

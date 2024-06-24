@@ -31,6 +31,9 @@
     <Filter Include="Renderer\DescriptorPool">
       <UniqueIdentifier>{28ad5a8a-f0a8-4486-84b9-93126ef93655}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\SingleDescriptorAllocator">
+      <UniqueIdentifier>{cfff2688-0961-4daf-8151-3cbe77260d3c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -57,6 +60,12 @@
     </ClInclude>
     <ClInclude Include="DescriptorPool.h">
       <Filter>Renderer\DescriptorPool</Filter>
+    </ClInclude>
+    <ClInclude Include="SingleDescriptorAllocator.h">
+      <Filter>Renderer\SingleDescriptorAllocator</Filter>
+    </ClInclude>
+    <ClInclude Include="IndexCreator.h">
+      <Filter>Util</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -90,6 +99,12 @@
     </ClCompile>
     <ClCompile Include="DescriptorPool.cpp">
       <Filter>Renderer\DescriptorPool</Filter>
+    </ClCompile>
+    <ClCompile Include="SingleDescriptorAllocator.cpp">
+      <Filter>Renderer\SingleDescriptorAllocator</Filter>
+    </ClCompile>
+    <ClCompile Include="IndexCreator.cpp">
+      <Filter>Util</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
