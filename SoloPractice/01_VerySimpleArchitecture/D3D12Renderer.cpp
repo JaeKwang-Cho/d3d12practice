@@ -488,6 +488,34 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 	return pTexHandle;
 }
 
+void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
+{
+	TEXTURE_HANDLE* pTexHandle = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
+
+	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	D3D12_RESOURCE_DESC desc = {};
+	if (SUCCEEDED(m_pResourceManager->CreateTextureFromFile(&pTexResource, &desc, _wchFileName))) {
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = desc.Format;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = desc.MipLevels;
+
+		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
+			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
+
+			pTexHandle = new TEXTURE_HANDLE;
+			pTexHandle->pTexResource = pTexResource;
+			pTexHandle->srv = srv;
+		}
+	}
+
+	return pTexHandle;
+}
+
 void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 {
 	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTexHandle;

@@ -34,6 +34,12 @@
     <Filter Include="Renderer\SingleDescriptorAllocator">
       <UniqueIdentifier>{cfff2688-0961-4daf-8151-3cbe77260d3c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="DirectXTex">
+      <UniqueIdentifier>{9b027c04-2b4e-4b34-8f0b-34ce892e8d45}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="DirectXTex\DDSLoader">
+      <UniqueIdentifier>{ee047592-d21c-41bb-9be7-ac1a5ca831d4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -66,6 +72,12 @@
     </ClInclude>
     <ClInclude Include="IndexCreator.h">
       <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectXTexHeader.h">
+      <Filter>DirectXTex</Filter>
+    </ClInclude>
+    <ClInclude Include="DDSTextureLoader12.h">
+      <Filter>DirectXTex\DDSLoader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -105,6 +117,9 @@
     </ClCompile>
     <ClCompile Include="IndexCreator.cpp">
       <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="DDSTextureLoader12.cpp">
+      <Filter>DirectXTex\DDSLoader</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -3,6 +3,8 @@
 
 #include "pch.h"
 #include "D3D12ResourceManager.h"
+#include "DirectXTexHeader.h"
+#include "DDSTextureLoader12.h"
 
 bool D3D12ResourceManager::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice)
 {
@@ -299,6 +301,79 @@ HRESULT D3D12ResourceManager::CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resourc
 	}
 
 	*_ppOutResource = pTexResource;
+RETURN:
+	return hr;
+}
+
+HRESULT D3D12ResourceManager::CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName)
+{
+	HRESULT hr = S_OK;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+
+	D3D12_RESOURCE_DESC textureDesc = {};
+
+	std::unique_ptr<uint8_t[]> ddsData;
+	std::vector<D3D12_SUBRESOURCE_DATA> subresourceData;
+	UINT subresourceSize;
+	UINT64 uploadBufferSize;
+	D3D12_RESOURCE_DESC resDesc_BuffSize;
+
+	// DirectXTex 라이브러리를 사용한다.
+	hr = LoadDDSTextureFromFile(m_pD3DDevice.Get(), _wchFileName, &pTexResource, ddsData, subresourceData);
+	if (FAILED(hr)) {
+		goto RETURN;
+	}
+
+	// DirectXTex에서 얻어준 정보를 가지고 Resource를 생성해서 GPU에 올린다.
+	textureDesc = pTexResource->GetDesc();
+	subresourceSize = (UINT)subresourceData.size();
+	uploadBufferSize = GetRequiredIntermediateSize(pTexResource.Get(), 0, subresourceSize);
+
+	resDesc_BuffSize = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+
+	hr = m_pD3DDevice->CreateCommittedResource(
+		&HEAP_PROPS_UPLOAD,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc_BuffSize,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+	);
+	if (FAILED(hr)) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (FAILED(hr = m_pCommandAllocator->Reset())) {
+		__debugbreak();
+		goto RETURN;
+	}
+	if (FAILED(hr = m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	{// GPU에 Resource를 생성한다.
+		D3D12_RESOURCE_BARRIER barrier_SR_CPDest = CD3DX12_RESOURCE_BARRIER::Transition(pTexResource.Get(), D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+		m_pCommandList->ResourceBarrier(1, &barrier_SR_CPDest);
+		UpdateSubresources(m_pCommandList.Get(), pTexResource.Get(), pUploadBuffer.Get(), 0, 0, subresourceSize, &subresourceData[0]);
+		D3D12_RESOURCE_BARRIER barrier_CPDest_SR = CD3DX12_RESOURCE_BARRIER::Transition(pTexResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+		m_pCommandList->ResourceBarrier(1, &barrier_CPDest_SR);
+
+		m_pCommandList->Close();
+
+		ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+		m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	}
+
+	DoFence();
+	WaitForFenceValue();
+
+	*_ppOutResource = pTexResource;
+	*_pOutDesc = textureDesc;
+
 RETURN:
 	return hr;
 }

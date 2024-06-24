@@ -12,6 +12,16 @@
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
 
+// DirectX Tex 설정
+// https://github.com/microsoft/DirectXTex
+#if defined(_M_AMD64)
+#ifdef _DEBUG
+#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/debug/DirectXTex.lib")
+#else
+#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/release/DirectXTex.lib")
+#endif
+#endif
+
 // D3D12 Agility 설정
 // 방법 : https://devblogs.microsoft.com/directx/gettingstarted-dx12agility/#OS
 extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
@@ -87,7 +97,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
     // 간단한 텍스쳐 만들기
     g_pTexHandle0 = g_pRenderer->CreateTileTexture(16, 16, 192, 128, 255);
-    g_pTexHandle1 = g_pRenderer->CreateTileTexture(32, 32, 128, 255, 192);
+    // 파일로 텍스쳐 만들기
+    g_pTexHandle1 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
 
     MSG msg = {};
 
@@ -153,6 +164,7 @@ void RunGame()
     // 하나의 object에 대해서 2번 렌더링을 다르게 한다.
     g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld0, g_pTexHandle0);
     g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld1, g_pTexHandle1);
+
     // end
     g_pRenderer->EndRender();
 

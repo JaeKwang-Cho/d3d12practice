@@ -27,6 +27,7 @@ public:
 	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, void* _pTexHandle);
 
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
+	void* CreateTextureFromFile(const WCHAR* _wchFileName);
 	void DeleteTexture(void* _pTexHandle);
 protected:
 private:
