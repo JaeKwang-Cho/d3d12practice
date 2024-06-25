@@ -31,4 +31,5 @@ struct TEXTURE_HANDLE
 {
 	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource;
 	D3D12_CPU_DESCRIPTOR_HANDLE srv;
+	TEXTURE_HANDLE() :pTexResource(nullptr), srv{} {}
 };

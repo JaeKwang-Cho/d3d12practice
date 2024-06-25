@@ -2,7 +2,9 @@
 // 괜히 최신 d3d12 사용해보기
 #pragma once
 
-const UINT SWAP_CHAIN_FRAME_COUNT = 2;
+// 스왑체인 개수도 3개로 늘린다.
+const UINT SWAP_CHAIN_FRAME_COUNT = 3;
+const UINT MAX_PENDING_FRAME_COUNT = SWAP_CHAIN_FRAME_COUNT - 1;
 
 class D3D12ResourceManager;
 class ConstantBufferPool;
@@ -43,7 +45,7 @@ private:
 	void CleanupFence();
 
 	UINT64 DoFence();
-	void WaitForFenceValue();
+	void WaitForFenceValue(UINT64 _expectedFenceValue);
 
 	void CleanUpRenderer();
 
@@ -54,19 +56,24 @@ private:
 	HWND m_hWnd;
 	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice; 
 	Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_pCommandQueue;
-	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_pCommandAllocator;
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_pCommandList;
+	
+	// 중첩 렌더링을 위해 Command Allocator와 Command List를 여러개 가진다.
+	// 이러면 Fence가 좀더 여유로워 지고 GPU의 부하를 늘려줘서 프레임이 빨라진다.
+	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_ppCommandList[MAX_PENDING_FRAME_COUNT];
 
 	// Resource를 GPU에 올려주는 친구
 	D3D12ResourceManager* m_pResourceManager;
-	// CBV pool
-	ConstantBufferPool* m_pConstantBufferPool;
-	// DescriptorPool
-	DescriptorPool* m_pDescriptorPool;
+	// CBV pool이랑 DescriptorPool 도 CommandList 마다 하나씩 만든다.
+	// 얘도 Render Pipeline에 bind되어서 쓰이는 애들이다. CommandList만 분리해서는 절대 안된다.
+	ConstantBufferPool* m_ppConstantBufferPool[MAX_PENDING_FRAME_COUNT];
+	DescriptorPool* m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
 	// Descriptor(View)를 모아서 관리해주는 친구
 	SingleDescriptorAllocator* m_pSingleDescriptorAllocator;
 
-	UINT64 m_ui64enceValue;
+	UINT64 m_ui64FenceValue;
+	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.
+	UINT64 m_pui64LastFenceValue[MAX_PENDING_FRAME_COUNT];
 
 	D3D_FEATURE_LEVEL m_FeatureLevel;
 	DXGI_ADAPTER_DESC3 m_AdaptorDesc;
@@ -88,7 +95,7 @@ private:
 	HANDLE m_hFenceEvent = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;
 
-	DWORD m_dwCurContextIndex; //?
+	DWORD m_dwCurContextIndex; // 현재 Drawcall을 받는 그룹의 Index이다.
 
 	// window resizing
 	D3D12_VIEWPORT m_Viewport;
@@ -106,8 +113,8 @@ public:
 
 	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
 	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
-	ConstantBufferPool* INL_GetConstantBufferPool() { return m_pConstantBufferPool; }
-	DescriptorPool* INL_DescriptorPool() { return m_pDescriptorPool; }
+	ConstantBufferPool* INL_GetConstantBufferPool() { return m_ppConstantBufferPool[m_dwCurContextIndex]; }
+	DescriptorPool* INL_DescriptorPool() { return m_ppDescriptorPool[m_dwCurContextIndex]; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
 	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj) {
