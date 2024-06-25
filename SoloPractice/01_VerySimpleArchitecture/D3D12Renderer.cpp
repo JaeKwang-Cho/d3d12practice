@@ -226,7 +226,7 @@ EXIT:
 
 		// Descriptor Pool
 		m_ppDescriptorPool[i] = new DescriptorPool;
-		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
+		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
 
 	}
 	// SingleDescriptorAllocator
@@ -415,12 +415,8 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
 	pMeshObj->Initialize(this);
 
-	//pMeshObj->CreateMesh_UploadHeap();
-	//pMeshObj->CreateMesh_DefaultHeap();
-	//pMeshObj->CreateMesh_WithIndex();
-	//pMeshObj->CreateMesh_WithTexture();
-	//pMeshObj->CreateMesh_WithCB();
-	pMeshObj->CreateMesh();
+	// 지금은 BasicMeshObject 클래스 내부에서 Mesh 정보를 생성하지 않고,
+	// 밖에서 입력 받는다.
 
 	return pMeshObj;
 }
@@ -432,17 +428,32 @@ void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 	delete pMeshObj;
 }
 
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, void* _pTexHandle)
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
 {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
+	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+}
 
-	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
-	if (_pTexHandle) {
-		srv = ((TEXTURE_HANDLE*)_pTexHandle)->srv;
-	}
-	pMeshObj->Draw(pCommandList.Get(), pMatWorld, srv);
+bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount)
+{
+	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
+	bool bResult = pMeshObj->BeginCreateMesh(_pVertexList, _dwVertexCount, _dwTriGroupCount);
+	return bResult;
+}
+
+bool D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName)
+{
+	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
+	bool bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _dwTriCount, _wchTexFileName);
+	return bResult;
+}
+
+void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
+{
+	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
+	pMeshObj->EndCreateMesh();
 }
 
 void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)

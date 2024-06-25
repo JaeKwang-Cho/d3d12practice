@@ -23,7 +23,7 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld, D3D12_CPU_DESCRIPTOR_HANDLE _srv)
+void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	// D3D12는 완전 비동기 API이고, GPU와 CPU의 타임라인이 동기화 되어있지 않다.
 	// 그래서 draw를 할 때, shader에 넘어가는 resource들이 구분되어서 안전하게 있어야 한다.
@@ -41,7 +41,10 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
 
-	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, DESCRIPTOR_COUNT_FOR_DRAW)) {
+	// 여기서 몇개의 Texture와 CB가 넘어갈지 계산한 다음
+	DWORD dwRequiredDescriptorCount = DESCRIPTOR_COUNT_PER_OBJ + (m_dwTriGroupCount * DESCRIPTOR_COUNT_PER_TRI_GROUP);
+	// 그 개수만큼 pool에서 할당 받는다.
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, dwRequiredDescriptorCount)) {
 		__debugbreak();
 	}
 
@@ -52,7 +55,7 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	}
 
 	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCB->pSystemMemAddr);
-	// 값을 업데이트 하고
+	// CB 값을 업데이트 하고
 	XMMATRIX viewMat;
 	XMMATRIX projMat;
 	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
@@ -65,69 +68,123 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 
 	pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
 
+	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
+
+	// Object 마다 넘어가는 CB는 CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	pD3DDevice->CopyDescriptorsSimple(1, dest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
+
+	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
+	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
+
+	// 그리고, Triangle 마다 넘어가는 SRV(Texture)를 복사한다.
+	for (DWORD i = 0; i < m_dwTriGroupCount; i++) {
+		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList + i;
+		TEXTURE_HANDLE* pTexHandle = pTriGroup->pTexHandle;
+		if (pTexHandle) 
+		{
+			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		}
+		else 
+		{
+			__debugbreak();
+		}
+		dest.Offset(1, srvDescriptorSize);
+	}
+
+
 	// 루트 시그니처를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
 	// pool에 있는 Heap으로 설정한다.
 	_pCommandList->SetDescriptorHeaps(1, pPoolDescriptorHeap.GetAddressOf());
 
-	// CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvDest(cpuDescriptorTable, static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::CBV), srvDescriptorSize);
-	pD3DDevice->CopyDescriptorsSimple(1, cbvDest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
-
-	// 입력으로 들어온 SRV를 descriptor table을 통해 현재 bind된 Heap에 복사한다.
-	if (_srv.ptr) {
-		CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest(cpuDescriptorTable, static_cast<INT>(BASIC_MESH_DESCRIPTOR_INDEX::TEX), srvDescriptorSize);
-		pD3DDevice->CopyDescriptorsSimple(1, srvDest, _srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	}
-
-	// 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다.
+	// 일단 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다. 지금은 1개만 넘겨준다.
 	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
 
 	_pCommandList->SetPipelineState(m_pPipelineState.Get());
 	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	_pCommandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
-	_pCommandList->IASetIndexBuffer(&m_IndexBufferView);
-	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+
+	// 그리고 Texture SRV를 바꾸면서 bind 해주고, 삼각형을 그린다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTriGroup(gpuDescriptorTable, DESCRIPTOR_COUNT_PER_OBJ, srvDescriptorSize);
+	for (DWORD i = 0; i < m_dwTriGroupCount; i++) 
+	{
+		// 테이블 번호 1번에 넣어주면서 삼각형을 그린다.
+		_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTriGroup);
+
+		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList + i;
+		_pCommandList->IASetIndexBuffer(&(pTriGroup->indexBufferView));
+		_pCommandList->DrawIndexedInstanced(pTriGroup->dwTriCount * 3, 1, 0, 0, 0);
+
+		// 다음 텍스쳐를 bind 해준다.
+		gpuDescriptorTableForTriGroup.Offset(1, srvDescriptorSize);
+	}
 }
 
-bool BasicMeshObject::CreateMesh()
+bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount)
 {
 	bool bResult = false;
-
-	// Default Buffer에 Vertex 정보를 올려보는 것
+	
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
-	// 대충 찍어보자.
-	BasicVertex Vertices[] =
-	{
-		{ { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
-		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
-		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
-		{ { -0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
-	};
-
-	uint16_t Indices[] =
-	{
-		0, 1, 2,
-		0, 2, 3
-	};
-
-	const UINT vertexBufferSize = sizeof(Vertices);
-
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+	if (_dwTriGroupCount > MAX_TRI_GROUP_COUNT_PER_OBJ) {
+		__debugbreak();
+	}
+	// 일단 Vertex Buffer 먼저 생성한다.
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), _dwVertexNum, &m_VertexBufferView, &m_pVertexBuffer, (void*)_pVertexList))) {
 		__debugbreak();
 		goto RETURN;
 	}
 
-	if (FAILED(pResourceManager->CreateIndexBuffer(static_cast<DWORD>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices))) {
-		__debugbreak();
-		goto RETURN;
-	}
+	m_dwMaxTriGroupCount = _dwTriGroupCount;
+	m_pTriGroupList = new INDEXED_TRI_GROUP[m_dwMaxTriGroupCount];
+	memset(m_pTriGroupList, 0, sizeof(INDEXED_TRI_GROUP) * m_dwMaxTriGroupCount);
 
 	bResult = true;
+
 RETURN:
 	return bResult;
+}
+
+bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName)
+{
+	bool bResult = false;
+	
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
+	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
+	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
+
+	if (m_dwTriGroupCount >= m_dwMaxTriGroupCount) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(_dwTriCount * 3, &indexBufferView, &pIndexBuffer, (void*)_pIndexList))) {
+		__debugbreak();
+		goto RETURN;
+	}
+	// 인덱싱한 삼각형 그룹들을 만든다.
+	{
+		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList + m_dwTriGroupCount;
+		pTriGroup->pIndexBuffer = pIndexBuffer;
+		pTriGroup->indexBufferView = indexBufferView;
+		pTriGroup->dwTriCount = _dwTriCount;
+		pTriGroup->pTexHandle = (TEXTURE_HANDLE*)m_pRenderer->CreateTextureFromFile(_wchTexFileName);
+		m_dwTriGroupCount++;
+
+		bResult = true;
+	}
+RETURN:
+	return false;
+}
+
+void BasicMeshObject::EndCreateMesh()
+{
 }
 
 bool BasicMeshObject::InitCommonResources()
@@ -170,13 +227,19 @@ bool BasicMeshObject::InitRootSignature()
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
 	// CB와 Texture가 넘어가는걸 표현해줄 root signature를 만든다.
-	CD3DX12_DESCRIPTOR_RANGE ranges[2] = {};
-	ranges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 : Constant Buffer View
-	ranges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : texture
+	// GPU는 똑같이 받아들이지만, CPU에서는 의미적으로 많이 다르고,
+	// 데이터 넘기는 것도, 요청하는 것도 다르기 때문에 Entry를 분리해서 해준다.
+	CD3DX12_DESCRIPTOR_RANGE rangePerObj[1] = {};
+	rangePerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 :  Object 마다 넘기는 Constant Buffer View
+
+	CD3DX12_DESCRIPTOR_RANGE rangePerTri[1] = {};
+	rangePerTri[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : 삼각형 마다 넘기는 texture
 	
-	// table 0번에 저장한다.
-	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};
-	rootParameters[0].InitAsDescriptorTable(_countof(ranges), ranges, D3D12_SHADER_VISIBILITY_ALL);
+	// table 0번과 1번에 저장한다.
+	CD3DX12_ROOT_PARAMETER rootParameters[2] = {};
+	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[1].InitAsDescriptorTable(_countof(rangePerTri), rangePerTri, D3D12_SHADER_VISIBILITY_ALL);
+
 
 	// Texture Sample을 할때 사용하는 Sampler를
 	// static sampler로 Root Signature와 함께 넘겨준다.
@@ -251,7 +314,6 @@ bool BasicMeshObject::InitPipelineState()
 	psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderBlob->GetBufferPointer(), pPixelShaderBlob->GetBufferSize());
 
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 
@@ -277,14 +339,23 @@ bool BasicMeshObject::InitPipelineState()
 
 void BasicMeshObject::CleanUpMesh()
 {
-	//m_pVertexBuffer = nullptr;
+	if (m_pTriGroupList) {
+		for (DWORD i = 0; i < m_dwTriGroupCount; i++) {
+			if (m_pTriGroupList[i].pTexHandle) {
+				m_pRenderer->DeleteTexture(m_pTriGroupList[i].pTexHandle);
+				m_pTriGroupList[i].pTexHandle = nullptr;
+			}
+		}
+		delete[] m_pTriGroupList;
+		m_pTriGroupList = nullptr;
+	}
 	CleanupSharedResources();
 }
 
 BasicMeshObject::BasicMeshObject()
 	:m_pRenderer(nullptr), 
 	m_pVertexBuffer(nullptr), m_VertexBufferView{},
-	m_pIndexBuffer(nullptr), m_IndexBufferView{}
+	m_pTriGroupList(nullptr), m_dwTriGroupCount(0), m_dwMaxTriGroupCount(0)
 {
 }
 
@@ -294,6 +365,46 @@ BasicMeshObject::~BasicMeshObject()
 }
 
 /*
+bool BasicMeshObject::CreateMesh()
+{
+	bool bResult = false;
+
+	// Default Buffer에 Vertex 정보를 올려보는 것
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	// 대충 찍어보자.
+	BasicVertex Vertices[] =
+	{
+		{ { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
+		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
+		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
+	};
+
+	uint16_t Indices[] =
+	{
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	const UINT vertexBufferSize = sizeof(Vertices);
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(static_cast<DWORD>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices))) {
+		__debugbreak();
+		goto RETURN;
+	}
+
+	bResult = true;
+RETURN:
+	return bResult;
+}
+
 bool BasicMeshObject::CreateDescriptorTable()
 {
 	bool bResult = false;

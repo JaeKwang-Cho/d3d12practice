@@ -148,6 +148,7 @@
     <ClInclude Include="SingleDescriptorAllocator.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="typedef.h" />
+    <ClInclude Include="VertexUtil.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
@@ -161,6 +162,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="SingleDescriptorAllocator.cpp" />
+    <ClCompile Include="VertexUtil.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

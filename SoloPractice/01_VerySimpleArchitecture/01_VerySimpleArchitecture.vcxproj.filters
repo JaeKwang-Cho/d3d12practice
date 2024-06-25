@@ -79,6 +79,9 @@
     <ClInclude Include="DDSTextureLoader12.h">
       <Filter>DirectXTex\DDSLoader</Filter>
     </ClInclude>
+    <ClInclude Include="VertexUtil.h">
+      <Filter>Util</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -120,6 +123,9 @@
     </ClCompile>
     <ClCompile Include="DDSTextureLoader12.cpp">
       <Filter>DirectXTex\DDSLoader</Filter>
+    </ClCompile>
+    <ClCompile Include="VertexUtil.cpp">
+      <Filter>Util</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

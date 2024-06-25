@@ -3,6 +3,7 @@
 
 #include "pch.h"
 #include "D3D12Renderer.h"
+#include "VertexUtil.h"
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -44,16 +45,16 @@ D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYP
 
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
-void* g_pMeshObj = nullptr;
-
-void* g_pTexHandle0 = nullptr;
-void* g_pTexHandle1 = nullptr;
+void* g_pMeshObj0 = nullptr;
+void* g_pMeshObj1 = nullptr;
 
 float g_fRot0 = 0.0f;
 float g_fRot1 = 0.0f;
+float g_fRot2 = 0.0f;
 
 XMMATRIX g_matWorld0 = {};
 XMMATRIX g_matWorld1 = {};
+XMMATRIX g_matWorld2 = {};
 
 // test
 float g_fOffsetX = 0.f;
@@ -63,6 +64,10 @@ float g_fSpeed = 0.01f;
 // 렌더링 함수
 void RunGame();
 void Update();
+
+// 임시 함수
+void* CreateBoxMeshObject();
+void* CreateQuadMesh();
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -93,12 +98,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // D3D 초기화
     g_pRenderer = new D3D12Renderer;
     g_pRenderer->Initialize(g_hWnd, true, true);
-    // 간단한 메쉬 만들기
-    g_pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
-    // 간단한 텍스쳐 만들기
-    g_pTexHandle0 = g_pRenderer->CreateTileTexture(16, 16, 192, 128, 255);
-    // 파일로 텍스쳐 만들기
-    g_pTexHandle1 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
+
+    // main에서 Box Mesh를 미리 만들기
+    g_pMeshObj0 = CreateBoxMeshObject();
+    // main에서 Quad Mesh를 미리 만들기
+    g_pMeshObj1 = CreateQuadMesh();
+
 
     MSG msg = {};
 
@@ -114,19 +119,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    if (g_pMeshObj) {
-        g_pRenderer->DeleteBasicMeshObject(g_pMeshObj);
-        g_pMeshObj = nullptr;
+    if (g_pMeshObj0) {
+        g_pRenderer->DeleteBasicMeshObject(g_pMeshObj0);
+        g_pMeshObj0 = nullptr;
     }
-    if (g_pTexHandle0)
-    {
-        g_pRenderer->DeleteTexture(g_pTexHandle0);
-        g_pTexHandle0 = nullptr;
-    }
-    if (g_pTexHandle1)
-    {
-        g_pRenderer->DeleteTexture(g_pTexHandle1);
-        g_pTexHandle1 = nullptr;
+    if (g_pMeshObj1) {
+        g_pRenderer->DeleteBasicMeshObject(g_pMeshObj1);
+        g_pMeshObj1 = nullptr;
     }
     if (g_pRenderer) {
         delete g_pRenderer;
@@ -161,9 +160,11 @@ void RunGame()
     Update();
 
     // rendering objects
-    // 하나의 object에 대해서 2번 렌더링을 다르게 한다.
-    g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld0, g_pTexHandle0);
-    g_pRenderer->RenderMeshObject(g_pMeshObj, &g_matWorld1, g_pTexHandle1);
+    // cube에 대해서 2번 렌더링을 다르게 한다.
+    g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld0);
+    g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld1);
+    // quad를 그린다.
+    g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
 
     // end
     g_pRenderer->EndRender();
@@ -176,15 +177,22 @@ void Update()
 {
     g_matWorld0 = XMMatrixIdentity();
     XMMATRIX matRot0 = XMMatrixRotationX(g_fRot0);
-    XMMATRIX matTrans0 = XMMatrixTranslation(-0.15f, 0.0f, 0.25f);
+    XMMATRIX matTrans0 = XMMatrixTranslation(-0.66f, 0.0f, 0.66f);
 
     g_matWorld0 = XMMatrixMultiply(matRot0, matTrans0);
 
     g_matWorld1 = XMMatrixIdentity();
     XMMATRIX matRot1 = XMMatrixRotationY(g_fRot1);
-    XMMATRIX matTrans1 = XMMatrixTranslation(0.15f, 0.0f, 0.25f);
+    XMMATRIX matTrans1 = XMMatrixTranslation(0.f, 0.0f, 0.66f);
 
     g_matWorld1 = XMMatrixMultiply(matRot1, matTrans1);
+
+    g_matWorld2 = XMMatrixIdentity();
+
+    XMMATRIX matRot2 = XMMatrixRotationZ(g_fRot2);
+    XMMATRIX matTrans2 = XMMatrixTranslation(0.66f, 0.0f, 0.66f);
+
+    g_matWorld2 = XMMatrixMultiply(matRot2, matTrans2);
 
     bool bChangeTex = false;
     g_fRot0 += 0.05f;
@@ -199,6 +207,79 @@ void Update()
     {
         g_fRot1 = 0.0f;
     }
+
+    g_fRot2 += 0.1f;
+    if (g_fRot2 > 2.0f * XM_PI)
+    {
+        g_fRot2 = 0.0f;
+    }
+}
+
+void* CreateBoxMeshObject()
+{
+    void* pMeshObj = nullptr;
+
+    // 도우미 함수에서 적당히 Box를 만든다.
+    uint16_t	pIndexList[36] = {};
+    BasicVertex* pVertexList = nullptr;
+    DWORD dwVertexCount = CreateBoxMesh(&pVertexList, pIndexList, (DWORD)_countof(pIndexList), 0.25f);
+
+    // Vertex 정보가 없는 빈 인스턴스를 만든다.
+    pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
+
+    const WCHAR* wchTexFileNameList[6] =
+    {
+        L"../../Assets/salt_01.dds",
+        L"../../Assets/salt_02.dds",
+        L"../../Assets/salt_03.dds",
+        L"../../Assets/salt_04.dds",
+        L"../../Assets/salt_05.dds",
+        L"../../Assets/salt_06.dds"
+    };
+
+    // 박스 면마다 텍스쳐를 다르게 한다.
+    g_pRenderer->BeginCreateMesh(pMeshObj, pVertexList, dwVertexCount, 6);	// 박스의 6면-1면당 삼각형 2개-인덱스 6개
+    for (DWORD i = 0; i < 6; i++)
+    {
+        // 삼각형 2개마다 하나의 텍스쳐를 이용하게 된다.
+        g_pRenderer->InsertTriGroup(pMeshObj, pIndexList + i * 6, 2, wchTexFileNameList[i]);
+    }
+    g_pRenderer->EndCreateMesh(pMeshObj);
+
+    // Vertex Data가 넘어갔으니, 해제 해준다.
+    if (pVertexList)
+    {
+        DeleteBoxMesh(pVertexList);
+        pVertexList = nullptr;
+    }
+    return pMeshObj;
+}
+
+void* CreateQuadMesh()
+{
+    void* pMeshObj = nullptr;
+    pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
+
+    // 사각형 정보이다.
+    BasicVertex pVertexList[] =
+    {
+        { { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
+        { { 0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
+        { { 0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+        { { -0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
+    };
+
+    uint16_t pIndexList[] =
+    {
+        0, 1, 2,
+        0, 2, 3
+    };
+
+    // 사각형이고 점 4개 인덱스 6개, 삼각형 2개가 하나의 텍스쳐를 받아서 그린다.
+    g_pRenderer->BeginCreateMesh(pMeshObj, pVertexList, (DWORD)_countof(pVertexList), 1);
+    g_pRenderer->InsertTriGroup(pMeshObj, pIndexList, 2, L"../../Assets/salt.dds");
+    g_pRenderer->EndCreateMesh(pMeshObj);
+    return pMeshObj;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

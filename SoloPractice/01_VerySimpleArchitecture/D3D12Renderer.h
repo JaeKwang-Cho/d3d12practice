@@ -26,7 +26,11 @@ public:
 	
 	void* CreateBasicMeshObject_Return_New();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
-	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, void* _pTexHandle);
+	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
+
+	bool BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount);
+	bool InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
+	void EndCreateMesh(void* _pMeshObjHandle);
 
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
 	void* CreateTextureFromFile(const WCHAR* _wchFileName);
