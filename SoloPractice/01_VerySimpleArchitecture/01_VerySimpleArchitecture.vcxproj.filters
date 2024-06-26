@@ -40,6 +40,12 @@
     <Filter Include="DirectXTex\DDSLoader">
       <UniqueIdentifier>{ee047592-d21c-41bb-9be7-ac1a5ca831d4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\ConstantBufferManager">
+      <UniqueIdentifier>{f50bc249-af19-48b6-a454-f67691b1ad51}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\SpriteObject">
+      <UniqueIdentifier>{06764044-8e36-44de-a4f5-922b1ed54bc4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -82,6 +88,12 @@
     <ClInclude Include="VertexUtil.h">
       <Filter>Util</Filter>
     </ClInclude>
+    <ClInclude Include="ConstantBufferManager.h">
+      <Filter>Renderer\ConstantBufferManager</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteObject.h">
+      <Filter>Renderer\SpriteObject</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -89,6 +101,9 @@
     </None>
     <None Include="packages.config" />
     <None Include="Shaders\Simple.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Sprite.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
@@ -126,6 +141,12 @@
     </ClCompile>
     <ClCompile Include="VertexUtil.cpp">
       <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="ConstantBufferManager.cpp">
+      <Filter>Renderer\ConstantBufferManager</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteObject.cpp">
+      <Filter>Renderer\SpriteObject</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

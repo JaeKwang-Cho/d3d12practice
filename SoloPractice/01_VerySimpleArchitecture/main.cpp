@@ -48,6 +48,13 @@ D3D12Renderer* g_pRenderer = nullptr;
 void* g_pMeshObj0 = nullptr;
 void* g_pMeshObj1 = nullptr;
 
+void* g_pSpriteObjCommon = nullptr;
+void* g_pSpriteObj0 = nullptr;
+void* g_pSpriteObj1 = nullptr;
+void* g_pSpriteObj2 = nullptr;
+void* g_pSpriteObj3 = nullptr;
+void* g_pTexHandle0 = nullptr;
+
 float g_fRot0 = 0.0f;
 float g_fRot1 = 0.0f;
 float g_fRot2 = 0.0f;
@@ -104,6 +111,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // main에서 Quad Mesh를 미리 만들기
     g_pMeshObj1 = CreateQuadMesh();
 
+    // sprite를 만든다. 이 구조에서 단점은 sprite를 만들 texture file의 정보를 알고 있어야 한다는 것
+    g_pTexHandle0 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
+    g_pSpriteObjCommon = g_pRenderer->CreateSpriteObject();
+
+    g_pSpriteObj0 = g_pRenderer->CreateSpriteObject(L"../../Assets/salt_01.dds", 0, 0, 640, 640);
+    g_pSpriteObj1 = g_pRenderer->CreateSpriteObject(L"../../Assets/salt_01.dds", 640, 0, 1280, 640);
+    g_pSpriteObj2 = g_pRenderer->CreateSpriteObject(L"../../Assets/salt_01.dds", 0, 640, 640, 1280);
+    g_pSpriteObj3 = g_pRenderer->CreateSpriteObject(L"../../Assets/salt_01.dds", 640, 640, 1280, 1280);
+
 
     MSG msg = {};
 
@@ -126,6 +142,36 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     if (g_pMeshObj1) {
         g_pRenderer->DeleteBasicMeshObject(g_pMeshObj1);
         g_pMeshObj1 = nullptr;
+    }
+    if (g_pTexHandle0)
+    {
+        g_pRenderer->DeleteTexture(g_pTexHandle0);
+        g_pTexHandle0 = nullptr;
+    }
+    if (g_pSpriteObjCommon)
+    {
+        g_pRenderer->DeleteSpriteObject(g_pSpriteObjCommon);
+        g_pSpriteObjCommon = nullptr;
+    }
+    if (g_pSpriteObj0)
+    {
+        g_pRenderer->DeleteSpriteObject(g_pSpriteObj0);
+        g_pSpriteObj0 = nullptr;
+    }
+    if (g_pSpriteObj1)
+    {
+        g_pRenderer->DeleteSpriteObject(g_pSpriteObj1);
+        g_pSpriteObj1 = nullptr;
+    }
+    if (g_pSpriteObj2)
+    {
+        g_pRenderer->DeleteSpriteObject(g_pSpriteObj2);
+        g_pSpriteObj2 = nullptr;
+    }
+    if (g_pSpriteObj3)
+    {
+        g_pRenderer->DeleteSpriteObject(g_pSpriteObj3);
+        g_pSpriteObj3 = nullptr;
     }
     if (g_pRenderer) {
         delete g_pRenderer;
@@ -165,6 +211,41 @@ void RunGame()
     g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld1);
     // quad를 그린다.
     g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
+
+    // sprite를 그린다.
+    float padding = 5.f;
+    
+    RECT rect;
+    rect.left = 0;
+    rect.top = 0;
+    rect.right = 540;
+    rect.bottom = 540;
+    
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    
+    rect.left = 540;
+    rect.top = 0;
+    rect.right = 540;
+    rect.bottom = 270;
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+
+    rect.left = 0;
+    rect.top = 540;
+    rect.right = 540;
+    rect.bottom = 1080;
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+
+    rect.left = 540;
+    rect.top = 540;
+    rect.right = 1080;
+    rect.bottom = 1080;
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    
+    g_pRenderer->RenderSprite(g_pSpriteObj0, 540 + padding + padding, 0, 0.25f, 0.25f, 0.f);
+    g_pRenderer->RenderSprite(g_pSpriteObj1, 540 + padding + padding + 160 + padding, 0, 0.25f, 0.25f, 0.f);
+    g_pRenderer->RenderSprite(g_pSpriteObj2, 540 + padding + padding, 160+ padding, 0.25f, 0.25f, 0.f);
+    g_pRenderer->RenderSprite(g_pSpriteObj3, 540 + padding + padding + 160 + padding, 160 + padding, 0.25f, 0.25f, 0.f);
+    
 
     // end
     g_pRenderer->EndRender();
@@ -225,7 +306,7 @@ void* CreateBoxMeshObject()
     DWORD dwVertexCount = CreateBoxMesh(&pVertexList, pIndexList, (DWORD)_countof(pIndexList), 0.25f);
 
     // Vertex 정보가 없는 빈 인스턴스를 만든다.
-    pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
+    pMeshObj = g_pRenderer->CreateBasicMeshObject();
 
     const WCHAR* wchTexFileNameList[6] =
     {
@@ -258,7 +339,7 @@ void* CreateBoxMeshObject()
 void* CreateQuadMesh()
 {
     void* pMeshObj = nullptr;
-    pMeshObj = g_pRenderer->CreateBasicMeshObject_Return_New();
+    pMeshObj = g_pRenderer->CreateBasicMeshObject();
 
     // 사각형 정보이다.
     BasicVertex pVertexList[] =

@@ -3,8 +3,9 @@
 #include "pch.h"
 #include "ConstantBufferPool.h"
 
-bool ConstantBufferPool::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, UINT _sizePerCBV, UINT _maxCBVNums)
+bool ConstantBufferPool::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, CONSTANT_BUFFER_TYPE _type, UINT _sizePerCBV, UINT _maxCBVNums)
 {
+	m_ConstantBufferType = _type;
 	m_maxCBVNum = _maxCBVNums;
 	m_sizePerCBV = _sizePerCBV;
 	UINT byteWidth = m_sizePerCBV * m_maxCBVNum;

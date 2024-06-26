@@ -10,6 +10,7 @@ class D3D12ResourceManager;
 class ConstantBufferPool;
 class DescriptorPool;
 class SingleDescriptorAllocator;
+class ConstantBufferManager;
 
 class D3D12Renderer
 {
@@ -24,7 +25,8 @@ public:
 
 	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
 	
-	void* CreateBasicMeshObject_Return_New();
+	// mesh
+	void* CreateBasicMeshObject();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
 	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 
@@ -32,6 +34,14 @@ public:
 	bool InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh(void* _pMeshObjHandle);
 
+	// sprite
+	void* CreateSpriteObject();
+	void* CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height);
+	void DeleteSpriteObject(void* _pSpriteObjHandle);
+	void RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle);
+	void RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z);
+
+	// texture
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
 	void* CreateTextureFromFile(const WCHAR* _wchFileName);
 	void DeleteTexture(void* _pTexHandle);
@@ -70,7 +80,7 @@ private:
 	D3D12ResourceManager* m_pResourceManager;
 	// CBV pool이랑 DescriptorPool 도 CommandList 마다 하나씩 만든다.
 	// 얘도 Render Pipeline에 bind되어서 쓰이는 애들이다. CommandList만 분리해서는 절대 안된다.
-	ConstantBufferPool* m_ppConstantBufferPool[MAX_PENDING_FRAME_COUNT];
+	ConstantBufferManager* m_ppConstantBufferManager[MAX_PENDING_FRAME_COUNT]; // 이제 pool에서 바로 빼오는 것이 아니라 manager를 통해서 가져온다.
 	DescriptorPool* m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
 	// Descriptor(View)를 모아서 관리해주는 친구
 	SingleDescriptorAllocator* m_pSingleDescriptorAllocator;
@@ -117,7 +127,7 @@ public:
 
 	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
 	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
-	ConstantBufferPool* INL_GetConstantBufferPool() { return m_ppConstantBufferPool[m_dwCurContextIndex]; }
+	ConstantBufferPool* INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _type);
 	DescriptorPool* INL_DescriptorPool() { return m_ppDescriptorPool[m_dwCurContextIndex]; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
@@ -127,5 +137,8 @@ public:
 		//*_pOutMatView = XMMatrixTranspose(m_matView);
 		//*_pOutMatProj = XMMatrixTranspose(m_matProj);
 	}
+	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
+	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
+
 };
 

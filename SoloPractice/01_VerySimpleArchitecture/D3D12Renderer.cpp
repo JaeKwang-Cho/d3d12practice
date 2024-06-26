@@ -9,6 +9,8 @@
 #include "ConstantBufferPool.h"
 #include "DescriptorPool.h"
 #include "SingleDescriptorAllocator.h"
+#include "ConstantBufferManager.h"
+#include "SpriteObject.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -221,8 +223,8 @@ EXIT:
 	// Command List당 pool도 각각 만들어준다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		// Constant Buffer Pool
-		m_ppConstantBufferPool[i] = new ConstantBufferPool;
-		m_ppConstantBufferPool[i]->Initialize(m_pD3DDevice, AlignConstantBufferSize((UINT)sizeof(CONSTANT_BUFFER_DEFAULT)), MAX_DRAW_COUNT_PER_FRAME);
+		m_ppConstantBufferManager[i] = new ConstantBufferManager;
+		m_ppConstantBufferManager[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME);
 
 		// Descriptor Pool
 		m_ppDescriptorPool[i] = new DescriptorPool;
@@ -347,9 +349,10 @@ void D3D12Renderer::Present()
 	WaitForFenceValue(m_pui64LastFenceValue[dwNextContextIndex]);
 
 	// 한 프레임이 끝났으니 0으로 초기화 한다.
-	m_ppConstantBufferPool[dwNextContextIndex]->Reset();
+	m_ppConstantBufferManager[dwNextContextIndex]->Reset();
 	m_ppDescriptorPool[dwNextContextIndex]->Reset();
-}
+	m_dwCurContextIndex = dwNextContextIndex;
+ }
 
 bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 {
@@ -376,9 +379,12 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 	}
 	// 원래 있던 RT Resource는 해제해주고
 	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
-		m_pRenderTargets[i]->Release();
 		m_pRenderTargets[i] = nullptr;
+		// ComPtr은 static이 아니면 Release를 안하는게 좋은듯
 	}
+	// DS Resource도 해제해준다.
+	m_pDepthStencil = nullptr;
+
 	// 새로운 버퍼를 생성한다.
 	hr = m_pSwapChain->ResizeBuffers(SWAP_CHAIN_FRAME_COUNT, _dwWidth, _dwHeight, DXGI_FORMAT_R8G8B8A8_UNORM, m_dwSwapChainFlags);
 	if (FAILED(hr)) {
@@ -395,6 +401,8 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 		rtvHandle.Offset(1, m_rtvDescriptorSize);
 	}
 
+	CreateDepthStencil(_dwWidth, _dwHeight);
+
 	// 맴버도 업데이트 해준다.
 	m_dwWidth = _dwWidth;
 	m_dwHeight = _dwHeight;
@@ -410,7 +418,7 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 	return true;
 }
 
-void* D3D12Renderer::CreateBasicMeshObject_Return_New()
+void* D3D12Renderer::CreateBasicMeshObject()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
 	pMeshObj->Initialize(this);
@@ -423,6 +431,11 @@ void* D3D12Renderer::CreateBasicMeshObject_Return_New()
 
 void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 {
+	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	}
+
 	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
 	delete pMeshObj;
@@ -454,6 +467,62 @@ void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
 {
 	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
 	pMeshObj->EndCreateMesh();
+}
+
+void* D3D12Renderer::CreateSpriteObject()
+{
+	SpriteObject* pSpriteObj = new SpriteObject;
+	pSpriteObj->Initialize(this);
+
+	return (void*)pSpriteObj;
+}
+
+void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height)
+{
+	SpriteObject* pSpriteObj = new SpriteObject;
+
+	RECT rect;
+	rect.left = _posX;
+	rect.top = _posY;
+	rect.right = _width;
+	rect.bottom = _height;
+	pSpriteObj->Initialize(this, _wchTexFileName, &rect);
+
+	return (void*)pSpriteObj;
+}
+
+void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
+{
+	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	}
+	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
+	delete pSpriteObj;
+}
+
+void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
+{
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+
+	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
+
+	XMFLOAT2 pos = { (float)_posX, (float)_posY };
+	XMFLOAT2 scale = { _scaleX, _scaleY };
+
+	pSpriteObj->DrawWithTex(pCommandList, &pos, &scale, _pRect, _z, (TEXTURE_HANDLE*)_pTexHandle);
+}
+
+void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
+{
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+
+	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
+
+	XMFLOAT2 pos = { (float)_posX, (float)_posY };
+	XMFLOAT2 scale = { _scaleX, _scaleY };
+
+	pSpriteObj->Draw(pCommandList, &pos, &scale, _z);
 }
 
 void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
@@ -732,9 +801,9 @@ void D3D12Renderer::CleanUpRenderer()
 	}
 
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		if (m_ppConstantBufferPool[i]) {
-			delete m_ppConstantBufferPool[i];
-			m_ppConstantBufferPool[i] = nullptr;
+		if (m_ppConstantBufferManager[i]) {
+			delete m_ppConstantBufferManager[i];
+			m_ppConstantBufferManager[i] = nullptr;
 		}
 
 		if (m_ppDescriptorPool[i]) {
@@ -758,7 +827,7 @@ void D3D12Renderer::CleanUpRenderer()
 
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_ppCommandAllocator{},
-	m_pResourceManager(nullptr), m_ppConstantBufferPool{}, m_ppDescriptorPool{}, m_pSingleDescriptorAllocator(nullptr),
+	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, m_pSingleDescriptorAllocator(nullptr),
 	m_ppCommandList{}, m_ui64FenceValue(0), m_pui64LastFenceValue{},
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, m_pDepthStencil(nullptr),
@@ -774,5 +843,12 @@ D3D12Renderer::D3D12Renderer()
 D3D12Renderer::~D3D12Renderer()
 {
 	CleanUpRenderer();
+}
+
+ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _type)
+{
+	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex];
+	ConstantBufferPool* pConstBufferPool = pConstBufferManager->GetConstantBufferPool(_type);
+	return pConstBufferPool;
 }
 

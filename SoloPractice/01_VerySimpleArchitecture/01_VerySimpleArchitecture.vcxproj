@@ -136,6 +136,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="BasicMeshObject.h" />
+    <ClInclude Include="ConstantBufferManager.h" />
     <ClInclude Include="ConstantBufferPool.h" />
     <ClInclude Include="D3D12Renderer.h" />
     <ClInclude Include="D3D12ResourceManager.h" />
@@ -146,12 +147,14 @@
     <ClInclude Include="IndexCreator.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="SingleDescriptorAllocator.h" />
+    <ClInclude Include="SpriteObject.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="typedef.h" />
     <ClInclude Include="VertexUtil.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
+    <ClCompile Include="ConstantBufferManager.cpp" />
     <ClCompile Include="ConstantBufferPool.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
     <ClCompile Include="D3D12ResourceManager.cpp" />
@@ -162,6 +165,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp" />
     <ClCompile Include="SingleDescriptorAllocator.cpp" />
+    <ClCompile Include="SpriteObject.cpp" />
     <ClCompile Include="VertexUtil.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -172,6 +176,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Simple.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Sprite.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

@@ -11,7 +11,7 @@ uint16_t AddVertex(BasicVertex* _pVertexList, DWORD _dwMaxVertexCount, DWORD* _p
 	for (DWORD i = 0; i < dwExistVertexCount; i++) {
 		const BasicVertex* pExistVertex = _pVertexList + i;
 		if (!memcmp(pExistVertex, _pVertex, sizeof(BasicVertex))) {
-			dwFoundIndex = i;
+			dwFoundIndex = (uint16_t)i;
 			goto RETURN;
 		}
 	}

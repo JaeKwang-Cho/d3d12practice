@@ -27,6 +27,33 @@ struct CONSTANT_BUFFER_DEFAULT
 	XMMATRIX matWVP;
 };
 
+struct CONSTANT_BUFFER_SPRITE 
+{
+	XMFLOAT2 screenResol;
+	XMFLOAT2 pos;
+	XMFLOAT2 scale;
+	XMFLOAT2 texSize;
+	XMFLOAT2 texSamplePos;
+	XMFLOAT2 TexSampleSize;
+	float z;
+	float alpha;
+	float pad0;
+	float pad1;
+};
+
+enum class CONSTANT_BUFFER_TYPE : UINT
+{
+	DEFAULT = 0,
+	SPRITE,
+	END
+};
+
+struct CONSTANT_BUFFER_PROPERTY
+{
+	CONSTANT_BUFFER_TYPE type;
+	UINT size;
+};
+
 struct TEXTURE_HANDLE
 {
 	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource;

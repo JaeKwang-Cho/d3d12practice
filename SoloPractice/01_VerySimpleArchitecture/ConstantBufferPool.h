@@ -17,7 +17,7 @@ struct CB_CONTAINER {
 class ConstantBufferPool
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, UINT _sizePerCBV, UINT _maxCBVNums);
+	bool Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, CONSTANT_BUFFER_TYPE _type, UINT _sizePerCBV, UINT _maxCBVNums);
 	CB_CONTAINER* Alloc(); // 해제하면 안되는 포인터를 반환한다.
 	void Reset();
 
@@ -29,6 +29,8 @@ protected:
 private:
 	// 배열로 관리한다.
 	CB_CONTAINER* m_pCBContainerList;
+	// 이제 Type이 여러개 생겼으니 구분해서 초기화한다.
+	CONSTANT_BUFFER_TYPE m_ConstantBufferType;
 	// CBV가 올라갈 Heap이다.
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pCBVHeap;
 	// CB resource
