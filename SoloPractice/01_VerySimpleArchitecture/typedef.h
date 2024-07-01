@@ -60,3 +60,48 @@ struct TEXTURE_HANDLE
 	D3D12_CPU_DESCRIPTOR_HANDLE srv;
 	TEXTURE_HANDLE() :pTexResource(nullptr), srv{} {}
 };
+
+struct SubRenderGeometry 
+{
+	UINT indexCount;
+	UINT startIndexLocation;
+	UINT baseVertexLocation;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pVertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
+	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
+
+	TEXTURE_HANDLE* pTexHandle;
+
+	SubRenderGeometry() 
+		: indexCount(0), startIndexLocation(0), baseVertexLocation(0),
+		m_pVertexBuffer(nullptr), m_VertexBufferView{},
+		m_pIndexBuffer(nullptr), m_IndexBufferView{},
+		pTexHandle(nullptr)
+	{}
+};
+
+struct MeshData
+{
+	// 점 데이터, 인덱스 데이터
+	std::vector<BasicVertex> Vertices;
+	std::vector<uint32_t> Indices32;
+
+	// 총 인덱스 개수가 적을 때 사용
+	std::vector<uint16_t>& GetIndices16()
+	{
+		if (mIndices16.empty())
+		{
+			mIndices16.resize(Indices32.size());
+			for (size_t i = 0; i < Indices32.size(); ++i)
+				mIndices16[i] = static_cast<uint16_t>(Indices32[i]);
+		}
+
+		return mIndices16;
+	}
+
+private:
+	std::vector<uint16_t> mIndices16;
+};

@@ -49,8 +49,11 @@
     <Filter Include="Renderer\PSOPool">
       <UniqueIdentifier>{d081e109-7eb8-4fdb-81a4-5bb38c5a6f2f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="BasicAssets">
+    <Filter Include="BasicRenderAssets">
       <UniqueIdentifier>{33d3ac4f-f76a-45c0-b39b-5fcbbf198df9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="BasicRenderAssets\Grid">
+      <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -105,6 +108,9 @@
     </ClInclude>
     <ClInclude Include="PSOKeys.h">
       <Filter>Renderer\PSOPool</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicRenderAsset.h">
+      <Filter>BasicRenderAssets</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -165,6 +171,9 @@
     </ClCompile>
     <ClCompile Include="PSOKeys.cpp">
       <Filter>Renderer\PSOPool</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicRenderAsset.cpp">
+      <Filter>BasicRenderAssets</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
