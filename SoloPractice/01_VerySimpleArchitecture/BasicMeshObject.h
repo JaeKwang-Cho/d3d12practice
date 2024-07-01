@@ -28,8 +28,8 @@ struct INDEXED_TRI_GROUP
 {
 	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
-	DWORD dwTriCount;
-	TEXTURE_HANDLE* pTexHandle;
+	DWORD dwTriCount = -1;
+	TEXTURE_HANDLE* pTexHandle = nullptr;
 };
 
 class D3D12Renderer;
@@ -40,7 +40,7 @@ private:
 	// 일단 지금은 단순히 테스트용으로 하기 때문에
 	// 요롷게 클래스 맴버로 root signature와 PSO, RefCount를 관리한다.
 	static Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
-	static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
+	//static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 	static DWORD m_dwInitRefCount;
 
 public:
@@ -59,12 +59,6 @@ public:
 	bool InsertIndexedTriList(const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh();
 
-	//bool CreateMesh();
-	//bool CreateMesh_UploadHeap();
-	//bool CreateMesh_DefaultHeap();
-	//bool CreateMesh_WithIndex();
-	//bool CreateMesh_WithTexture();
-	//bool CreateMesh_WithCB();
 protected:
 private:
 	bool InitCommonResources();
@@ -91,8 +85,8 @@ private:
 	INDEXED_TRI_GROUP* m_pTriGroupList;
 	DWORD m_dwTriGroupCount;
 	DWORD m_dwMaxTriGroupCount;
-
-
+	// PSO
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
 public:
 	BasicMeshObject();

@@ -21,7 +21,7 @@ uint16_t AddVertex(BasicVertex* _pVertexList, DWORD _dwMaxVertexCount, DWORD* _p
 		goto RETURN;
 	}
 	// 새로운 점 추가
-	dwFoundIndex = dwExistVertexCount;
+	dwFoundIndex = (uint16_t)dwExistVertexCount;
 	_pVertexList[dwFoundIndex] = *_pVertex;
 	*_pdwInOutVertexCount = dwExistVertexCount + 1;
 

@@ -10,7 +10,7 @@
 #include "D3DUtil.h"
 
 Microsoft::WRL::ComPtr<ID3D12RootSignature> SpriteObject::m_pRootSignature = nullptr;
-Microsoft::WRL::ComPtr<ID3D12PipelineState> SpriteObject::m_pPipelineState = nullptr;
+//Microsoft::WRL::ComPtr<ID3D12PipelineState> SpriteObject::m_pPipelineState = nullptr;
 
 Microsoft::WRL::ComPtr<ID3D12Resource> SpriteObject::m_pVertexBuffer = nullptr;
 D3D12_VERTEX_BUFFER_VIEW SpriteObject::m_VertexBufferView = {};
@@ -25,6 +25,8 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer)
 	m_pRenderer = _pRenderer;
 
 	bool bResult = InitCommonResources();
+	// 일단은 인스턴스마다 PSO를 가지도록 한다.
+	bResult = InitPipelineState();
 	return bResult;
 }
 
@@ -33,6 +35,8 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFil
 	m_pRenderer = _pRenderer;
 
 	bool bResult = InitCommonResources();
+	// 일단은 인스턴스마다 PSO를 가지도록 한다.
+	bResult = InitPipelineState();
 	if (bResult) {
 		UINT texWidth = 1;
 		UINT texHeight = 1;
@@ -161,7 +165,6 @@ bool SpriteObject::InitCommonResources()
 	}
 
 	InitRootSignature();
-	InitPipelineState();
 	InitMesh();
 
 RETURN:
@@ -222,64 +225,78 @@ bool SpriteObject::InitRootSignature()
 
 bool SpriteObject::InitPipelineState()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
 
-	Microsoft::WRL::ComPtr<ID3DBlob> pVertexShader = nullptr;
-	Microsoft::WRL::ComPtr<ID3DBlob> pPixelShader = nullptr;
-	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
+	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::SPRITE_FILL];
+	pPipelineState = m_pRenderer->GetPSO(psoKey);
+	if (pPipelineState != nullptr) {
+		m_pPipelineState = pPipelineState;
+		goto RETURN;
+	}
+	else {
+		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+
+		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShader = nullptr;
+		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShader = nullptr;
+		Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
 #if defined(_DEBUG)
-	UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+		UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #else
-	UINT compileFlags = 0;
+		UINT compileFlags = 0;
 #endif
-	// 스프라이트 전용 쉐이더를 컴파일 한다.
-	if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShader.GetAddressOf(), pErrorBlob.GetAddressOf()))) 
-	{
-		if (pErrorBlob != nullptr) {
-			OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
+		// 스프라이트 전용 쉐이더를 컴파일 한다.
+		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
+		{
+			if (pErrorBlob != nullptr) {
+				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
+			}
+			__debugbreak();
 		}
-		__debugbreak();
-	}
 
-	if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
-	{
-		if (pErrorBlob != nullptr){
-			OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
-			pErrorBlob->Release();
+		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
+		{
+			if (pErrorBlob != nullptr) {
+				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
+				pErrorBlob->Release();
+			}
+			__debugbreak();
 		}
-		__debugbreak();
+
+		// input layout를 세팅한다.
+		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
+		{
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) + sizeof(XMFLOAT4),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
+		};
+
+		// PSO 생성한다.
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+		psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+		psoDesc.pRootSignature = m_pRootSignature.Get();
+		psoDesc.VS = CD3DX12_SHADER_BYTECODE(pVertexShader->GetBufferPointer(), pVertexShader->GetBufferSize());
+		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShader->GetBufferPointer(), pPixelShader->GetBufferSize());
+		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+		psoDesc.DepthStencilState.StencilEnable = FALSE;
+		psoDesc.SampleMask = UINT_MAX;
+		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		psoDesc.NumRenderTargets = 1;
+		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+		psoDesc.SampleDesc.Count = 1;
+
+		if (FAILED(pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pPipelineState.GetAddressOf())))) {
+			__debugbreak();
+		}
+
+
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
 	}
-
-	// input layout를 세팅한다.
-	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
-	{
-		{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) + sizeof(XMFLOAT4),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-	};
-
-	// PSO 생성한다.
-	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-	psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-	psoDesc.pRootSignature = m_pRootSignature.Get();
-	psoDesc.VS = CD3DX12_SHADER_BYTECODE(pVertexShader->GetBufferPointer(), pVertexShader->GetBufferSize());
-	psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShader->GetBufferPointer(), pPixelShader->GetBufferSize());
-	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-	psoDesc.DepthStencilState.StencilEnable = FALSE;
-	psoDesc.SampleMask = UINT_MAX;
-	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-	psoDesc.NumRenderTargets = 1;
-	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-	psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-	psoDesc.SampleDesc.Count = 1;
-
-	if (FAILED(pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pPipelineState.GetAddressOf())))) {
-		__debugbreak();
-	}
+RETURN:
 
 	return true;
 }
@@ -339,7 +356,8 @@ void SpriteObject::CleanUp()
 SpriteObject::SpriteObject()
 	:m_pTexHandle(nullptr), m_pRenderer(nullptr),
 	m_Rect{}, m_Scale{1.f, 1.f}, 
-	m_dwTriGroupCount(0), m_dwMaxTriGroupCount()
+	m_dwTriGroupCount(0), m_dwMaxTriGroupCount(),
+	m_pPipelineState(nullptr)
 {
 }
 

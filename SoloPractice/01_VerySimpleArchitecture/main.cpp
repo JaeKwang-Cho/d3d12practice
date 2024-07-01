@@ -67,6 +67,11 @@ XMMATRIX g_matWorld2 = {};
 float g_fOffsetX = 0.f;
 float g_fOffsetY = 0.f;
 float g_fSpeed = 0.01f;
+
+// Tick Time
+ULONGLONG g_PrvFrameTick = 0;
+ULONGLONG g_PrvUpdateTick = 0;
+DWORD	g_FrameCount = 0;
  
 // 렌더링 함수
 void RunGame();
@@ -200,10 +205,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 void RunGame()
 {
     // begin
+    ULONGLONG CurTick = GetTickCount64();
     g_pRenderer->BeginRender();
 
     // game business logic
-    Update();
+    if (CurTick - g_PrvUpdateTick > 16)
+    {
+        // Update Scene with 60FPS
+        Update();
+        g_PrvUpdateTick = CurTick;
+    }
 
     // rendering objects
     // cube에 대해서 2번 렌더링을 다르게 한다.
@@ -213,7 +224,7 @@ void RunGame()
     g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
 
     // sprite를 그린다.
-    float padding = 5.f;
+    int padding = 5;
     
     RECT rect;
     rect.left = 0;
@@ -252,6 +263,18 @@ void RunGame()
 
     // Present
     g_pRenderer->Present();
+
+    // FPS
+    if (CurTick - g_PrvFrameTick > 1000)
+    {
+        g_PrvFrameTick = CurTick;
+
+        WCHAR wchTxt[64];
+        swprintf_s(wchTxt, L"FPS:%u", g_FrameCount);
+
+        g_FrameCount = 0;
+    }
+
 }
 
 void Update()

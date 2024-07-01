@@ -46,6 +46,12 @@
     <Filter Include="Renderer\SpriteObject">
       <UniqueIdentifier>{06764044-8e36-44de-a4f5-922b1ed54bc4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\PSOPool">
+      <UniqueIdentifier>{d081e109-7eb8-4fdb-81a4-5bb38c5a6f2f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="BasicAssets">
+      <UniqueIdentifier>{33d3ac4f-f76a-45c0-b39b-5fcbbf198df9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -93,6 +99,12 @@
     </ClInclude>
     <ClInclude Include="SpriteObject.h">
       <Filter>Renderer\SpriteObject</Filter>
+    </ClInclude>
+    <ClInclude Include="D3D12PSOCache.h">
+      <Filter>Renderer\PSOPool</Filter>
+    </ClInclude>
+    <ClInclude Include="PSOKeys.h">
+      <Filter>Renderer\PSOPool</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -147,6 +159,12 @@
     </ClCompile>
     <ClCompile Include="SpriteObject.cpp">
       <Filter>Renderer\SpriteObject</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D12PSOCache.cpp">
+      <Filter>Renderer\PSOPool</Filter>
+    </ClCompile>
+    <ClCompile Include="PSOKeys.cpp">
+      <Filter>Renderer\PSOPool</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

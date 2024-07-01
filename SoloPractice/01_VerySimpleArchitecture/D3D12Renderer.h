@@ -11,6 +11,7 @@ class ConstantBufferPool;
 class DescriptorPool;
 class SingleDescriptorAllocator;
 class ConstantBufferManager;
+class D3D12PSOCache;
 
 class D3D12Renderer
 {
@@ -45,6 +46,9 @@ public:
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
 	void* CreateTextureFromFile(const WCHAR* _wchFileName);
 	void DeleteTexture(void* _pTexHandle);
+
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPSO(std::string _strPSOName);
+	bool CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc);
 protected:
 private:
 	void CreateCommandList();
@@ -84,6 +88,8 @@ private:
 	DescriptorPool* m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
 	// Descriptor(View)를 모아서 관리해주는 친구
 	SingleDescriptorAllocator* m_pSingleDescriptorAllocator;
+	// PSO를 캐싱해주는 친구
+	D3D12PSOCache* m_pD3D12PSOCache;
 
 	UINT64 m_ui64FenceValue;
 	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.
@@ -131,6 +137,7 @@ public:
 	DescriptorPool* INL_DescriptorPool() { return m_ppDescriptorPool[m_dwCurContextIndex]; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
+	D3D12PSOCache* INL_GetD3D12PSOCache() { return m_pD3D12PSOCache; }
 	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj) {
 		*_pOutMatView = m_matView;
 		*_pOutMatProj = m_matProj;

@@ -16,7 +16,7 @@ public:
 private:
 	// (BasicMeshObject와 마찬가지로) 그리는 방법과 도형정보는 인스턴싱을 위해 클래스 맴버로 공유한다.
 	static Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
-	static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
+	//static Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 	static DWORD m_dwInitRefCount;
 
 	// Vertex 정보와 Index 정보도 static으로 한다. 아마 Quad로만 그리기 때문일 것이다.
@@ -49,6 +49,8 @@ private:
 	D3D12Renderer* m_pRenderer;
 	RECT m_Rect;
 	XMFLOAT2 m_Scale;
+	// PSO
+	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
 	DWORD m_dwTriGroupCount;
 	DWORD m_dwMaxTriGroupCount;

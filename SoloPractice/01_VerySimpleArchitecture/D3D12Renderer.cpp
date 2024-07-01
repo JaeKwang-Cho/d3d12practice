@@ -11,6 +11,7 @@
 #include "SingleDescriptorAllocator.h"
 #include "ConstantBufferManager.h"
 #include "SpriteObject.h"
+#include "D3D12PSOCache.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -235,6 +236,10 @@ EXIT:
 	m_pSingleDescriptorAllocator = new SingleDescriptorAllocator;
 	m_pSingleDescriptorAllocator->Initialize(m_pD3DDevice, MAX_DESCRIPRTOR_COUNT, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 
+	// PSOCache
+	m_pD3D12PSOCache = new D3D12PSOCache;
+	m_pD3D12PSOCache->Initialize(this);
+
 	InitCamera();
 
 	bResult = true;
@@ -322,7 +327,8 @@ void D3D12Renderer::Present()
 	DoFence();
 
 	// back Buffer 화면을 Primary Buffer로 전송
-	UINT SyncInterval = 1; // Vsync on , 0이면 Vsync를 off 하는 것이다.
+	UINT SyncInterval = 0; // Vsync on , 0이면 Vsync를 off 하는 것이다.
+	// 이걸 키면 프레임이 느려진다.
 
 	UINT uiSyncInterval = SyncInterval;
 	UINT uiPresentFlags = 0;
@@ -627,6 +633,16 @@ void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 	delete pTexHandle;
 }
 
+Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12Renderer::GetPSO(std::string _strPSOName)
+{
+	return m_pD3D12PSOCache->GetPSO(_strPSOName);
+}
+
+bool D3D12Renderer::CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc)
+{
+	return m_pD3D12PSOCache->CachePSO(_strPSOName, _pPSODesc);
+}
+
 void D3D12Renderer::CreateCommandList()
 {
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -821,13 +837,19 @@ void D3D12Renderer::CleanUpRenderer()
 		m_pSingleDescriptorAllocator = nullptr;
 	}
 
+	if (m_pD3D12PSOCache) {
+		delete m_pD3D12PSOCache;
+		m_pD3D12PSOCache = nullptr;
+	}
+
 
 	CleanupFence();
 }
 
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_ppCommandAllocator{},
-	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, m_pSingleDescriptorAllocator(nullptr),
+	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, 
+	m_pSingleDescriptorAllocator(nullptr), m_pD3D12PSOCache(nullptr),
 	m_ppCommandList{}, m_ui64FenceValue(0), m_pui64LastFenceValue{},
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, m_pDepthStencil(nullptr),
