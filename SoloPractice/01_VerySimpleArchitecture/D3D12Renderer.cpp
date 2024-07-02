@@ -12,6 +12,7 @@
 #include "ConstantBufferManager.h"
 #include "SpriteObject.h"
 #include "D3D12PSOCache.h"
+#include "BasicRenderMesh.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -424,6 +425,43 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 	return true;
 }
 
+void* D3D12Renderer::CreateRenderMesh()
+{
+	BasicRenderMesh* pRenderMesh = new BasicRenderMesh;
+	pRenderMesh->Initialize(this);
+
+	return pRenderMesh;
+}
+
+void* D3D12Renderer::CreateRenderMesh(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount)
+{
+	BasicRenderMesh* pRenderMesh = new BasicRenderMesh;
+	pRenderMesh->Initialize(this);
+	pRenderMesh->CreateRenderAssets(_ppMeshData, _meshDataCount);
+
+	return pRenderMesh;
+}
+
+void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle)
+{
+	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	}
+
+	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
+	BasicRenderMesh* pMeshObj = reinterpret_cast<BasicRenderMesh*>(_pMeshObjectHandle);
+	delete pMeshObj;
+}
+
+void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
+{
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+
+	BasicRenderMesh* pMeshObj = reinterpret_cast<BasicRenderMesh*>(_pMeshObjectHandle);
+	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+}
+
 void* D3D12Renderer::CreateBasicMeshObject()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
@@ -751,8 +789,8 @@ bool D3D12Renderer::CreateDepthStencil(UINT _width, UINT _height)
 void D3D12Renderer::InitCamera()
 {
 	// 가장 기본적인 카메라 설정으로 한다.
-	XMVECTOR eyePos = XMVectorSet(0.f, 0.f, -1.f, 1.f);
-	XMVECTOR eyeDir = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	XMVECTOR eyePos = XMVectorSet(0.f, 3.f, -2.f, 1.f);
+	XMVECTOR eyeDir = XMVectorSet(0.f, 2.9f, 1.f, 0.f);
 	XMVECTOR upDir = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
 	// View (DirectX는 기본적으로 왼손 좌표계)

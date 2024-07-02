@@ -32,15 +32,16 @@
 #include <directx/d3d12.h>
 #include <dxguids/dxguids.h>
 #else
-#include <d3d12.h>
-#pragma comment(lib,"dxguid.lib")
+// 메인으로 대체
+//#include <d3d12.h>
+//#pragma comment(lib,"dxguid.lib")
 #endif
 
 #pragma comment(lib,"windowscodecs.lib")
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
+//#include <memory>
 
 
 namespace DirectX

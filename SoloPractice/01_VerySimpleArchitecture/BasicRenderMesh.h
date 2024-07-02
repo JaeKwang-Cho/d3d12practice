@@ -23,7 +23,7 @@ public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX*  _pMatWorld);
 
-	void CreateRenderAssets(MeshData** _ppMeshData, const UINT _meshDataCount);
+	void CreateRenderAssets(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount);
 	void BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex);
 
 protected:

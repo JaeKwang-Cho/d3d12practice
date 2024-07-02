@@ -115,6 +115,12 @@
     <ClInclude Include="WICTextureLoader12.h">
       <Filter>DirectXTex\WICLoader</Filter>
     </ClInclude>
+    <ClInclude Include="CommonAssets.h">
+      <Filter>BasicRenderAssets</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicRenderMesh.h">
+      <Filter>BasicRenderAssets</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -126,18 +132,6 @@
     </None>
     <None Include="Shaders\Sprite.hlsl">
       <Filter>Shaders</Filter>
-    </None>
-    <None Include="CommonAssets.h">
-      <Filter>BasicRenderAssets</Filter>
-    </None>
-    <None Include="BasicRenderMesh.cpp">
-      <Filter>BasicRenderAssets</Filter>
-    </None>
-    <None Include="BasicRenderMesh.h">
-      <Filter>BasicRenderAssets</Filter>
-    </None>
-    <None Include="CommonAssets.cpp">
-      <Filter>BasicRenderAssets</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -189,6 +183,12 @@
     </ClCompile>
     <ClCompile Include="WICTextureLoader12.cpp">
       <Filter>DirectXTex\WICLoader</Filter>
+    </ClCompile>
+    <ClCompile Include="CommonAssets.cpp">
+      <Filter>BasicRenderAssets</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicRenderMesh.cpp">
+      <Filter>BasicRenderAssets</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

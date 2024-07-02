@@ -17,8 +17,10 @@
 
 // 메모리릭 체크
 #if defined(DEBUG) || defined(_DEBUG)
+#ifndef _CRTDBG_MAP_ALLOC
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
+#endif
 #endif
 
 // D3D 헤더 파일
@@ -54,8 +56,11 @@ using Microsoft::WRL::ComPtr;
 // 테이블 느낌
 #include "PSOKeys.h"
 
+
 // 표준 때문에 어거지로 정한 값
 extern D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT;
 extern D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD;
 
+// 기본 에셋들
+extern TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE;
 

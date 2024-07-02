@@ -8,6 +8,7 @@
 
 
 Microsoft::WRL::ComPtr<ID3D12RootSignature> BasicRenderMesh::m_pRootSignature = nullptr;
+DWORD BasicRenderMesh::m_dwInitRefCount = 0;
 
 bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer)
 {
@@ -33,7 +34,7 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
 
-	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture
+	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
 	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
 		__debugbreak();
 	}
@@ -70,18 +71,44 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	{
 		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
 		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
-		if (pSubRenderGeo)
+		if (pTexHandle)
 		{
 			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		}
 		else 
 		{
-
+			pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		}
+		dest.Offset(1, srvDescriptorSize);
+	}
+
+	// 루트 시그니처를 설정하고
+	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
+	// pool에 있는 Heap으로 설정한다.
+	_pCommandList->SetDescriptorHeaps(1, pPoolDescriptorHeap.GetAddressOf());
+
+	// 일단 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다. 지금은 1개만 넘겨준다.
+	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
+
+	_pCommandList->SetPipelineState(m_pPipelineState.Get());
+	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
+	{
+		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
+		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)BASIC_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+		if (pSubRenderGeo) {
+			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
+			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
+
+			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_IndexBufferView);
+			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+		}
+		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
 }
 
-void BasicRenderMesh::CreateRenderAssets(MeshData** _ppMeshData, const UINT _meshDataCount)
+void BasicRenderMesh::CreateRenderAssets(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount)
 {
 	if (_meshDataCount > MAX_SUB_RENDER_GEO_COUNT) {
 		__debugbreak();
@@ -95,14 +122,14 @@ void BasicRenderMesh::CreateRenderAssets(MeshData** _ppMeshData, const UINT _mes
 	
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
 		subRenderGeometries[i] = new SubRenderGeometry;
-		MeshData* pCurMeshData = *(_ppMeshData + i);
+		MeshData& pCurMeshData = _ppMeshData[i];
 
 		// Vertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
-			sizeof(BasicVertex), pCurMeshData->Vertices.size(), 
+			sizeof(BasicVertex), pCurMeshData.Vertices.size(), 
 			&(subRenderGeometries[i]->m_VertexBufferView),
 			&(subRenderGeometries[i]->m_pVertexBuffer), 
-			(void*)pCurMeshData->Vertices.data()
+			(void*)pCurMeshData.Vertices.data()
 		)))
 		{
 			__debugbreak();
@@ -110,15 +137,15 @@ void BasicRenderMesh::CreateRenderAssets(MeshData** _ppMeshData, const UINT _mes
 
 		// Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
-			pCurMeshData->Indices32.size(),
+			pCurMeshData.Indices32.size(),
 			&(subRenderGeometries[i]->m_IndexBufferView),
 			&(subRenderGeometries[i]->m_pIndexBuffer),
-			(void*)(pCurMeshData->GetIndices16().data())
+			(void*)(pCurMeshData.GetIndices16().data())
 		)))
 		{
 			__debugbreak();
 		}
-		subRenderGeometries[i]->indexCount = pCurMeshData->Indices32.size();
+		subRenderGeometries[i]->indexCount = pCurMeshData.Indices32.size();
 		subRenderGeometries[i]->startIndexLocation = 0;
 		subRenderGeometries[i]->baseVertexLocation = 0;
 	}
@@ -171,13 +198,16 @@ bool BasicRenderMesh::InitRootSignature()
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
 
-	CD3DX12_DESCRIPTOR_RANGE rangePerObj[2] = {};
+	CD3DX12_DESCRIPTOR_RANGE rangePerObj[1] = {};
 	rangePerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 :  Object 마다 넘기는 Constant Buffer View
-	rangePerObj[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Object 마다 넘기는 SRV(texture)
+
+	CD3DX12_DESCRIPTOR_RANGE rangePerSub[1] = {};
+	rangePerSub[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Sub - Object 마다 넘기는 SRV(texture)
 
 	// table 0번과 1번에 저장한다.
-	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};
+	CD3DX12_ROOT_PARAMETER rootParameters[2] = {};
 	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSub), rangePerSub, D3D12_SHADER_VISIBILITY_ALL);
 
 
 	// Texture Sample을 할때 사용하는 Sampler를
@@ -193,6 +223,7 @@ bool BasicRenderMesh::InitRootSignature()
 
 	// Serialize 한 다음
 	if (FAILED(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, pSignatureBlob.GetAddressOf(), pErrorBlob.GetAddressOf()))) {
+		OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 		__debugbreak();
 	}
 	// Root signature를 만든다.
@@ -208,7 +239,7 @@ bool BasicRenderMesh::InitPipelineState()
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
-	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_FILL];
+	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_WIREFRAME];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
 		m_pPipelineState = pPipelineState;
@@ -262,6 +293,8 @@ bool BasicRenderMesh::InitPipelineState()
 		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderBlob->GetBufferPointer(), pPixelShaderBlob->GetBufferSize());
 
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+		psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+		psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 

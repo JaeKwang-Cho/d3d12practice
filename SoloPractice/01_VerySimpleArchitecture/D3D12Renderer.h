@@ -25,6 +25,12 @@ public:
 	void Present();
 
 	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
+
+	// 
+	void* CreateRenderMesh();
+	void* CreateRenderMesh(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount);
+	void DeleteRenderMesh(void* _pMeshObjectHandle);
+	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 	
 	// mesh
 	void* CreateBasicMeshObject();

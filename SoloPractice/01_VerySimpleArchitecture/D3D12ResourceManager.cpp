@@ -324,8 +324,7 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D1
 
 	std::wstring wsFileName(_wchFileName);
 	std::wstring texFormat = wsFileName.substr(wsFileName.find_last_of(L".") + 1);
-	
-	TexMetadata info;
+
 	std::unique_ptr<ScratchImage> image = std::make_unique<ScratchImage>();
 	// DirectXTex 라이브러리를 사용한다.
 	// 일단은 mipmap이 없는 2d 이미지만 받는다.

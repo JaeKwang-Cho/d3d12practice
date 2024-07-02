@@ -4,6 +4,8 @@
 #include "pch.h"
 #include "D3D12Renderer.h"
 #include "VertexUtil.h"
+// 기본 에셋
+#include "CommonAssets.h"
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -48,6 +50,8 @@ D3D12Renderer* g_pRenderer = nullptr;
 void* g_pMeshObj0 = nullptr;
 void* g_pMeshObj1 = nullptr;
 
+void* g_pGrid = nullptr;
+
 void* g_pSpriteObjCommon = nullptr;
 void* g_pSpriteObj0 = nullptr;
 void* g_pSpriteObj1 = nullptr;
@@ -81,6 +85,7 @@ void Update();
 // 임시 함수
 void* CreateBoxMeshObject();
 void* CreateQuadMesh();
+void* CreateGrid(float _width, float _depth, UINT _m, UINT _n);
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -112,10 +117,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pRenderer = new D3D12Renderer;
     g_pRenderer->Initialize(g_hWnd, true, true);
 
+    // Common Assets 초기화
+    CreateCommonAssets(g_pRenderer);
+
     // main에서 Box Mesh를 미리 만들기
     g_pMeshObj0 = CreateBoxMeshObject();
     // main에서 Quad Mesh를 미리 만들기
     g_pMeshObj1 = CreateQuadMesh();
+
+    // main 에서 grid mesh를 미리 만들기
+    g_pGrid = CreateGrid(100, 100, 50, 50);
 
     // sprite를 만든다. 이 구조에서 단점은 sprite를 만들 texture file의 정보를 알고 있어야 한다는 것
     g_pTexHandle0 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
@@ -141,6 +152,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             RunGame();
         }
     }
+
+    DeleteCommonAssets(g_pRenderer);
 
     if (g_pMeshObj0) {
         g_pRenderer->DeleteBasicMeshObject(g_pMeshObj0);
@@ -222,13 +235,13 @@ void RunGame()
         Update();
         g_PrvUpdateTick = CurTick;
     }
-
+   
     // rendering objects
     // cube에 대해서 2번 렌더링을 다르게 한다.
-    g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld0);
-    g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld1);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld0);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld1);
     // quad를 그린다.
-    g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
+    //g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
 
     // sprite를 그린다.
     int padding = 5;
@@ -239,31 +252,34 @@ void RunGame()
     rect.right = 540;
     rect.bottom = 540;
     
-    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
+    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
     
     rect.left = 540;
     rect.top = 0;
     rect.right = 1080;
     rect.bottom = 540;
-    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
 
     rect.left = 0;
     rect.top = 540;
     rect.right = 540;
     rect.bottom = 1080;
-    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
 
     rect.left = 540;
     rect.top = 540;
     rect.right = 1080;
     rect.bottom = 1080;
-    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
     
-    g_pRenderer->RenderSprite(g_pSpriteObj0, 540 + padding + padding, 0, 0.25f, 0.25f, 0.f);
-    g_pRenderer->RenderSprite(g_pSpriteObj1, 540 + padding + padding + 160 + padding, 0, 0.25f, 0.25f, 0.f);
-    g_pRenderer->RenderSprite(g_pSpriteObj2, 540 + padding + padding, 160+ padding, 0.25f, 0.25f, 0.f);
-    g_pRenderer->RenderSprite(g_pSpriteObj3, 540 + padding + padding + 160 + padding, 160 + padding, 0.25f, 0.25f, 0.f);
+    //g_pRenderer->RenderSprite(g_pSpriteObj0, 540 + padding + padding, 0, 0.25f, 0.25f, 0.f);
+    //g_pRenderer->RenderSprite(g_pSpriteObj1, 540 + padding + padding + 160 + padding, 0, 0.25f, 0.25f, 0.f);
+    //g_pRenderer->RenderSprite(g_pSpriteObj2, 540 + padding + padding, 160+ padding, 0.25f, 0.25f, 0.f);
+    //g_pRenderer->RenderSprite(g_pSpriteObj3, 540 + padding + padding + 160 + padding, 160 + padding, 0.25f, 0.25f, 0.f);
     
+    
+    XMMATRIX identitiy = XMMatrixIdentity();
+    g_pRenderer->DrawRenderMesh(g_pGrid, &identitiy);
 
     // end
     g_pRenderer->EndRender();
@@ -391,6 +407,75 @@ void* CreateQuadMesh()
     g_pRenderer->InsertTriGroup(pMeshObj, pIndexList, 2, L"../../Assets/salt.dds");
     g_pRenderer->EndCreateMesh(pMeshObj);
     return pMeshObj;
+}
+
+void* CreateGrid(float _width, float _depth, UINT _m, UINT _n)
+{
+    std::vector<MeshData> meshData;
+    meshData.push_back(MeshData());
+
+    // 점개수와
+    UINT vertexCount = _m * _n;
+    // 면 개수를 구한다.
+    // 삼각형 2개로 만들어지니까 2를 곱한다.
+    UINT faceCount = (_m - 1) * (_n - 1) * 2;
+
+    //  중간을 구한다.
+    float halfWidth = 0.5f * _width;
+    float halfDepth = 0.5f * _depth;
+
+    // 부분의 크기를 구한다.
+    // n이 x 축, m이 z 축이다.
+    float dx = _width / (_n - 1);
+    float dz = _depth / (_m - 1);
+    // TexCoords의 부분 크기를 구한다.
+    float du = 1.0f / (_n - 1);
+    float dv = 1.0f / (_m - 1);
+
+    meshData[0].Vertices.resize(vertexCount);
+    for (UINT i = 0; i < _m; ++i)
+    {
+        // z는 안쪽(+) 부터
+        float z = halfDepth - i * dz;
+        for (UINT j = 0; j < _n; ++j)
+        {
+            // x는 왼쪽(-) 부터
+            float x = -halfWidth + j * dx;
+
+            meshData[0].Vertices[i * _n + j].position = XMFLOAT3(x, 0.0f, z);
+            meshData[0].Vertices[i * _n + j].color = XMFLOAT4(1.f, 1.f, 1.f, 1.f);
+            // TexCoords를 펼쳐서 삽입한다.
+            meshData[0].Vertices[i * _n + j].texCoord.x = j * du;
+            meshData[0].Vertices[i * _n + j].texCoord.y = i * dv;
+        }
+    }
+
+    // 인덱스를 설정한다.
+    meshData[0].Indices32.resize(faceCount * 3);
+
+    // 칸마다 돌아다니면서 index를 계산한다.
+    UINT k = 0;
+    for (UINT i = 0; i < _m - 1; ++i)
+    {
+        for (UINT j = 0; j < _n - 1; ++j)
+        {
+            // z0, z0, z1
+            meshData[0].Indices32[k] = i * _n + j;
+            meshData[0].Indices32[k + 1] = i * _n + j + 1;
+            meshData[0].Indices32[k + 2] = (i + 1) * _n + j;
+            // z1, z0, z1
+            meshData[0].Indices32[k + 3] = (i + 1) * _n + j;
+            meshData[0].Indices32[k + 4] = i * _n + j + 1;
+            meshData[0].Indices32[k + 5] = (i + 1) * _n + j + 1;
+
+            k += 6; // 다음 칸
+        }
+    }
+
+    void* pGrid = nullptr;
+    pGrid = g_pRenderer->CreateRenderMesh(meshData, 1);
+
+    return pGrid;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

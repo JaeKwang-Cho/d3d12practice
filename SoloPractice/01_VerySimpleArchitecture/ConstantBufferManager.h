@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include "typedef.h"
-
 class ConstantBufferPool;
 
 class ConstantBufferManager

@@ -1,5 +1,5 @@
 #pragma once
+class D3D12Renderer;
 
-extern TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE;
-
-void CreateCommonAssets();
+void CreateCommonAssets(D3D12Renderer* _pRenderer);
+void DeleteCommonAssets(D3D12Renderer* _pRenderer);
