@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "BasicRenderAsset.h"
+#include "BasicRenderMesh.h"
 #include "D3D12Renderer.h"
 #include "D3D12ResourceManager.h"
 #include "D3DUtil.h"
@@ -7,9 +7,9 @@
 #include "DescriptorPool.h"
 
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> BasicRenderAsset::m_pRootSignature = nullptr;
+Microsoft::WRL::ComPtr<ID3D12RootSignature> BasicRenderMesh::m_pRootSignature = nullptr;
 
-bool BasicRenderAsset::Initialize(D3D12Renderer* _pRenderer)
+bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer)
 {
 	m_pRenderer = _pRenderer;
 
@@ -20,25 +20,120 @@ bool BasicRenderAsset::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicRenderAsset::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _ppMatWorld)
+void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
 {
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+
+	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
+	// Renderer가 관리하는 Pool
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::DEFAULT);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
+
+	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
+		__debugbreak();
+	}
+
+	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
+	if (!pCB) {
+		__debugbreak();
+	}
+
+	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCB->pSystemMemAddr);
+	// CB 값을 업데이트 하고
+	XMMATRIX viewMat;
+	XMMATRIX projMat;
+	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
+
+	pConstantBufferDefault->matView = XMMatrixTranspose(viewMat);
+	pConstantBufferDefault->matProj = XMMatrixTranspose(projMat);
+	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
+
+	XMMATRIX wvpMat = (*_pMatWorld) * viewMat * projMat;
+
+	pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
+
+	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
+
+	// Object 마다 넘어가는 CB는 CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(BASIC_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	pD3DDevice->CopyDescriptorsSimple(1, dest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
+
+	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
+	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
+
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
+	{
+		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
+		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
+		if (pSubRenderGeo)
+		{
+			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		}
+		else 
+		{
+
+		}
+	}
 }
 
-void BasicRenderAsset::CreateRenderAssets(const MeshData** _ppMeshData, const UINT _meshDataCount)
+void BasicRenderMesh::CreateRenderAssets(MeshData** _ppMeshData, const UINT _meshDataCount)
 {
 	if (_meshDataCount > MAX_SUB_RENDER_GEO_COUNT) {
 		__debugbreak();
 		return;
 	}
 
-	// todo : 여기 해야함
+	m_subRenderGeoCount = _meshDataCount;
+
+	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
+		subRenderGeometries[i] = new SubRenderGeometry;
+		MeshData* pCurMeshData = *(_ppMeshData + i);
+
+		// Vertex Buffer 먼저 생성한다.
+		if (FAILED(pResourceManager->CreateVertexBuffer(
+			sizeof(BasicVertex), pCurMeshData->Vertices.size(), 
+			&(subRenderGeometries[i]->m_VertexBufferView),
+			&(subRenderGeometries[i]->m_pVertexBuffer), 
+			(void*)pCurMeshData->Vertices.data()
+		)))
+		{
+			__debugbreak();
+		}
+
+		// Index Buffer도 생성한다.
+		if (FAILED(pResourceManager->CreateIndexBuffer(
+			pCurMeshData->Indices32.size(),
+			&(subRenderGeometries[i]->m_IndexBufferView),
+			&(subRenderGeometries[i]->m_pIndexBuffer),
+			(void*)(pCurMeshData->GetIndices16().data())
+		)))
+		{
+			__debugbreak();
+		}
+		subRenderGeometries[i]->indexCount = pCurMeshData->Indices32.size();
+		subRenderGeometries[i]->startIndexLocation = 0;
+		subRenderGeometries[i]->baseVertexLocation = 0;
+	}
 }
 
-void BasicRenderAsset::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
+void BasicRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
 {
+	if (m_subRenderGeoCount <= _subRenderAssetIndex) 
+	{
+		__debugbreak();
+	}
+	subRenderGeometries[_subRenderAssetIndex]->pTexHandle = _pTexHandle;
 }
 
-bool BasicRenderAsset::InitCommonResources()
+bool BasicRenderMesh::InitCommonResources()
 {
 	// root signature을 싱글톤으로 사용한다.
 	if (m_dwInitRefCount > 0) {
@@ -52,7 +147,7 @@ EXIST:
 	return true;
 }
 
-void BasicRenderAsset::CleanupSharedResources()
+void BasicRenderMesh::CleanupSharedResources()
 {
 	if (!m_dwInitRefCount) {
 		return;
@@ -67,7 +162,7 @@ void BasicRenderAsset::CleanupSharedResources()
 	}
 }
 
-bool BasicRenderAsset::InitRootSignature()
+bool BasicRenderMesh::InitRootSignature()
 {
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -76,16 +171,13 @@ bool BasicRenderAsset::InitRootSignature()
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
 
 
-	CD3DX12_DESCRIPTOR_RANGE rangePerObj[1] = {};
+	CD3DX12_DESCRIPTOR_RANGE rangePerObj[2] = {};
 	rangePerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 :  Object 마다 넘기는 Constant Buffer View
-
-	CD3DX12_DESCRIPTOR_RANGE rangePerTri[1] = {};
-	rangePerTri[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : 삼각형 마다 넘기는 texture
+	rangePerObj[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Object 마다 넘기는 SRV(texture)
 
 	// table 0번과 1번에 저장한다.
-	CD3DX12_ROOT_PARAMETER rootParameters[2] = {};
+	CD3DX12_ROOT_PARAMETER rootParameters[1] = {};
 	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
-	rootParameters[1].InitAsDescriptorTable(_countof(rangePerTri), rangePerTri, D3D12_SHADER_VISIBILITY_ALL);
 
 
 	// Texture Sample을 할때 사용하는 Sampler를
@@ -111,7 +203,7 @@ bool BasicRenderAsset::InitRootSignature()
 	return true;
 }
 
-bool BasicRenderAsset::InitPipelineState()
+bool BasicRenderMesh::InitPipelineState()
 {
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
@@ -197,19 +289,24 @@ RETURN:
 	return true;
 }
 
-void BasicRenderAsset::CleanUpAssets()
+void BasicRenderMesh::CleanUpAssets()
 {
-
+	for (int i = 0; i < m_subRenderGeoCount; i++) {
+		if (subRenderGeometries[i]) {
+			delete subRenderGeometries[i];
+			subRenderGeometries[i] = nullptr;
+		}
+	}
 	CleanupSharedResources();
 }
 
-BasicRenderAsset::BasicRenderAsset()
-	:m_pRenderer(nullptr), subRenderGeometries{}, 
+BasicRenderMesh::BasicRenderMesh()
+	:m_pRenderer(nullptr), subRenderGeometries{nullptr, }, 
 	m_subRenderGeoCount(0), m_pPipelineState(nullptr)
 {
 }
 
-BasicRenderAsset::~BasicRenderAsset()
+BasicRenderMesh::~BasicRenderMesh()
 {
 	CleanUpAssets();
 }

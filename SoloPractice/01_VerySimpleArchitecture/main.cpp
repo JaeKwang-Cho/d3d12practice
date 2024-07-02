@@ -54,7 +54,8 @@ void* g_pSpriteObj1 = nullptr;
 void* g_pSpriteObj2 = nullptr;
 void* g_pSpriteObj3 = nullptr;
 void* g_pTexHandle0 = nullptr;
-
+void* g_pTexHandle1 = nullptr;
+ 
 float g_fRot0 = 0.0f;
 float g_fRot1 = 0.0f;
 float g_fRot2 = 0.0f;
@@ -118,6 +119,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     // sprite를 만든다. 이 구조에서 단점은 sprite를 만들 texture file의 정보를 알고 있어야 한다는 것
     g_pTexHandle0 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
+    g_pTexHandle1 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.png");
     g_pSpriteObjCommon = g_pRenderer->CreateSpriteObject();
 
     g_pSpriteObj0 = g_pRenderer->CreateSpriteObject(L"../../Assets/salt_01.dds", 0, 0, 640, 640);
@@ -152,6 +154,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     {
         g_pRenderer->DeleteTexture(g_pTexHandle0);
         g_pTexHandle0 = nullptr;
+    }
+    if (g_pTexHandle1) 
+    {
+        g_pRenderer->DeleteTexture(g_pTexHandle1);
+        g_pTexHandle1 = nullptr;
     }
     if (g_pSpriteObjCommon)
     {
@@ -232,12 +239,12 @@ void RunGame()
     rect.right = 540;
     rect.bottom = 540;
     
-    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
     
     rect.left = 540;
     rect.top = 0;
-    rect.right = 540;
-    rect.bottom = 270;
+    rect.right = 1080;
+    rect.bottom = 540;
     g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
 
     rect.left = 0;

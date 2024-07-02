@@ -2,7 +2,14 @@
 
 class D3D12Renderer;
 
-class BasicRenderAsset
+enum class BASIC_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ
+{
+	CBV = 0,
+	TEX,
+	END
+};
+
+class BasicRenderMesh
 {
 public:
 	static const UINT MAX_SUB_RENDER_GEO_COUNT = 8;
@@ -14,9 +21,9 @@ protected:
 
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX*  _ppMatWorld);
+	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX*  _pMatWorld);
 
-	void CreateRenderAssets(const MeshData** _ppMeshData, const UINT _meshDataCount);
+	void CreateRenderAssets(MeshData** _ppMeshData, const UINT _meshDataCount);
 	void BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex);
 
 protected:
@@ -26,7 +33,7 @@ protected:
 	virtual bool InitRootSignature();
 	virtual bool InitPipelineState();
 
-	virtual void CleanUpAssets();
+	void CleanUpAssets();
 private:
 
 public:
@@ -43,7 +50,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
 public:
-	BasicRenderAsset();
-	virtual ~BasicRenderAsset();
+	BasicRenderMesh();
+	virtual ~BasicRenderMesh();
 };
 

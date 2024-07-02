@@ -111,7 +111,7 @@
       <ConformanceMode>true</ConformanceMode>
       <PrecompiledHeader>Create</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -136,7 +136,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="BasicMeshObject.h" />
-    <ClInclude Include="BasicRenderAsset.h" />
+    <ClInclude Include="WICTextureLoader12.h" />
+    <None Include="BasicRenderMesh.h" />
+    <None Include="CommonAssets.h" />
     <ClInclude Include="ConstantBufferManager.h" />
     <ClInclude Include="ConstantBufferPool.h" />
     <ClInclude Include="D3D12PSOCache.h" />
@@ -157,7 +159,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
-    <ClCompile Include="BasicRenderAsset.cpp" />
+    <ClCompile Include="WICTextureLoader12.cpp" />
+    <None Include="BasicRenderMesh.cpp" />
+    <None Include="CommonAssets.cpp" />
     <ClCompile Include="ConstantBufferManager.cpp" />
     <ClCompile Include="ConstantBufferPool.cpp" />
     <ClCompile Include="D3D12PSOCache.cpp" />

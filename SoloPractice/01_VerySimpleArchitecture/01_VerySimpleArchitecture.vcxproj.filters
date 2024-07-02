@@ -55,6 +55,9 @@
     <Filter Include="BasicRenderAssets\Grid">
       <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
     </Filter>
+    <Filter Include="DirectXTex\WICLoader">
+      <UniqueIdentifier>{9aa48b06-2c42-4ff9-9ef4-6a21a1c162d0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -109,8 +112,8 @@
     <ClInclude Include="PSOKeys.h">
       <Filter>Renderer\PSOPool</Filter>
     </ClInclude>
-    <ClInclude Include="BasicRenderAsset.h">
-      <Filter>BasicRenderAssets</Filter>
+    <ClInclude Include="WICTextureLoader12.h">
+      <Filter>DirectXTex\WICLoader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -123,6 +126,18 @@
     </None>
     <None Include="Shaders\Sprite.hlsl">
       <Filter>Shaders</Filter>
+    </None>
+    <None Include="CommonAssets.h">
+      <Filter>BasicRenderAssets</Filter>
+    </None>
+    <None Include="BasicRenderMesh.cpp">
+      <Filter>BasicRenderAssets</Filter>
+    </None>
+    <None Include="BasicRenderMesh.h">
+      <Filter>BasicRenderAssets</Filter>
+    </None>
+    <None Include="CommonAssets.cpp">
+      <Filter>BasicRenderAssets</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -172,8 +187,8 @@
     <ClCompile Include="PSOKeys.cpp">
       <Filter>Renderer\PSOPool</Filter>
     </ClCompile>
-    <ClCompile Include="BasicRenderAsset.cpp">
-      <Filter>BasicRenderAssets</Filter>
+    <ClCompile Include="WICTextureLoader12.cpp">
+      <Filter>DirectXTex\WICLoader</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

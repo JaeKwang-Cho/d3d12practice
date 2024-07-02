@@ -5,6 +5,8 @@
 #include "D3D12ResourceManager.h"
 #include "DirectXTexHeader.h"
 #include "DDSTextureLoader12.h"
+#include "WICTextureLoader12.h"
+#include "CommonAssets.h"
 
 bool D3D12ResourceManager::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice)
 {
@@ -314,23 +316,46 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D1
 
 	D3D12_RESOURCE_DESC textureDesc = {};
 
-	std::unique_ptr<uint8_t[]> ddsData;
+	std::unique_ptr<uint8_t[]> texData;
 	std::vector<D3D12_SUBRESOURCE_DATA> subresourceData;
 	UINT subresourceSize;
 	UINT64 uploadBufferSize;
 	D3D12_RESOURCE_DESC resDesc_BuffSize;
 
+	std::wstring wsFileName(_wchFileName);
+	std::wstring texFormat = wsFileName.substr(wsFileName.find_last_of(L".") + 1);
+	
+	TexMetadata info;
+	std::unique_ptr<ScratchImage> image = std::make_unique<ScratchImage>();
 	// DirectXTex 라이브러리를 사용한다.
-	hr = LoadDDSTextureFromFile(m_pD3DDevice.Get(), _wchFileName, &pTexResource, ddsData, subresourceData);
-	if (FAILED(hr)) {
-		goto RETURN;
+	// 일단은 mipmap이 없는 2d 이미지만 받는다.
+	if (texFormat == L"dds") 
+	{
+		hr = LoadDDSTextureFromFile(m_pD3DDevice.Get(), _wchFileName, pTexResource.GetAddressOf(), texData, subresourceData);
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+	}
+	else if(texFormat == L"png") 
+	{
+		subresourceData.push_back(D3D12_SUBRESOURCE_DATA{});
+		hr = LoadWICTextureFromFile(m_pD3DDevice.Get(), _wchFileName, pTexResource.GetAddressOf(), texData, subresourceData[0]);
+		if (FAILED(hr)) {
+			__debugbreak();
+			goto RETURN;
+		}
+	}
+	else
+	{
+		__debugbreak();
 	}
 
 	// DirectXTex에서 얻어준 정보를 가지고 Resource를 생성해서 GPU에 올린다.
 	textureDesc = pTexResource->GetDesc();
 	subresourceSize = (UINT)subresourceData.size();
-	uploadBufferSize = GetRequiredIntermediateSize(pTexResource.Get(), 0, subresourceSize);
 
+	uploadBufferSize = GetRequiredIntermediateSize(pTexResource.Get(), 0, subresourceSize);
 	resDesc_BuffSize = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
 	hr = m_pD3DDevice->CreateCommittedResource(
