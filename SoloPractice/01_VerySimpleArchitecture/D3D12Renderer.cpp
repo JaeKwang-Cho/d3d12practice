@@ -13,6 +13,7 @@
 #include "SpriteObject.h"
 #include "D3D12PSOCache.h"
 #include "BasicRenderMesh.h"
+#include "FlyCamera.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -788,13 +789,13 @@ bool D3D12Renderer::CreateDepthStencil(UINT _width, UINT _height)
 
 void D3D12Renderer::InitCamera()
 {
-	// 가장 기본적인 카메라 설정으로 한다.
-	XMVECTOR eyePos = XMVectorSet(0.f, 3.f, -2.f, 1.f);
-	XMVECTOR eyeDir = XMVectorSet(0.f, 2.9f, 1.f, 0.f);
-	XMVECTOR upDir = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	if (!m_flyCamera) {
+		m_flyCamera = new FlyCamera;
 
-	// View (DirectX는 기본적으로 왼손 좌표계)
-	m_matView = XMMatrixLookAtLH(eyePos, eyeDir, upDir);
+		m_flyCamera->SetPosition(XMFLOAT3(0.f, 3.f, -2.f));
+		m_flyCamera->SetCameraLookAt(XMFLOAT3(0.f, 3.f, -2.f), XMFLOAT3(0.f, 2.9f, 1.f), XMFLOAT3(0.f, 1.f, 0.f));
+		m_flyCamera->UpdateViewMatrix();
+	}
 
 	// FOV
 	float fovY = XM_PIDIV4;
@@ -804,7 +805,8 @@ void D3D12Renderer::InitCamera()
 	float fNear = 0.1f;
 	float fFar = 1000.f;
 
-	m_matProj = XMMatrixPerspectiveFovLH(fovY, fAspectRatio, fNear, fFar);
+	m_flyCamera->SetFrustum(fovY, fAspectRatio, fNear, fFar);
+	// 가장 기본적인 카메라 설정으로 한다.
 }
 
 void D3D12Renderer::CreateFence()
@@ -880,6 +882,11 @@ void D3D12Renderer::CleanUpRenderer()
 		m_pD3D12PSOCache = nullptr;
 	}
 
+	if (m_flyCamera) {
+		delete m_flyCamera;
+		m_flyCamera = nullptr;
+	}
+
 
 	CleanupFence();
 }
@@ -896,7 +903,7 @@ D3D12Renderer::D3D12Renderer()
 	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
-	m_matView{}, m_matProj{}
+	m_flyCamera(nullptr)
 {
 }
 
@@ -910,5 +917,11 @@ ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYP
 	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex];
 	ConstantBufferPool* pConstBufferPool = pConstBufferManager->GetConstantBufferPool(_type);
 	return pConstBufferPool;
+}
+
+void D3D12Renderer::GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj)
+{
+	*_pOutMatView = m_flyCamera->GetViewMat();
+	*_pOutMatProj = m_flyCamera->GetProjMat();
 }
 

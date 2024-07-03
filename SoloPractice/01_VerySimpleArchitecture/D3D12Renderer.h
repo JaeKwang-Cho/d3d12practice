@@ -12,6 +12,7 @@ class DescriptorPool;
 class SingleDescriptorAllocator;
 class ConstantBufferManager;
 class D3D12PSOCache;
+class FlyCamera;
 
 class D3D12Renderer
 {
@@ -26,7 +27,7 @@ public:
 
 	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
 
-	// 
+	// Render Mesh
 	void* CreateRenderMesh();
 	void* CreateRenderMesh(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount);
 	void DeleteRenderMesh(void* _pMeshObjectHandle);
@@ -55,6 +56,7 @@ public:
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPSO(std::string _strPSOName);
 	bool CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc);
+
 protected:
 private:
 	void CreateCommandList();
@@ -130,8 +132,7 @@ private:
 	DWORD m_dwHeight;
 
 	// Camera 
-	XMMATRIX m_matView;
-	XMMATRIX m_matProj;
+	FlyCamera* m_flyCamera;
 
 public:
 	D3D12Renderer();
@@ -144,12 +145,7 @@ public:
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
 	D3D12PSOCache* INL_GetD3D12PSOCache() { return m_pD3D12PSOCache; }
-	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj) {
-		*_pOutMatView = m_matView;
-		*_pOutMatProj = m_matProj;
-		//*_pOutMatView = XMMatrixTranspose(m_matView);
-		//*_pOutMatProj = XMMatrixTranspose(m_matProj);
-	}
+	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj);
 	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
 	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
 
