@@ -16,11 +16,10 @@ public:
 protected:
 	// 상속받으면서 바꿔주면 되지 않을까?
 	static Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
-
 	static DWORD m_dwInitRefCount;
 
 public:
-	bool Initialize(D3D12Renderer* _pRenderer);
+	bool Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX*  _pMatWorld);
 
 	void CreateRenderAssets(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount);
@@ -37,17 +36,16 @@ protected:
 private:
 
 public:
-
-
 protected:
-private:
 	D3D12Renderer* m_pRenderer;
+	D3D_PRIMITIVE_TOPOLOGY m_PrimitiveTopoloy;
 
 	// sub - render asset
 	SubRenderGeometry* subRenderGeometries[MAX_SUB_RENDER_GEO_COUNT];
 	UINT m_subRenderGeoCount;
 	// PSO
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
+private:
 
 public:
 	BasicRenderMesh();

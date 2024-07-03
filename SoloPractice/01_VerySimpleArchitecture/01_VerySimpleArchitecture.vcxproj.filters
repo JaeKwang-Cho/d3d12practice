@@ -121,6 +121,9 @@
     <ClInclude Include="BasicRenderMesh.h">
       <Filter>BasicRenderAssets</Filter>
     </ClInclude>
+    <ClInclude Include="Grid_RenderMesh.h">
+      <Filter>BasicRenderAssets\Grid</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -131,6 +134,9 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="Shaders\Sprite.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\GridTile.hlsl">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
@@ -189,6 +195,9 @@
     </ClCompile>
     <ClCompile Include="BasicRenderMesh.cpp">
       <Filter>BasicRenderAssets</Filter>
+    </ClCompile>
+    <ClCompile Include="Grid_RenderMesh.cpp">
+      <Filter>BasicRenderAssets\Grid</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

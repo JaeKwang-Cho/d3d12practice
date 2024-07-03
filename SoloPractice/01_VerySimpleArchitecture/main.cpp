@@ -6,6 +6,7 @@
 #include "VertexUtil.h"
 // 기본 에셋
 #include "CommonAssets.h"
+#include "Grid_RenderMesh.h"
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -86,6 +87,7 @@ void Update();
 void* CreateBoxMeshObject();
 void* CreateQuadMesh();
 void* CreateGrid(float _width, float _depth, UINT _m, UINT _n);
+void* CreateTileGrid();
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -126,7 +128,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pMeshObj1 = CreateQuadMesh();
 
     // main 에서 grid mesh를 미리 만들기
-    g_pGrid = CreateGrid(100, 100, 50, 50);
+    //g_pGrid = CreateGrid(100, 100, 50, 50);
+    g_pGrid = CreateTileGrid();
 
     // sprite를 만든다. 이 구조에서 단점은 sprite를 만들 texture file의 정보를 알고 있어야 한다는 것
     g_pTexHandle0 = g_pRenderer->CreateTextureFromFile(L"../../Assets/salt.dds");
@@ -162,6 +165,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     if (g_pMeshObj1) {
         g_pRenderer->DeleteBasicMeshObject(g_pMeshObj1);
         g_pMeshObj1 = nullptr;
+    }
+    if (g_pGrid) {
+        g_pRenderer->DeleteRenderMesh(g_pGrid);
+        g_pGrid = nullptr;
     }
     if (g_pTexHandle0)
     {
@@ -473,9 +480,43 @@ void* CreateGrid(float _width, float _depth, UINT _m, UINT _n)
     }
 
     void* pGrid = nullptr;
-    pGrid = g_pRenderer->CreateRenderMesh(meshData, 1);
+
 
     return pGrid;
+}
+
+void* CreateTileGrid()
+{
+    std::vector<MeshData> meshData;
+    meshData.push_back(MeshData());
+
+    // 좌표 1 * 50개로 퉁 쳐보자
+    UINT vertexCount = 50;
+
+    // -x+, -y+ 번갈아 가면서 넣어주고
+    meshData[0].Vertices.resize(vertexCount * 2);
+    meshData[0].Indices32.resize(vertexCount * 2);
+    for (UINT i = 0; i < vertexCount; i++)
+    {
+        UINT curIndex = i * 2;
+        meshData[0].Vertices[curIndex].position = XMFLOAT3(i - vertexCount / 2, 0.f , 0.f);
+        meshData[0].Vertices[curIndex].color = XMFLOAT4(DirectX::Colors::DarkRed);
+        meshData[0].Vertices[curIndex].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
+
+        meshData[0].Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, i - vertexCount / 2);
+        meshData[0].Vertices[curIndex + 1].color = XMFLOAT4(DirectX::Colors::DarkGreen);
+        meshData[0].Vertices[curIndex + 1].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
+
+        // 인덱스도 적당히 짝지어주는 거로 넘긴다.
+        meshData[0].Indices32[curIndex] = curIndex;
+        meshData[0].Indices32[curIndex + 1] = curIndex + 1;
+    }
+
+    Grid_RenderMesh* newGrid = new Grid_RenderMesh;
+    newGrid->Initialize(g_pRenderer, D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+    newGrid->CreateRenderAssets(meshData, 1);
+
+    return newGrid;
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

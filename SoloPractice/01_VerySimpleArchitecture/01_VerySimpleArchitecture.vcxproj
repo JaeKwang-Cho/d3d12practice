@@ -136,6 +136,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="BasicMeshObject.h" />
+    <ClInclude Include="Grid_RenderMesh.h" />
     <ClInclude Include="WICTextureLoader12.h" />
     <ClInclude Include="BasicRenderMesh.h" />
     <ClInclude Include="CommonAssets.h" />
@@ -159,6 +160,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BasicMeshObject.cpp" />
+    <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="WICTextureLoader12.cpp" />
     <ClCompile Include="BasicRenderMesh.cpp" />
     <ClCompile Include="CommonAssets.cpp" />
@@ -191,6 +193,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Sprite.hlsl">
+      <FileType>Document</FileType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\GridTile.hlsl">
       <FileType>Document</FileType>
     </None>
   </ItemGroup>

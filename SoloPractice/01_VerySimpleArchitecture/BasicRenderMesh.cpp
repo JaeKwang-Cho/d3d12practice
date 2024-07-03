@@ -10,9 +10,10 @@
 Microsoft::WRL::ComPtr<ID3D12RootSignature> BasicRenderMesh::m_pRootSignature = nullptr;
 DWORD BasicRenderMesh::m_dwInitRefCount = 0;
 
-bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer)
+bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy)
 {
 	m_pRenderer = _pRenderer;
+	m_PrimitiveTopoloy = _primitiveTopoloy;
 
 	bool bResult = InitCommonResources();
 
@@ -91,7 +92,7 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
 
 	_pCommandList->SetPipelineState(m_pPipelineState.Get());
-	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	_pCommandList->IASetPrimitiveTopology(m_PrimitiveTopoloy);
 
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
 	{
@@ -239,7 +240,7 @@ bool BasicRenderMesh::InitPipelineState()
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
-	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_WIREFRAME];
+	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_FILL];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
 		m_pPipelineState = pPipelineState;
@@ -293,8 +294,6 @@ bool BasicRenderMesh::InitPipelineState()
 		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderBlob->GetBufferPointer(), pPixelShaderBlob->GetBufferSize());
 
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
-		psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
 
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 
@@ -334,7 +333,8 @@ void BasicRenderMesh::CleanUpAssets()
 }
 
 BasicRenderMesh::BasicRenderMesh()
-	:m_pRenderer(nullptr), subRenderGeometries{nullptr, }, 
+	:m_pRenderer(nullptr), m_PrimitiveTopoloy(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST), 
+	subRenderGeometries{nullptr, },
 	m_subRenderGeoCount(0), m_pPipelineState(nullptr)
 {
 }
@@ -342,4 +342,5 @@ BasicRenderMesh::BasicRenderMesh()
 BasicRenderMesh::~BasicRenderMesh()
 {
 	CleanUpAssets();
+	OutputDebugStringA("~BasicRenderMesh()");
 }
