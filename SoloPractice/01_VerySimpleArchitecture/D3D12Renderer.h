@@ -21,6 +21,7 @@ public:
 	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
+	void Update();
 	void BeginRender();
 	void EndRender();
 	void Present();
@@ -54,8 +55,16 @@ public:
 	void* CreateTextureFromFile(const WCHAR* _wchFileName);
 	void DeleteTexture(void* _pTexHandle);
 
+	// PSO
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPSO(std::string _strPSOName);
 	bool CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc);
+
+	// Camera
+	// Input
+	void OnRButtonDown(WPARAM _btnState, int _x, int _y);
+	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
+	void OnMouseMove(WPARAM _btnState, int _x, int _y);
+	void OnKeyboardInput();
 
 protected:
 private:
@@ -133,6 +142,7 @@ private:
 
 	// Camera 
 	FlyCamera* m_flyCamera;
+	POINT m_LastMousePos;
 
 public:
 	D3D12Renderer();

@@ -7,6 +7,7 @@
 // 기본 에셋
 #include "CommonAssets.h"
 #include "Grid_RenderMesh.h"
+#include <windowsx.h>
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -233,6 +234,7 @@ void RunGame()
 {
     // begin
     ULONGLONG CurTick = GetTickCount64();
+    g_pRenderer->Update();
     g_pRenderer->BeginRender();
 
     // game business logic
@@ -499,11 +501,11 @@ void* CreateTileGrid()
     for (UINT i = 0; i < vertexCount; i++)
     {
         UINT curIndex = i * 2;
-        meshData[0].Vertices[curIndex].position = XMFLOAT3(i - vertexCount / 2, 0.f , 0.f);
+        meshData[0].Vertices[curIndex].position = XMFLOAT3(float(i - vertexCount / 2), 0.f , 0.f);
         meshData[0].Vertices[curIndex].color = XMFLOAT4(DirectX::Colors::DarkRed);
         meshData[0].Vertices[curIndex].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
 
-        meshData[0].Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, i - vertexCount / 2);
+        meshData[0].Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, float(i - vertexCount / 2));
         meshData[0].Vertices[curIndex + 1].color = XMFLOAT4(DirectX::Colors::DarkGreen);
         meshData[0].Vertices[curIndex + 1].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
 
@@ -550,6 +552,35 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
     }
     break;
+    case WM_LBUTTONDOWN:
+        break;
+    case WM_MBUTTONDOWN:
+        break;
+    case WM_RBUTTONDOWN:
+    {
+        if (g_pRenderer) {
+            g_pRenderer->OnRButtonDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+    }
+    return 0;
+    case WM_LBUTTONUP:
+        break;
+    case WM_MBUTTONUP:
+        break;
+    case WM_RBUTTONUP:
+    {
+        if (g_pRenderer) {
+            g_pRenderer->OnRButtonUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+    } 
+    return 0;
+    case WM_MOUSEMOVE:
+    {
+        if (g_pRenderer) {
+            g_pRenderer->OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+        }
+    }
+    return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
     break;

@@ -266,6 +266,16 @@ RETURN:
 	return bResult;
 }
 
+void D3D12Renderer::Update()
+{
+	// 뭔가 업데이트를 해보자
+	// 입력이라던가..
+	OnKeyboardInput();
+	
+	// 카메라 같은것들
+	m_flyCamera->UpdateViewMatrix();
+}
+
 void D3D12Renderer::BeginRender()
 {
 	// 화면 클리어 및 이번 프레임 렌더링을 위한 자료구조 초기화
@@ -682,6 +692,57 @@ bool D3D12Renderer::CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3
 	return m_pD3D12PSOCache->CachePSO(_strPSOName, _pPSODesc);
 }
 
+void D3D12Renderer::OnRButtonDown(WPARAM _btnState, int _x, int _y)
+{
+	// 마우스 위치를 기억하고
+	m_LastMousePos.x = _x;
+	m_LastMousePos.y = _y;
+	// 마우스를 붙잡는다.
+	SetCapture(m_hWnd);
+}
+
+void D3D12Renderer::OnRButtonUp(WPARAM _btnState, int _x, int _y)
+{
+	// 마우스를 놓는다.
+	ReleaseCapture();
+}
+
+void D3D12Renderer::OnMouseMove(WPARAM _btnState, int _x, int _y)
+{
+	// 왼쪽 마우스가 눌린 상태에서 움직인다면
+	if ((_btnState & MK_LBUTTON) != 0)
+	{
+		float dx = XMConvertToRadians(0.25f * static_cast<float>(_x - m_LastMousePos.x));
+		float dy = XMConvertToRadians(0.25f * static_cast<float>(_y - m_LastMousePos.y));
+
+		m_flyCamera->AddPitch(dy);
+		m_flyCamera->AddYaw(dx);
+	}
+	m_LastMousePos.x = _x;
+	m_LastMousePos.y = _y;
+}
+
+void D3D12Renderer::OnKeyboardInput()
+{
+	if (GetAsyncKeyState('W') & 0x8000)
+		m_flyCamera->Walk(1.f);
+
+	if (GetAsyncKeyState('S') & 0x8000)
+		m_flyCamera->Walk(1.f);
+
+	if (GetAsyncKeyState('A') & 0x8000)
+		m_flyCamera->Strafe(1.f);
+
+	if (GetAsyncKeyState('D') & 0x8000)
+		m_flyCamera->Strafe(1.f);
+
+	if (GetAsyncKeyState('Q') & 0x8000)
+		m_flyCamera->Ascend(1.f);
+
+	if (GetAsyncKeyState('E') & 0x8000)
+		m_flyCamera->Ascend(1.f);
+}
+
 void D3D12Renderer::CreateCommandList()
 {
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -903,7 +964,7 @@ D3D12Renderer::D3D12Renderer()
 	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
-	m_flyCamera(nullptr)
+	m_flyCamera(nullptr), m_LastMousePos{}
 {
 }
 

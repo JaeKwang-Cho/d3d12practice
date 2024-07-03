@@ -323,7 +323,7 @@ RETURN:
 
 void BasicRenderMesh::CleanUpAssets()
 {
-	for (int i = 0; i < m_subRenderGeoCount; i++) {
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
 		if (subRenderGeometries[i]) {
 			delete subRenderGeometries[i];
 			subRenderGeometries[i] = nullptr;
