@@ -61,6 +61,12 @@
     <Filter Include="Renderer\D3D12Renderer\Camera">
       <UniqueIdentifier>{41622889-b42e-4cfd-9c79-c81d61cf499e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine">
+      <UniqueIdentifier>{3f86b3e8-dead-4131-9d7f-f4d48cf1b65d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Timer">
+      <UniqueIdentifier>{2df45fb0-ed7a-447b-a49e-9bd4153adee5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -129,6 +135,9 @@
     </ClInclude>
     <ClInclude Include="FlyCamera.h">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
+    </ClInclude>
+    <ClInclude Include="GameTimer.h">
+      <Filter>Engine\Timer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -207,6 +216,9 @@
     </ClCompile>
     <ClCompile Include="FlyCamera.cpp">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
+    </ClCompile>
+    <ClCompile Include="GameTimer.cpp">
+      <Filter>Engine\Timer</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -21,7 +21,7 @@ public:
 	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
-	void Update();
+	void Update(const GameTimer& _gameTimer);
 	void BeginRender();
 	void EndRender();
 	void Present();
@@ -64,7 +64,7 @@ public:
 	void OnRButtonDown(WPARAM _btnState, int _x, int _y);
 	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
 	void OnMouseMove(WPARAM _btnState, int _x, int _y);
-	void OnKeyboardInput();
+	void OnKeyboardInput(const GameTimer& _gameTimer);
 
 protected:
 private:

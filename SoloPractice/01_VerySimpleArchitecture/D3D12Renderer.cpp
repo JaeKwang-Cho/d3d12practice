@@ -266,11 +266,11 @@ RETURN:
 	return bResult;
 }
 
-void D3D12Renderer::Update()
+void D3D12Renderer::Update(const GameTimer& _gameTimer)
 {
 	// 뭔가 업데이트를 해보자
 	// 입력이라던가..
-	OnKeyboardInput();
+	OnKeyboardInput(_gameTimer);
 	
 	// 카메라 같은것들
 	m_flyCamera->UpdateViewMatrix();
@@ -722,25 +722,25 @@ void D3D12Renderer::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void D3D12Renderer::OnKeyboardInput()
+void D3D12Renderer::OnKeyboardInput(const GameTimer& _gameTimer)
 {
 	if (GetAsyncKeyState('W') & 0x8000)
-		m_flyCamera->Walk(1.f);
+		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * 5.f);
 
 	if (GetAsyncKeyState('S') & 0x8000)
-		m_flyCamera->Walk(1.f);
+		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * - 5.f);
 
 	if (GetAsyncKeyState('A') & 0x8000)
-		m_flyCamera->Strafe(1.f);
+		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * -5.f);
 
 	if (GetAsyncKeyState('D') & 0x8000)
-		m_flyCamera->Strafe(1.f);
+		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * 5.f);
 
 	if (GetAsyncKeyState('Q') & 0x8000)
-		m_flyCamera->Ascend(1.f);
+		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * 5.f);
 
 	if (GetAsyncKeyState('E') & 0x8000)
-		m_flyCamera->Ascend(1.f);
+		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * -5.f);
 }
 
 void D3D12Renderer::CreateCommandList()

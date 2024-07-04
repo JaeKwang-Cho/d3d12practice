@@ -76,9 +76,12 @@ float g_fOffsetY = 0.f;
 float g_fSpeed = 0.01f;
 
 // Tick Time
-ULONGLONG g_PrvFrameTick = 0;
-ULONGLONG g_PrvUpdateTick = 0;
+ULONGLONG g_PrevFrameTime = 0;
+ULONGLONG g_PrevUpdateTime = 0;
 DWORD	g_FrameCount = 0;
+float g_DeltaTime = 0;
+
+GameTimer g_GameTimer;
  
 // 렌더링 함수
 void RunGame();
@@ -115,6 +118,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         __debugbreak();
         return FALSE;
     }
+    // Timer 초기화
+    g_GameTimer.Reset();
+    g_GameTimer.Start();
 
     // D3D 초기화
     g_pRenderer = new D3D12Renderer;
@@ -156,7 +162,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             RunGame();
         }
     }
-
+    g_GameTimer.Stop();
     DeleteCommonAssets(g_pRenderer);
 
     if (g_pMeshObj0) {
@@ -232,17 +238,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 void RunGame()
 {
+    // Tick
+    g_GameTimer.Tick();
     // begin
-    ULONGLONG CurTick = GetTickCount64();
-    g_pRenderer->Update();
+    g_pRenderer->Update(g_GameTimer);
     g_pRenderer->BeginRender();
 
     // game business logic
-    if (CurTick - g_PrvUpdateTick > 16)
+    ULONGLONG CurrTickTime = GetTickCount64();
+    if (CurrTickTime - g_PrevUpdateTime > 16)
     {
         // Update Scene with 60FPS
         Update();
-        g_PrvUpdateTick = CurTick;
+        g_PrevUpdateTime = CurrTickTime;
     }
    
     // rendering objects
@@ -297,16 +305,15 @@ void RunGame()
     g_pRenderer->Present();
 
     // FPS
-    if (CurTick - g_PrvFrameTick > 1000)
+    if (CurrTickTime - g_PrevFrameTime > 1000)
     {
-        g_PrvFrameTick = CurTick;
+        g_PrevFrameTime = CurrTickTime;
 
         WCHAR wchTxt[64];
-        swprintf_s(wchTxt, L"FPS:%u", g_FrameCount);
-
+        swprintf_s(wchTxt, L"FPS:%u Delta:%f", g_FrameCount, g_DeltaTime);
+        SetWindowText(g_hWnd, wchTxt);
         g_FrameCount = 0;
     }
-
 }
 
 void Update()
@@ -493,14 +500,14 @@ void* CreateTileGrid()
     meshData.push_back(MeshData());
 
     // 좌표 1 * 50개로 퉁 쳐보자
-    UINT vertexCount = 50;
+    int vertexCount = 50;
 
     // -x+, -y+ 번갈아 가면서 넣어주고
     meshData[0].Vertices.resize(vertexCount * 2);
     meshData[0].Indices32.resize(vertexCount * 2);
-    for (UINT i = 0; i < vertexCount; i++)
+    for (int i = 0; i < vertexCount; i++)
     {
-        UINT curIndex = i * 2;
+        int curIndex = i * 2;
         meshData[0].Vertices[curIndex].position = XMFLOAT3(float(i - vertexCount / 2), 0.f , 0.f);
         meshData[0].Vertices[curIndex].color = XMFLOAT4(DirectX::Colors::DarkRed);
         meshData[0].Vertices[curIndex].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.

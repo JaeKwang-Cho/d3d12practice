@@ -56,6 +56,9 @@ using Microsoft::WRL::ComPtr;
 // 테이블 느낌
 #include "PSOKeys.h"
 
+// Timer
+#include "GameTimer.h"
+
 
 // 표준 때문에 어거지로 정한 값
 extern D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT;
