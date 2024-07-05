@@ -725,22 +725,22 @@ void D3D12Renderer::OnMouseMove(WPARAM _btnState, int _x, int _y)
 void D3D12Renderer::OnKeyboardInput(const GameTimer& _gameTimer)
 {
 	if (GetAsyncKeyState('W') & 0x8000)
-		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * 5.f);
+		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * 15.f);
 
 	if (GetAsyncKeyState('S') & 0x8000)
-		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * - 5.f);
+		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * - 15.f);
 
 	if (GetAsyncKeyState('A') & 0x8000)
-		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * -5.f);
+		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * -15.f);
 
 	if (GetAsyncKeyState('D') & 0x8000)
-		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * 5.f);
+		m_flyCamera->Strafe(_gameTimer.GetDeltaTime() * 15.f);
 
 	if (GetAsyncKeyState('Q') & 0x8000)
-		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * 5.f);
+		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * 15.f);
 
 	if (GetAsyncKeyState('E') & 0x8000)
-		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * -5.f);
+		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * -15.f);
 }
 
 void D3D12Renderer::CreateCommandList()
@@ -984,5 +984,10 @@ void D3D12Renderer::GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMat
 {
 	*_pOutMatView = m_flyCamera->GetViewMat();
 	*_pOutMatProj = m_flyCamera->GetProjMat();
+}
+
+XMFLOAT3 D3D12Renderer::GetCameraWorldPos() const
+{
+	return m_flyCamera->GetPosition();
 }
 

@@ -69,6 +69,7 @@ float g_fRot2 = 0.0f;
 XMMATRIX g_matWorld0 = {};
 XMMATRIX g_matWorld1 = {};
 XMMATRIX g_matWorld2 = {};
+XMMATRIX g_matWorldGrid = {};
 
 // test
 float g_fOffsetX = 0.f;
@@ -92,6 +93,9 @@ void* CreateBoxMeshObject();
 void* CreateQuadMesh();
 void* CreateGrid(float _width, float _depth, UINT _m, UINT _n);
 void* CreateTileGrid();
+
+UINT g_GridCellOffset = 0;
+void UpdateGridPos();
 
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -239,6 +243,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 void RunGame()
 {
     // Tick
+    g_FrameCount++;
     g_GameTimer.Tick();
     // begin
     g_pRenderer->Update(g_GameTimer);
@@ -295,8 +300,8 @@ void RunGame()
     //g_pRenderer->RenderSprite(g_pSpriteObj3, 540 + padding + padding + 160 + padding, 160 + padding, 0.25f, 0.25f, 0.f);
     
     
-    XMMATRIX identitiy = XMMatrixIdentity();
-    g_pRenderer->DrawRenderMesh(g_pGrid, &identitiy);
+    //XMMATRIX identitiy = XMMatrixIdentity();
+    g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid);
 
     // end
     g_pRenderer->EndRender();
@@ -310,7 +315,7 @@ void RunGame()
         g_PrevFrameTime = CurrTickTime;
 
         WCHAR wchTxt[64];
-        swprintf_s(wchTxt, L"FPS:%u Delta:%f", g_FrameCount, g_DeltaTime);
+        swprintf_s(wchTxt, L"FPS:%u Delta:%f", g_FrameCount, g_GameTimer.GetDeltaTime());
         SetWindowText(g_hWnd, wchTxt);
         g_FrameCount = 0;
     }
@@ -356,6 +361,8 @@ void Update()
     {
         g_fRot2 = 0.0f;
     }
+
+    UpdateGridPos();
 }
 
 void* CreateBoxMeshObject()
@@ -499,8 +506,9 @@ void* CreateTileGrid()
     std::vector<MeshData> meshData;
     meshData.push_back(MeshData());
 
-    // 좌표 1 * 50개로 퉁 쳐보자
-    int vertexCount = 50;
+    // 간격이 너무 좁은것 같아서 넓혀주었다.
+    int vertexCount = 11;
+    g_GridCellOffset = 25.f;
 
     // -x+, -y+ 번갈아 가면서 넣어주고
     meshData[0].Vertices.resize(vertexCount * 2);
@@ -508,11 +516,11 @@ void* CreateTileGrid()
     for (int i = 0; i < vertexCount; i++)
     {
         int curIndex = i * 2;
-        meshData[0].Vertices[curIndex].position = XMFLOAT3(float(i - vertexCount / 2), 0.f , 0.f);
+        meshData[0].Vertices[curIndex].position = XMFLOAT3(float(i - vertexCount / 2) * g_GridCellOffset, 0.f , 0.f);
         meshData[0].Vertices[curIndex].color = XMFLOAT4(DirectX::Colors::DarkRed);
         meshData[0].Vertices[curIndex].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
 
-        meshData[0].Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, float(i - vertexCount / 2));
+        meshData[0].Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, float(i - vertexCount / 2) * g_GridCellOffset);
         meshData[0].Vertices[curIndex + 1].color = XMFLOAT4(DirectX::Colors::DarkGreen);
         meshData[0].Vertices[curIndex + 1].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
 
@@ -526,6 +534,21 @@ void* CreateTileGrid()
     newGrid->CreateRenderAssets(meshData, 1);
 
     return newGrid;
+}
+
+
+//CHAR wchTxt[64];
+//sprintf_s(wchTxt, "Camera Pos (%f, %f)\n", curCameraPos.x, curCameraPos.z);
+//OutputDebugStringA(wchTxt);
+
+void UpdateGridPos()
+{
+    XMFLOAT3 curCameraPos = g_pRenderer->GetCameraWorldPos();
+
+    UINT xOffset = curCameraPos.x / g_GridCellOffset;
+    UINT zOffset = curCameraPos.z / g_GridCellOffset;
+    
+    g_matWorldGrid = XMMatrixTranslation(xOffset * g_GridCellOffset, 0.f, zOffset * g_GridCellOffset);
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)

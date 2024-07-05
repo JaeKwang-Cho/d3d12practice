@@ -59,13 +59,13 @@ void GS(
     [branch]
     if (_primID % 2 == 0)
     {
-        v1.z = -25.f;
-        v2.z = 25.f;
+        v1.z = -125.f;
+        v2.z = 125.f;
     }
     else
     {
-        v1.x = -25.f;
-        v2.x = 25.f;
+        v1.x = -125.f;
+        v2.x = 125.f;
     }
     
     gout0.pos = mul(v1, g_matWVP);

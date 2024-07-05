@@ -60,6 +60,7 @@ public:
 	bool CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc);
 
 	// Camera
+
 	// Input
 	void OnRButtonDown(WPARAM _btnState, int _x, int _y);
 	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
@@ -159,5 +160,7 @@ public:
 	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
 	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
 
+
+	XMFLOAT3 GetCameraWorldPos() const;
 };
 
