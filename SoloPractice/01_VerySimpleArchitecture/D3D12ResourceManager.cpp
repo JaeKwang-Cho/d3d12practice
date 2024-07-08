@@ -112,7 +112,7 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwV
 				DoFence();
 				WaitForFenceValue();
 			}
-			// Vertex Buffer View 값을 채워준다.
+			// TextureVertex Buffer View 값을 채워준다.
 			vertexBufferView.BufferLocation = pVertexBuffer->GetGPUVirtualAddress();
 			vertexBufferView.StrideInBytes = _sizePerVertex;
 			vertexBufferView.SizeInBytes = vertexBufferSize;

@@ -311,7 +311,7 @@ bool SpriteObject::InitMesh()
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 
 	// Quad로 표현한다.
-	BasicVertex Vertices[] =
+	ColorVertex Vertices[] =
 	{
 		{ { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
 		{ { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
@@ -327,7 +327,7 @@ bool SpriteObject::InitMesh()
 
 	const UINT VertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), (DWORD)_countof(Vertices), &m_VertexBufferView, &m_pVertexBuffer, Vertices)))
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), (DWORD)_countof(Vertices), &m_VertexBufferView, &m_pVertexBuffer, Vertices)))
 	{
 		__debugbreak();
 		goto RETURN;

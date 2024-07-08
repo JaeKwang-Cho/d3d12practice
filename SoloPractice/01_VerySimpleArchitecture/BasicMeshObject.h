@@ -55,7 +55,7 @@ public:
 	// 외부에서 Texture를 받지 않는다. MeshObject를 생성할때 이미 맴버로 가지고 있는 것들을 bind한다.
 	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld);
 
-	bool BeginCreateMesh(const BasicVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount);
+	bool BeginCreateMesh(const ColorVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount);
 	bool InsertIndexedTriList(const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh();
 

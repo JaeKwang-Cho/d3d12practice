@@ -1,6 +1,6 @@
 #pragma once
-#include "BasicRenderMesh.h"
-class Grid_RenderMesh : public BasicRenderMesh
+#include "ColorRenderMesh.h"
+class Grid_RenderMesh : public ColorRenderMesh
 {
 public:
 protected:

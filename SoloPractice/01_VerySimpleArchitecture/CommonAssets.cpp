@@ -22,5 +22,5 @@ void DeleteCommonAssets(D3D12Renderer* _pRenderer)
 
 void* CreateDefaultBox(D3D12Renderer* _pRenderer)
 {
-	
+	return nullptr;
 }

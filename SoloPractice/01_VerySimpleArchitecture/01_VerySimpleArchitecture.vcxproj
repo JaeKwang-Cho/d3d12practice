@@ -139,8 +139,9 @@
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
+    <ClInclude Include="TextureRenderMesh.h" />
     <ClInclude Include="WICTextureLoader12.h" />
-    <ClInclude Include="BasicRenderMesh.h" />
+    <ClInclude Include="ColorRenderMesh.h" />
     <ClInclude Include="CommonAssets.h" />
     <ClInclude Include="ConstantBufferManager.h" />
     <ClInclude Include="ConstantBufferPool.h" />
@@ -165,8 +166,9 @@
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
+    <ClCompile Include="TextureRenderMesh.cpp" />
     <ClCompile Include="WICTextureLoader12.cpp" />
-    <ClCompile Include="BasicRenderMesh.cpp" />
+    <ClCompile Include="ColorRenderMesh.cpp" />
     <ClCompile Include="CommonAssets.cpp" />
     <ClCompile Include="ConstantBufferManager.cpp" />
     <ClCompile Include="ConstantBufferPool.cpp" />

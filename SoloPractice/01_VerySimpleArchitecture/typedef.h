@@ -2,13 +2,13 @@
 
 #pragma once
 
-struct BasicVertex {
+struct ColorVertex {
 	XMFLOAT3 position;
 	XMFLOAT4 color;
 	XMFLOAT2 texCoord;
 };
 
-struct Vertex 
+struct TextureVertex 
 {
 	// 위치, 법선, 탄젠트, UV좌표
 	DirectX::XMFLOAT3 Position;
@@ -16,8 +16,8 @@ struct Vertex
 	DirectX::XMFLOAT3 TangentU;
 	DirectX::XMFLOAT2 TexC;
 
-	Vertex() = default;
-	Vertex(
+	TextureVertex() = default;
+	TextureVertex(
 		const DirectX::XMFLOAT3& _p,
 		const DirectX::XMFLOAT3& _n,
 		const DirectX::XMFLOAT3& _t,
@@ -26,7 +26,7 @@ struct Vertex
 		Normal(_n),
 		TangentU(_t),
 		TexC(_uv) {}
-	Vertex(
+	TextureVertex(
 		float _px, float _py, float _pz,
 		float _nx, float _ny, float _nz,
 		float _tx, float _ty, float _tz,
@@ -112,10 +112,10 @@ struct SubRenderGeometry
 	{}
 };
 
-struct MeshData
+struct ColorMeshData
 {
 	// 점 데이터, 인덱스 데이터
-	std::vector<BasicVertex> Vertices;
+	std::vector<ColorVertex> Vertices;
 	std::vector<uint32_t> Indices32;
 
 	// 총 인덱스 개수가 적을 때 사용
@@ -134,3 +134,27 @@ struct MeshData
 private:
 	std::vector<uint16_t> mIndices16;
 };
+
+struct TextureMeshData
+{
+	// 점 데이터, 인덱스 데이터
+	std::vector<TextureVertex> Vertices;
+	std::vector<uint32_t> Indices32;
+
+	// 총 인덱스 개수가 적을 때 사용
+	std::vector<uint16_t>& GetIndices16()
+	{
+		if (mIndices16.empty())
+		{
+			mIndices16.resize(Indices32.size());
+			for (size_t i = 0; i < Indices32.size(); ++i)
+				mIndices16[i] = static_cast<uint16_t>(Indices32[i]);
+		}
+
+		return mIndices16;
+	}
+
+private:
+	std::vector<uint16_t> mIndices16;
+};
+

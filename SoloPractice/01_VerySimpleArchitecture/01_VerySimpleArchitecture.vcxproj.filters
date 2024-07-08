@@ -49,12 +49,6 @@
     <Filter Include="Renderer\PSOPool">
       <UniqueIdentifier>{d081e109-7eb8-4fdb-81a4-5bb38c5a6f2f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="BasicRenderAssets">
-      <UniqueIdentifier>{33d3ac4f-f76a-45c0-b39b-5fcbbf198df9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="BasicRenderAssets\Grid">
-      <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
-    </Filter>
     <Filter Include="DirectXTex\WICLoader">
       <UniqueIdentifier>{9aa48b06-2c42-4ff9-9ef4-6a21a1c162d0}</UniqueIdentifier>
     </Filter>
@@ -66,6 +60,18 @@
     </Filter>
     <Filter Include="Engine\Timer">
       <UniqueIdentifier>{2df45fb0-ed7a-447b-a49e-9bd4153adee5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets">
+      <UniqueIdentifier>{33d3ac4f-f76a-45c0-b39b-5fcbbf198df9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\ColorRenderMesh">
+      <UniqueIdentifier>{1f79a5c3-fa53-4c5c-9959-1dc12f0ba4e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\ColorRenderMesh\Grid">
+      <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\TextureRenderMesh">
+      <UniqueIdentifier>{dd0d1fc3-f541-4e76-9e84-ba70613cc59e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -125,19 +131,22 @@
       <Filter>DirectXTex\WICLoader</Filter>
     </ClInclude>
     <ClInclude Include="CommonAssets.h">
-      <Filter>BasicRenderAssets</Filter>
-    </ClInclude>
-    <ClInclude Include="BasicRenderMesh.h">
-      <Filter>BasicRenderAssets</Filter>
+      <Filter>RenderAssets</Filter>
     </ClInclude>
     <ClInclude Include="Grid_RenderMesh.h">
-      <Filter>BasicRenderAssets\Grid</Filter>
+      <Filter>RenderAssets\ColorRenderMesh\Grid</Filter>
     </ClInclude>
     <ClInclude Include="FlyCamera.h">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
     </ClInclude>
     <ClInclude Include="GameTimer.h">
       <Filter>Engine\Timer</Filter>
+    </ClInclude>
+    <ClInclude Include="ColorRenderMesh.h">
+      <Filter>RenderAssets\ColorRenderMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="TextureRenderMesh.h">
+      <Filter>RenderAssets\TextureRenderMesh</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -206,19 +215,22 @@
       <Filter>DirectXTex\WICLoader</Filter>
     </ClCompile>
     <ClCompile Include="CommonAssets.cpp">
-      <Filter>BasicRenderAssets</Filter>
-    </ClCompile>
-    <ClCompile Include="BasicRenderMesh.cpp">
-      <Filter>BasicRenderAssets</Filter>
+      <Filter>RenderAssets</Filter>
     </ClCompile>
     <ClCompile Include="Grid_RenderMesh.cpp">
-      <Filter>BasicRenderAssets\Grid</Filter>
+      <Filter>RenderAssets\ColorRenderMesh\Grid</Filter>
     </ClCompile>
     <ClCompile Include="FlyCamera.cpp">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
     </ClCompile>
     <ClCompile Include="GameTimer.cpp">
       <Filter>Engine\Timer</Filter>
+    </ClCompile>
+    <ClCompile Include="ColorRenderMesh.cpp">
+      <Filter>RenderAssets\ColorRenderMesh</Filter>
+    </ClCompile>
+    <ClCompile Include="TextureRenderMesh.cpp">
+      <Filter>RenderAssets\TextureRenderMesh</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

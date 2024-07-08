@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "BasicRenderMesh.h"
+#include "ColorRenderMesh.h"
 #include "D3D12Renderer.h"
 #include "D3D12ResourceManager.h"
 #include "D3DUtil.h"
@@ -7,10 +7,10 @@
 #include "DescriptorPool.h"
 
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> BasicRenderMesh::m_pRootSignature = nullptr;
-DWORD BasicRenderMesh::m_dwInitRefCount = 0;
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ColorRenderMesh::m_pRootSignature = nullptr;
+DWORD ColorRenderMesh::m_dwInitRefCount = 0;
 
-bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy)
+bool ColorRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy)
 {
 	m_pRenderer = _pRenderer;
 	m_PrimitiveTopoloy = _primitiveTopoloy;
@@ -22,7 +22,7 @@ bool BasicRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLO
 	return bResult;
 }
 
-void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
+void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -62,7 +62,7 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
 
 	// Object 마다 넘어가는 CB는 CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(BASIC_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
 	pD3DDevice->CopyDescriptorsSimple(1, dest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
 
 	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
@@ -97,7 +97,7 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
 	{
 		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
-		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)BASIC_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
 		if (pSubRenderGeo) {
 			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
@@ -109,7 +109,7 @@ void BasicRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	}
 }
 
-void BasicRenderMesh::CreateRenderAssets(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount)
+void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount)
 {
 	if (_meshDataCount > MAX_SUB_RENDER_GEO_COUNT) {
 		__debugbreak();
@@ -123,11 +123,11 @@ void BasicRenderMesh::CreateRenderAssets(std::vector<MeshData>& _ppMeshData, con
 	
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
 		subRenderGeometries[i] = new SubRenderGeometry;
-		MeshData& pCurMeshData = _ppMeshData[i];
+		ColorMeshData& pCurMeshData = _ppMeshData[i];
 
-		// Vertex Buffer 먼저 생성한다.
+		// TextureVertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
-			sizeof(BasicVertex), pCurMeshData.Vertices.size(), 
+			sizeof(ColorVertex), pCurMeshData.Vertices.size(), 
 			&(subRenderGeometries[i]->m_VertexBufferView),
 			&(subRenderGeometries[i]->m_pVertexBuffer), 
 			(void*)pCurMeshData.Vertices.data()
@@ -152,7 +152,7 @@ void BasicRenderMesh::CreateRenderAssets(std::vector<MeshData>& _ppMeshData, con
 	}
 }
 
-void BasicRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
+void ColorRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
 {
 	if (m_subRenderGeoCount <= _subRenderAssetIndex) 
 	{
@@ -161,7 +161,7 @@ void BasicRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT 
 	subRenderGeometries[_subRenderAssetIndex]->pTexHandle = _pTexHandle;
 }
 
-bool BasicRenderMesh::InitCommonResources()
+bool ColorRenderMesh::InitCommonResources()
 {
 	// root signature을 싱글톤으로 사용한다.
 	if (m_dwInitRefCount > 0) {
@@ -175,7 +175,7 @@ EXIST:
 	return true;
 }
 
-void BasicRenderMesh::CleanupSharedResources()
+void ColorRenderMesh::CleanupSharedResources()
 {
 	if (!m_dwInitRefCount) {
 		return;
@@ -190,7 +190,7 @@ void BasicRenderMesh::CleanupSharedResources()
 	}
 }
 
-bool BasicRenderMesh::InitRootSignature()
+bool ColorRenderMesh::InitRootSignature()
 {
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -235,7 +235,7 @@ bool BasicRenderMesh::InitRootSignature()
 	return true;
 }
 
-bool BasicRenderMesh::InitPipelineState()
+bool ColorRenderMesh::InitPipelineState()
 {
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
@@ -321,7 +321,7 @@ RETURN:
 	return true;
 }
 
-void BasicRenderMesh::CleanUpAssets()
+void ColorRenderMesh::CleanUpAssets()
 {
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
 		if (subRenderGeometries[i]) {
@@ -332,14 +332,14 @@ void BasicRenderMesh::CleanUpAssets()
 	CleanupSharedResources();
 }
 
-BasicRenderMesh::BasicRenderMesh()
+ColorRenderMesh::ColorRenderMesh()
 	:m_pRenderer(nullptr), m_PrimitiveTopoloy(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST), 
 	subRenderGeometries{nullptr, },
 	m_subRenderGeoCount(0), m_pPipelineState(nullptr)
 {
 }
 
-BasicRenderMesh::~BasicRenderMesh()
+ColorRenderMesh::~ColorRenderMesh()
 {
 	CleanUpAssets();
 	OutputDebugStringA("~BasicRenderMesh()");

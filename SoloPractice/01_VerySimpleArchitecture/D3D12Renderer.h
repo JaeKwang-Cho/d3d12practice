@@ -30,7 +30,7 @@ public:
 
 	// Render Mesh
 	void* CreateRenderMesh();
-	void* CreateRenderMesh(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount);
+	void* CreateRenderMesh(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount);
 	void DeleteRenderMesh(void* _pMeshObjectHandle);
 	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 	
@@ -39,7 +39,7 @@ public:
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
 	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 
-	bool BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount);
+	bool BeginCreateMesh(void* _pMeshObjHandle, const ColorVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount);
 	bool InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh(void* _pMeshObjHandle);
 

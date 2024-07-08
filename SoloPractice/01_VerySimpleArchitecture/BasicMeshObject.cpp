@@ -124,7 +124,7 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	}
 }
 
-bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount)
+bool BasicMeshObject::BeginCreateMesh(const ColorVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount)
 {
 	bool bResult = false;
 	
@@ -134,8 +134,8 @@ bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, DWORD _dw
 	if (_dwTriGroupCount > MAX_TRI_GROUP_COUNT_PER_OBJ) {
 		__debugbreak();
 	}
-	// 일단 Vertex Buffer 먼저 생성한다.
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), _dwVertexNum, &m_VertexBufferView, &m_pVertexBuffer, (void*)_pVertexList))) {
+	// 일단 TextureVertex Buffer 먼저 생성한다.
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), _dwVertexNum, &m_VertexBufferView, &m_pVertexBuffer, (void*)_pVertexList))) {
 		__debugbreak();
 		goto RETURN;
 	}
@@ -385,12 +385,12 @@ bool BasicMeshObject::CreateMesh()
 {
 	bool bResult = false;
 
-	// Default Buffer에 Vertex 정보를 올려보는 것
+	// Default Buffer에 TextureVertex 정보를 올려보는 것
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// 대충 찍어보자.
-	BasicVertex Vertices[] =
+	ColorVertex Vertices[] =
 	{
 		{ { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
 		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
@@ -406,7 +406,7 @@ bool BasicMeshObject::CreateMesh()
 
 	const UINT vertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
 		__debugbreak();
 		goto RETURN;
 	}
@@ -448,7 +448,7 @@ bool BasicMeshObject::CreateMesh_UploadHeap()
 	// 지금은 임시로 점을 임의로 몇개 찍어서 그려보는 것이다.
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	// 대충 찍어보자.
-	BasicVertex Vertices[] =
+	ColorVertex Vertices[] =
 	{
 		{ { 0.0f, 0.33f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
 		{ { 0.33f, -0.33f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
@@ -488,7 +488,7 @@ bool BasicMeshObject::CreateMesh_UploadHeap()
 	// (위에 처럼 복잡하게 write가 되었는지 확인할 필요가 없게 된다.)
 	// (이걸 지원하는 하드웨어가 있다면 GPU 메모리에 쉽게 접근할 수 있게 된다.)
 
-	// 삼각형 정보를 Vertex Buffer에 넣는다.
+	// 삼각형 정보를 TextureVertex Buffer에 넣는다.
 	UINT8* pVertexDataBegin = nullptr;
 	CD3DX12_RANGE readRange(0, 0);
 	// Map 함수를 호출하면, CPU에서 바로 사용할 수 있는 Address를 얻을 수 있다.
@@ -505,7 +505,7 @@ bool BasicMeshObject::CreateMesh_UploadHeap()
 
 	// vertex buffer view도 초기화 한다.
 	m_VertexBufferView.BufferLocation = m_pVertexBuffer->GetGPUVirtualAddress();
-	m_VertexBufferView.StrideInBytes = sizeof(BasicVertex);
+	m_VertexBufferView.StrideInBytes = sizeof(ColorVertex);
 	m_VertexBufferView.SizeInBytes = vertexBufferSize;
 
 	return true;
@@ -515,12 +515,12 @@ bool BasicMeshObject::CreateMesh_DefaultHeap()
 {
 	bool bResult = false;
 
-	// Default Buffer에 Vertex 정보를 올려보는 것
+	// Default Buffer에 TextureVertex 정보를 올려보는 것
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// 대충 찍어보자.
-	BasicVertex Vertices[] =
+	ColorVertex Vertices[] =
 	{
 		{ { 0.0f, 0.33f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
 		{ { 0.33f, -0.33f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
@@ -529,7 +529,7 @@ bool BasicMeshObject::CreateMesh_DefaultHeap()
 
 	const UINT vertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
 		__debugbreak();
 		goto RETURN;
 	}
@@ -548,7 +548,7 @@ bool BasicMeshObject::CreateMesh_WithIndex()
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// vertex buffer.
-	BasicVertex Vertices[] =
+	ColorVertex Vertices[] =
 	{
 		{ { -0.25f, 0.25f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
 		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
@@ -564,7 +564,7 @@ bool BasicMeshObject::CreateMesh_WithIndex()
 
 	const UINT vertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), static_cast<DWORD>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
 		__debugbreak();
 		goto RETURN;
 	}
@@ -585,8 +585,8 @@ bool BasicMeshObject::CreateMesh_WithTexture()
 
 	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
-	// uv 좌표도 함께 가진 Vertex buffer를 만든다.
-	BasicVertex Vertices[] =
+	// uv 좌표도 함께 가진 TextureVertex buffer를 만든다.
+	ColorVertex Vertices[] =
 	{
 		{ { 0.0f, 0.25f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, { 0.5f, 0.0f } },
 		{ { 0.25f, -0.25f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, { 1.0f, 1.0f } },
@@ -595,7 +595,7 @@ bool BasicMeshObject::CreateMesh_WithTexture()
 
 	const UINT  VertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), (DWORD)_countof(Vertices),
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), (DWORD)_countof(Vertices),
 		&m_VertexBufferView, &m_pVertexBuffer, Vertices))) {
 		__debugbreak();
 		goto RETURN;
@@ -611,7 +611,7 @@ bool BasicMeshObject::CreateMesh_WithTexture()
 		BYTE* pImage = static_cast<BYTE*>(malloc(texWidth * texHeight * sizeof(uint32_t)));
 		memset(pImage, 0, texWidth * texHeight * sizeof(uint32_t));
 
-		// 셰이더에서 Vertex Color에 Texture Color가 곱해질 것이다.
+		// 셰이더에서 TextureVertex Color에 Texture Color가 곱해질 것이다.
 		BOOL bFirstColorIsWhite = TRUE;
 
 		for (UINT y = 0; y < texHeight; y++) {

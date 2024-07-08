@@ -103,7 +103,7 @@ HRESULT CreateSimpleVertexBuffer(ID3D12Device* _pDevice, UINT _SizePerVertex, DW
 	Microsoft::WRL::ComPtr<ID3D12Resource> pVertexBuffer = nullptr;
 	UINT VertexBufferSize = _SizePerVertex * _dwVertexNum;
 
-	// Vertex Buffer를 생성한다.
+	// TextureVertex Buffer를 생성한다.
 	D3D12_HEAP_PROPERTIES defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	D3D12_RESOURCE_DESC vbResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(VertexBufferSize);
 

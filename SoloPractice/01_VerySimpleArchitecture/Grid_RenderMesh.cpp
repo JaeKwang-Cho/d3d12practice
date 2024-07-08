@@ -4,7 +4,7 @@
 
 bool Grid_RenderMesh::InitRootSignature()
 {
-	return BasicRenderMesh::InitRootSignature();
+	return ColorRenderMesh::InitRootSignature();
 }
 
 bool Grid_RenderMesh::InitPipelineState()

@@ -3,14 +3,14 @@
 #include "pch.h"
 #include "VertexUtil.h"
 
-uint16_t AddVertex(BasicVertex* _pVertexList, DWORD _dwMaxVertexCount, DWORD* _pdwInOutVertexCount, const BasicVertex* _pVertex) {
+uint16_t AddVertex(ColorVertex* _pVertexList, DWORD _dwMaxVertexCount, DWORD* _pdwInOutVertexCount, const ColorVertex* _pVertex) {
 	uint16_t dwFoundIndex = -1;
 	DWORD dwExistVertexCount = *_pdwInOutVertexCount;
 
 	// 이미 존재하는 점이면 안 넣는다.
 	for (DWORD i = 0; i < dwExistVertexCount; i++) {
-		const BasicVertex* pExistVertex = _pVertexList + i;
-		if (!memcmp(pExistVertex, _pVertex, sizeof(BasicVertex))) {
+		const ColorVertex* pExistVertex = _pVertexList + i;
+		if (!memcmp(pExistVertex, _pVertex, sizeof(ColorVertex))) {
 			dwFoundIndex = (uint16_t)i;
 			goto RETURN;
 		}
@@ -29,7 +29,7 @@ RETURN:
 	return dwFoundIndex;
 }
 
-DWORD CreateBoxMesh(BasicVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DWORD _dwMaxBufferCount, float _fHalfBoxLength)
+DWORD CreateBoxMesh(ColorVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DWORD _dwMaxBufferCount, float _fHalfBoxLength)
 {
 	const DWORD INDEX_COUNT = 36;
 	if (_dwMaxBufferCount < INDEX_COUNT) {
@@ -101,12 +101,12 @@ DWORD CreateBoxMesh(BasicVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DW
 	pWorldPosList[7] = { _fHalfBoxLength, _fHalfBoxLength, -_fHalfBoxLength };
 
 	const DWORD MAX_WORKING_VERTEX_COUNT = 65536;
-	BasicVertex* pWorkingVertexList = new BasicVertex[MAX_WORKING_VERTEX_COUNT];
-	memset(pWorkingVertexList, 0, sizeof(BasicVertex) * MAX_WORKING_VERTEX_COUNT);
+	ColorVertex* pWorkingVertexList = new ColorVertex[MAX_WORKING_VERTEX_COUNT];
+	memset(pWorkingVertexList, 0, sizeof(ColorVertex) * MAX_WORKING_VERTEX_COUNT);
 	DWORD dwBasicVertexCount = 0;
 
 	for (DWORD i = 0; i < INDEX_COUNT; i++) {
-		BasicVertex v;
+		ColorVertex v;
 		v.color = { 1.f, 1.f, 1.f, 1.f };
 		v.position = pWorldPosList[pIndexList[i]];
 		v.texCoord = pTexCoordList[i];
@@ -114,8 +114,8 @@ DWORD CreateBoxMesh(BasicVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DW
 		_pOutIndexList[i] = AddVertex(pWorkingVertexList, MAX_WORKING_VERTEX_COUNT, &dwBasicVertexCount, &v);
 	}
 
-	BasicVertex* pNewVertexList = new BasicVertex[dwBasicVertexCount];
-	memcpy(pNewVertexList, pWorkingVertexList, sizeof(BasicVertex) * dwBasicVertexCount);
+	ColorVertex* pNewVertexList = new ColorVertex[dwBasicVertexCount];
+	memcpy(pNewVertexList, pWorkingVertexList, sizeof(ColorVertex) * dwBasicVertexCount);
 
 	*_ppOutVertexList = pNewVertexList;
 
@@ -125,7 +125,7 @@ DWORD CreateBoxMesh(BasicVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DW
 	return dwBasicVertexCount;
 }
 
-void DeleteBoxMesh(BasicVertex* _pVertexList)
+void DeleteBoxMesh(ColorVertex* _pVertexList)
 {
 	delete[] _pVertexList;
 }

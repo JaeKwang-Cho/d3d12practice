@@ -9,19 +9,23 @@ cbuffer CONSTANT_BUFFER_DEFAULT : register(b0)
     matrix g_matView;
     matrix g_matProj;
     matrix g_matWVP;
+    matrix g_invWorldTranspose;
 };
 
 struct VSInput
 {
-    float3 pos : POSITION;
-    float4 color : COLOR;
+    float3 posL : POSITION;
+    float3 normalL : NORMAL;
+    float3 tanU : TANGENT;
     float2 TexCoord : TEXCOORD0;
 };
 
 struct PSInput
 {
-    float4 pos : SV_POSITION;
-    float4 color : COLOR;
+    float4 posH : SV_POSITION;
+    float3 posW : POSITION;
+    float3 normalW : NORMAL;
+    float TanW : TANGENT;
     float2 TexCoord : TEXCOORD0;
 };
 
@@ -29,12 +33,10 @@ PSInput VS(VSInput _vin)
 {
     PSInput vout;
     
-    vout.pos = mul(float4(_vin.pos, 1.0f), g_matWVP);
-    //matrix matViewProj = mul(g_matView, g_matProj); // view x proj
-    //matrix matWorldViewProj = mul(g_matWorld, matViewProj); // world x view x proj
-    //vout.pos = mul(float4(_vin.pos, 1.0f), matWorldViewProj); // pojtected vertex = vertex x world x view x proj
-    
-    vout.color = _vin.color;
+    vout.posH = mul(float4(_vin.posL, 1.0f), g_matWVP);
+    vout.posW = mul(float4(_vin.posL, 1.0f), g_matWorld).xyz;
+    vout.normalW = mul(float4(_vin.normalL, 1.0f), g_invWorldTranspose).xyz;
+    vout.TanW = mul(float4(_vin.tanU, 1.0f), g_invWorldTranspose).xyz;
     vout.TexCoord = _vin.TexCoord;
 
     return vout;
@@ -43,5 +45,5 @@ PSInput VS(VSInput _vin)
 float4 PS(PSInput _pin) : SV_Target
 {
     float4 texColor = texDiffuse.Sample(samplerDiffuse, _pin.TexCoord);
-    return texColor * _pin.color;
+    return texColor;
 }

@@ -12,7 +12,7 @@
 #include "ConstantBufferManager.h"
 #include "SpriteObject.h"
 #include "D3D12PSOCache.h"
-#include "BasicRenderMesh.h"
+#include "ColorRenderMesh.h"
 #include "FlyCamera.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
@@ -438,15 +438,15 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 
 void* D3D12Renderer::CreateRenderMesh()
 {
-	BasicRenderMesh* pRenderMesh = new BasicRenderMesh;
+	ColorRenderMesh* pRenderMesh = new ColorRenderMesh;
 	pRenderMesh->Initialize(this);
 
 	return pRenderMesh;
 }
 
-void* D3D12Renderer::CreateRenderMesh(std::vector<MeshData>& _ppMeshData, const UINT _meshDataCount)
+void* D3D12Renderer::CreateRenderMesh(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount)
 {
-	BasicRenderMesh* pRenderMesh = new BasicRenderMesh;
+	ColorRenderMesh* pRenderMesh = new ColorRenderMesh;
 	pRenderMesh->Initialize(this);
 	pRenderMesh->CreateRenderAssets(_ppMeshData, _meshDataCount);
 
@@ -461,7 +461,7 @@ void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle)
 	}
 
 	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
-	BasicRenderMesh* pMeshObj = reinterpret_cast<BasicRenderMesh*>(_pMeshObjectHandle);
+	ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
 	delete pMeshObj;
 }
 
@@ -469,7 +469,7 @@ void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMa
 {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
-	BasicRenderMesh* pMeshObj = reinterpret_cast<BasicRenderMesh*>(_pMeshObjectHandle);
+	ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
 	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
 }
 
@@ -504,7 +504,7 @@ void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* p
 	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
 }
 
-bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount)
+bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const ColorVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount)
 {
 	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
 	bool bResult = pMeshObj->BeginCreateMesh(_pVertexList, _dwVertexCount, _dwTriGroupCount);
