@@ -8,6 +8,7 @@
 #include "CommonAssets.h"
 #include "Grid_RenderMesh.h"
 #include <windowsx.h>
+#include <shellapi.h> // 파일 드래그앤드롭
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -42,6 +43,7 @@ WCHAR g_szTitle[] = L"VerySimpleArchitecture";
 WCHAR g_szWindowClass[] = L"Main Window";
 int g_ClientWidth = 1280;
 int g_ClientHeight = 720;
+WCHAR g_tempPath[MAX_PATH];
 
 // D3D12 전역변수
 D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -611,6 +613,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
     }
     return 0;
+    case WM_DROPFILES:
+    {
+        HDROP hDrop = (HDROP)wParam;
+        UINT fileCount = DragQueryFileA(hDrop, 0xFFFFFFFF, NULL, 0);
+        if (fileCount >= 2) {
+            MessageBox(g_hWnd, L"일단은 파일 하나만", L"경고", MB_OK);
+            return 0;
+        }
+        UINT filePathLength = DragQueryFileW(hDrop, 0, g_tempPath, MAX_PATH);
+        OutputDebugString(L"DropFile\n");
+    }
+    return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
     break;
@@ -649,14 +663,16 @@ bool InitWindow(HINSTANCE _hInstance)
     int height = rect.bottom - rect.top;
 
     // 윈도우 생성
-    g_hWnd = CreateWindow(g_szWindowClass, g_szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height,
+    // 드래그앤 드롭이 가능하도록 만든다.
+    DWORD dwExStyle = WS_EX_ACCEPTFILES;
+    g_hWnd = CreateWindowEx(dwExStyle, g_szWindowClass, g_szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height,
         nullptr, nullptr, g_hInst, nullptr);
     if (!g_hWnd) {
         MessageBox(0, L"CreateWindow Failed.", 0, 0);
         __debugbreak();
         return false;
     }
-
+   
     ShowWindow(g_hWnd, SW_SHOW);
     UpdateWindow(g_hWnd);    
 
