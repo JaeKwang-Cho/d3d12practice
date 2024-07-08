@@ -3,6 +3,10 @@
 #include "D3D12Renderer.h"
 
 TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE = nullptr;
+void* DEFAULT_BOX = nullptr;
+
+void* CreateDefaultBox(D3D12Renderer* _pRenderer);
+
 
 void CreateCommonAssets(D3D12Renderer* _pRenderer) {
 	// default texture
@@ -14,4 +18,9 @@ void CreateCommonAssets(D3D12Renderer* _pRenderer) {
 void DeleteCommonAssets(D3D12Renderer* _pRenderer)
 {
 	_pRenderer->DeleteTexture(DEFAULT_WHITE_TEXTURE);
+}
+
+void* CreateDefaultBox(D3D12Renderer* _pRenderer)
+{
+	
 }

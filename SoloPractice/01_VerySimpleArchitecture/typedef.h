@@ -8,6 +8,35 @@ struct BasicVertex {
 	XMFLOAT2 texCoord;
 };
 
+struct Vertex 
+{
+	// À§Ä¡, ¹ý¼±, ÅºÁ¨Æ®, UVÁÂÇ¥
+	DirectX::XMFLOAT3 Position;
+	DirectX::XMFLOAT3 Normal;
+	DirectX::XMFLOAT3 TangentU;
+	DirectX::XMFLOAT2 TexC;
+
+	Vertex() = default;
+	Vertex(
+		const DirectX::XMFLOAT3& _p,
+		const DirectX::XMFLOAT3& _n,
+		const DirectX::XMFLOAT3& _t,
+		const DirectX::XMFLOAT2& _uv) :
+		Position(_p),
+		Normal(_n),
+		TangentU(_t),
+		TexC(_uv) {}
+	Vertex(
+		float _px, float _py, float _pz,
+		float _nx, float _ny, float _nz,
+		float _tx, float _ty, float _tz,
+		float _u, float _v) :
+		Position(_px, _py, _pz),
+		Normal(_nx, _ny, _nz),
+		TangentU(_tx, _ty, _tz),
+		TexC(_u, _v) {}
+};
+
 union RGBA
 {
 	struct {
