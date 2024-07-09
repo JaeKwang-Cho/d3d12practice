@@ -116,7 +116,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     CreateCommonAssets(g_pRenderer);
 
     // main 에서 grid mesh를 미리 만들기
-    //g_pGrid = CreateGrid(100, 100, 50, 50);
     g_pGrid = CreateTileGrid();
     g_pCube = CreateCube(10.f, 5.f, 2.f);
 
@@ -134,17 +133,22 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
     g_GameTimer.Stop();
-    DeleteCommonAssets(g_pRenderer);
-
     g_pRenderer->FlushMultiRendering();
 
+    DeleteCommonAssets(g_pRenderer);
+
+
     if (g_pGrid) {
-        g_pRenderer->DeleteRenderMesh(g_pGrid, E_RENDER_MESH_TYPE::COLOR);
+        Grid_RenderMesh* pGrid = reinterpret_cast<Grid_RenderMesh*>(g_pGrid);
+        delete pGrid;
+        //g_pRenderer->DeleteRenderMesh(g_pGrid, E_RENDER_MESH_TYPE::COLOR);
         g_pGrid = nullptr;
     }
     if (g_pCube) {
-        g_pRenderer->DeleteRenderMesh(g_pCube, E_RENDER_MESH_TYPE::TEXTURE);
-        g_pCube = nullptr;
+        TextureRenderMesh* pCube = reinterpret_cast<TextureRenderMesh*>(g_pCube);
+        delete pCube;
+        //g_pRenderer->DeleteRenderMesh(g_pCube, E_RENDER_MESH_TYPE::TEXTURE);
+        pCube = nullptr;
     }
 
     if (g_pRenderer) {

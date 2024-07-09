@@ -57,7 +57,7 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 		__debugbreak();
 	}
 
-	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCB->pSystemMemAddr);
+	CONSTANT_BUFFER_OBJECT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_OBJECT*>(pCB->pSystemMemAddr);
 	// CB 값을 업데이트 하고
 	XMMATRIX viewMat;
 	XMMATRIX projMat;
@@ -676,7 +676,7 @@ bool BasicMeshObject::CreateMesh_WithCB()
 		D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 		// CB는 하드웨어 성능상의 이유로 256-bytes aligned이여야 한다.
-		const UINT constantBufferSize = static_cast<UINT>(AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_DEFAULT)));
+		const UINT constantBufferSize = static_cast<UINT>(AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_OBJECT)));
 
 		D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 		D3D12_RESOURCE_DESC cbDesc_Size = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);

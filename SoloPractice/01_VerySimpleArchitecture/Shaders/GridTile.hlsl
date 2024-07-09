@@ -1,12 +1,17 @@
 Texture2D texDiffuse : register(t0);
 SamplerState samplerDiffuse : register(s0);
 
-cbuffer CONSTANT_BUFFER_DEFAULT : register(b0)
+cbuffer CONSTANT_BUFFER_FRAME : register(b1)
 {
-    matrix g_matWorld;
     matrix g_matView;
     matrix g_matProj;
-    matrix g_matWVP;
+    matrix g_matViewProj;
+};
+
+cbuffer CONSTANT_BUFFER_OBJECT : register(b0)
+{
+    matrix g_matWorld;
+    matrix g_invWorldTranspose;
 };
 
 struct VSInput
@@ -68,12 +73,14 @@ void GS(
         v2.x = 125.f;
     }
     
-    gout0.pos = mul(v1, g_matWVP);
+    float4 posW = mul(v1, g_matWorld);
+    gout0.pos = mul(posW, g_matViewProj);
     gout0.color = _gin[0].color;
     gout0.texCoord = _gin[0].texCoord;
     gout0.PrimID = _primID;
 
-    gout1.pos = mul(v2, g_matWVP);
+    posW = mul(v2, g_matWorld);
+    gout1.pos = mul(posW, g_matViewProj);
     gout1.color = _gin[0].color;
     gout1.texCoord = _gin[0].texCoord;
     gout1.PrimID = _primID;

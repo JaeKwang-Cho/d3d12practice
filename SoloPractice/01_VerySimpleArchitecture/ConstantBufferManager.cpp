@@ -7,7 +7,7 @@
 
 static CONSTANT_BUFFER_PROPERTY f_pCBPropList[] =
 {
-	{E_CONSTANT_BUFFER_TYPE::DEFAULT, sizeof(CONSTANT_BUFFER_DEFAULT)},
+	{E_CONSTANT_BUFFER_TYPE::DEFAULT, sizeof(CONSTANT_BUFFER_OBJECT)},
 	{E_CONSTANT_BUFFER_TYPE::SPRITE, sizeof(CONSTANT_BUFFER_SPRITE)}
 };
 
@@ -39,6 +39,9 @@ ConstantBufferPool* ConstantBufferManager::GetConstantBufferPool(E_CONSTANT_BUFF
 ConstantBufferManager::ConstantBufferManager()
 	:m_ppConstantBufferPool{}
 {
+	for (UINT i = 0; i < (UINT)E_CONSTANT_BUFFER_TYPE::END; i++) {
+		m_ppConstantBufferPool[i] = nullptr;
+	}
 }
 
 ConstantBufferManager::~ConstantBufferManager()

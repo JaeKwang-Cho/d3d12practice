@@ -45,19 +45,15 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 		__debugbreak();
 	}
 
-	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCB->pSystemMemAddr);
+	CONSTANT_BUFFER_OBJECT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_OBJECT*>(pCB->pSystemMemAddr);
 	// CB 값을 업데이트 하고
 	XMMATRIX viewMat;
 	XMMATRIX projMat;
 	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
 
-	pConstantBufferDefault->matView = XMMatrixTranspose(viewMat);
-	pConstantBufferDefault->matProj = XMMatrixTranspose(projMat);
 	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
-
-	XMMATRIX wvpMat = (*_pMatWorld) * viewMat * projMat;
-
-	pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
+	XMVECTOR detWorld = XMMatrixDeterminant(*_pMatWorld);
+	pConstantBufferDefault->invWorldTranspose = XMMatrixInverse(&detWorld, *_pMatWorld);
 
 	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
 
@@ -90,6 +86,9 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 
 	// 일단 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다. 지금은 1개만 넘겨준다.
 	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
+
+	// FrameCB도 넘겨준다.
+	_pCommandList->SetGraphicsRootConstantBufferView(2, m_pRenderer->INL_GetFrameCBResource()->GetGPUVirtualAddress());
 
 	_pCommandList->SetPipelineState(m_pPipelineState.Get());
 	_pCommandList->IASetPrimitiveTopology(m_PrimitiveTopoloy);
@@ -206,9 +205,11 @@ bool TextureRenderMesh::InitRootSignature()
 	rangePerSub[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Sub - Object 마다 넘기는 SRV(texture)
 
 	// table 0번과 1번에 저장한다.
-	CD3DX12_ROOT_PARAMETER rootParameters[2] = {};
+	// 그리고 CBV로 2번에 저장한다.
+	CD3DX12_ROOT_PARAMETER rootParameters[3] = {};
 	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSub), rangePerSub, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[2].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL); // b1 : Frame 마다 넘기는 Constant Buffer View
 
 
 	// Texture Sample을 할때 사용하는 Sampler를
@@ -260,7 +261,7 @@ bool TextureRenderMesh::InitPipelineState()
 		HRESULT hr;
 
 		// vertex shader를 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
@@ -268,7 +269,7 @@ bool TextureRenderMesh::InitPipelineState()
 			__debugbreak();
 		}
 		// pixel shader도 컴파일 한다.
-		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, nullptr, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
@@ -340,4 +341,5 @@ TextureRenderMesh::TextureRenderMesh()
 
 TextureRenderMesh::~TextureRenderMesh()
 {
+	CleanUpAssets();
 }

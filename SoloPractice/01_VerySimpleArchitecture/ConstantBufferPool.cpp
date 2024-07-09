@@ -95,7 +95,8 @@ void ConstantBufferPool::CleanUpPool()
 }
 
 ConstantBufferPool::ConstantBufferPool()
-	:m_pCBContainerList(nullptr), m_pCBVHeap(nullptr), m_pResource(nullptr),
+	:m_pCBContainerList(nullptr), m_ConstantBufferType(E_CONSTANT_BUFFER_TYPE::DEFAULT),
+	m_pCBVHeap(nullptr), m_pResource(nullptr),
 	m_pSystemMemAddr(nullptr), m_sizePerCBV(0), m_maxCBVNum(0), m_allocatedCBVNum(0)
 {
 }

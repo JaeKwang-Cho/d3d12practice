@@ -33,6 +33,7 @@ public:
 	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType);
 	
 	// mesh
+#if 0
 	void* CreateBasicMeshObject();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
 	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
@@ -40,7 +41,7 @@ public:
 	bool BeginCreateMesh(void* _pMeshObjHandle, const ColorVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount);
 	bool InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh(void* _pMeshObjHandle);
-
+#endif
 	// sprite
 	void* CreateSpriteObject();
 	void* CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height);
@@ -77,6 +78,9 @@ private:
 
 	void InitCamera();
 
+	void InitFrameCB();
+	void UpdateFrameCB();
+
 	void CreateFence();
 	void CleanupFence();
 
@@ -97,6 +101,9 @@ private:
 	// 이러면 Fence가 좀더 여유로워 지고 GPU의 부하를 늘려줘서 프레임이 빨라진다.
 	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_ppCommandList[MAX_PENDING_FRAME_COUNT];
+	// Frame 별 한번씩 넘어가는 CBV이다.
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_ppFrameUploadCBs[MAX_PENDING_FRAME_COUNT];
+	void* m_ppFrameSystemMemAddrs[MAX_PENDING_FRAME_COUNT];
 
 	// Resource를 GPU에 올려주는 친구
 	D3D12ResourceManager* m_pResourceManager;
@@ -159,6 +166,7 @@ public:
 	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj);
 	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
 	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
+	Microsoft::WRL::ComPtr<ID3D12Resource> INL_GetFrameCBResource() { return m_ppFrameUploadCBs[m_dwCurContextIndex]; }
 
 
 	XMFLOAT3 GetCameraWorldPos() const;

@@ -135,7 +135,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="BasicMeshObject.h" />
+    <None Include="BasicMeshObject.h" />
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
@@ -162,7 +162,7 @@
     <ClInclude Include="VertexUtil.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="BasicMeshObject.cpp" />
+    <None Include="BasicMeshObject.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />

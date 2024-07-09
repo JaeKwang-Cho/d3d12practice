@@ -48,12 +48,17 @@ union RGBA
 	BYTE bColorFactor[4];
 };
 
-struct CONSTANT_BUFFER_DEFAULT
+struct CONSTANT_BUFFER_OBJECT
 {
 	XMMATRIX matWorld;
+	XMMATRIX invWorldTranspose;
+};
+
+struct CONSTANT_BUFFER_FRAME
+{
 	XMMATRIX matView;
 	XMMATRIX matProj;
-	XMMATRIX matWVP;
+	XMMATRIX matViewProj;
 };
 
 struct CONSTANT_BUFFER_SPRITE 

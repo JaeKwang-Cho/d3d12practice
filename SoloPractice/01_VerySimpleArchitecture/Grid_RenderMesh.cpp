@@ -111,5 +111,4 @@ Grid_RenderMesh::Grid_RenderMesh()
 
 Grid_RenderMesh::~Grid_RenderMesh()
 {
-	OutputDebugStringA("~Grid_RenderMesh()");
 }

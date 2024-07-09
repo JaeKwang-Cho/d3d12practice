@@ -85,9 +85,6 @@
     <ClInclude Include="D3D12Renderer.h">
       <Filter>Renderer\D3D12Renderer</Filter>
     </ClInclude>
-    <ClInclude Include="BasicMeshObject.h">
-      <Filter>Renderer\BasicMeshObject</Filter>
-    </ClInclude>
     <ClInclude Include="typedef.h">
       <Filter>typedef</Filter>
     </ClInclude>
@@ -163,6 +160,12 @@
     <None Include="Shaders\GridTile.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="BasicMeshObject.cpp">
+      <Filter>Renderer\BasicMeshObject</Filter>
+    </None>
+    <None Include="BasicMeshObject.h">
+      <Filter>Renderer\BasicMeshObject</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -174,9 +177,6 @@
     </ClCompile>
     <ClCompile Include="D3D12Renderer.cpp">
       <Filter>Renderer\D3D12Renderer</Filter>
-    </ClCompile>
-    <ClCompile Include="BasicMeshObject.cpp">
-      <Filter>Renderer\BasicMeshObject</Filter>
     </ClCompile>
     <ClCompile Include="D3D12ResourceManager.cpp">
       <Filter>Renderer\ResourceManager</Filter>

@@ -233,7 +233,6 @@ EXIT:
 		// Descriptor Pool
 		m_ppDescriptorPool[i] = new DescriptorPool;
 		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
-
 	}
 	// SingleDescriptorAllocator
 	m_pSingleDescriptorAllocator = new SingleDescriptorAllocator;
@@ -243,7 +242,11 @@ EXIT:
 	m_pD3D12PSOCache = new D3D12PSOCache;
 	m_pD3D12PSOCache->Initialize(this);
 
+	// Camera
 	InitCamera();
+
+	// Frame CBV
+	InitFrameCB();
 
 	bResult = true;
 RETURN:
@@ -275,6 +278,9 @@ void D3D12Renderer::Update(const GameTimer& _gameTimer)
 	
 	// 카메라 같은것들
 	m_flyCamera->UpdateViewMatrix();
+
+	// 그리고 Frame 당 하나씩 가지고 있는 CBV를 업데이트하기
+	UpdateFrameCB();
 }
 
 void D3D12Renderer::BeginRender()
@@ -479,7 +485,7 @@ void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMa
 	}break;
 	}
 }
-
+#if 0
 void* D3D12Renderer::CreateBasicMeshObject()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
@@ -530,6 +536,7 @@ void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
 	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
 	pMeshObj->EndCreateMesh();
 }
+#endif
 
 void* D3D12Renderer::CreateSpriteObject()
 {
@@ -538,7 +545,6 @@ void* D3D12Renderer::CreateSpriteObject()
 
 	return (void*)pSpriteObj;
 }
-
 void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height)
 {
 	SpriteObject* pSpriteObj = new SpriteObject;
@@ -885,6 +891,49 @@ void D3D12Renderer::InitCamera()
 	// 가장 기본적인 카메라 설정으로 한다.
 }
 
+void D3D12Renderer::InitFrameCB()
+{
+	UINT alignedByteSize = AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_FRAME));
+	D3D12_RESOURCE_DESC cbDesc_Size = CD3DX12_RESOURCE_DESC::Buffer(alignedByteSize);
+	/*
+	D3D12_DESCRIPTOR_HEAP_DESC commonHeapDesc = {};
+	commonHeapDesc.NumDescriptors = MAX_PENDING_FRAME_COUNT;
+	commonHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	commonHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&commonHeapDesc, IID_PPV_ARGS(m_pPassFrameHeap.GetAddressOf()))))
+	{
+		__debugbreak();
+	}
+	*/
+	HRESULT hr = S_OK;
+	for (int i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		hr = m_pD3DDevice->CreateCommittedResource(
+			&HEAP_PROPS_UPLOAD,
+			D3D12_HEAP_FLAG_NONE,
+			&cbDesc_Size,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(m_ppFrameUploadCBs[i].GetAddressOf())
+		);
+		if (FAILED(hr)) {
+			__debugbreak();
+		}
+		hr = m_ppFrameUploadCBs[i]->Map(0, nullptr, reinterpret_cast<void**>(&m_ppFrameSystemMemAddrs[i]));
+		if (FAILED(hr)) {
+			__debugbreak();
+		}
+	}
+}
+
+void D3D12Renderer::UpdateFrameCB()
+{
+	CONSTANT_BUFFER_FRAME* pFrameCB = (CONSTANT_BUFFER_FRAME*)m_ppFrameSystemMemAddrs[m_dwCurContextIndex];
+
+	pFrameCB->matProj = XMMatrixTranspose(m_flyCamera->GetProjMat());
+	pFrameCB->matView = XMMatrixTranspose(m_flyCamera->GetViewMat());
+	pFrameCB->matViewProj = XMMatrixMultiplyTranspose(m_flyCamera->GetViewMat(), m_flyCamera->GetProjMat());
+}
+
 void D3D12Renderer::CreateFence()
 {
 	if (FAILED(m_pD3DDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pFence.GetAddressOf())))) {
@@ -942,6 +991,12 @@ void D3D12Renderer::CleanUpRenderer()
 			delete m_ppDescriptorPool[i];
 			m_ppDescriptorPool[i] = nullptr;
 		}
+
+		if (m_ppFrameUploadCBs[i]) {
+			m_ppFrameUploadCBs[i]->Unmap(0, nullptr);
+			m_ppFrameUploadCBs[i] = nullptr;
+		}
+		m_ppFrameSystemMemAddrs[i] = nullptr;
 	}
 	if (m_pResourceManager) {
 		delete m_pResourceManager;
@@ -971,7 +1026,8 @@ D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_ppCommandAllocator{},
 	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, 
 	m_pSingleDescriptorAllocator(nullptr), m_pD3D12PSOCache(nullptr),
-	m_ppCommandList{}, m_ui64FenceValue(0), m_pui64LastFenceValue{},
+	m_ppCommandList{}, m_ppFrameUploadCBs{}, m_ppFrameSystemMemAddrs{},
+	m_ui64FenceValue(0), m_pui64LastFenceValue{},
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, m_pDepthStencil(nullptr),
 	m_pRTVHeap(nullptr), m_pDSVHeap(nullptr), m_pSRVHeap(nullptr),
