@@ -7,6 +7,8 @@
 // 기본 에셋
 #include "CommonAssets.h"
 #include "Grid_RenderMesh.h"
+#include "TextureRenderMesh.h"
+
 #include <windowsx.h>
 #include <shellapi.h> // 파일 드래그앤드롭
 
@@ -51,12 +53,12 @@ D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYP
 
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
-void* g_pMeshObj0 = nullptr;
-void* g_pMeshObj1 = nullptr;
 
 void* g_pGrid = nullptr;
+void* g_pCube = nullptr;
 
 XMMATRIX g_matWorldGrid = {};
+XMMATRIX g_matWorldCube = {};
 
 // Tick Time
 ULONGLONG g_PrevFrameTime = 0;
@@ -72,6 +74,7 @@ void Update();
 
 // 임시 함수
 void* CreateTileGrid();
+void* CreateCube(float _width, float _height, float _depth);
 
 UINT g_GridCellOffset = 0;
 void UpdateGridPos();
@@ -115,7 +118,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     // main 에서 grid mesh를 미리 만들기
     //g_pGrid = CreateGrid(100, 100, 50, 50);
     g_pGrid = CreateTileGrid();
-
+    g_pCube = CreateCube(10.f, 5.f, 2.f);
 
     MSG msg = {};
 
@@ -132,6 +135,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     }
     g_GameTimer.Stop();
     DeleteCommonAssets(g_pRenderer);
+
+    g_pRenderer->FlushMultiRendering();
+
+    if (g_pGrid) {
+        g_pRenderer->DeleteRenderMesh(g_pGrid, E_RENDER_MESH_TYPE::COLOR);
+        g_pGrid = nullptr;
+    }
+    if (g_pCube) {
+        g_pRenderer->DeleteRenderMesh(g_pCube, E_RENDER_MESH_TYPE::TEXTURE);
+        g_pCube = nullptr;
+    }
 
     if (g_pRenderer) {
         delete g_pRenderer;
@@ -175,50 +189,11 @@ void RunGame()
         g_PrevUpdateTime = CurrTickTime;
     }
    
-    // rendering objects
-    // cube에 대해서 2번 렌더링을 다르게 한다.
-    //g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld0);
-    //g_pRenderer->RenderMeshObject(g_pMeshObj0, &g_matWorld1);
-    // quad를 그린다.
-    //g_pRenderer->RenderMeshObject(g_pMeshObj1, &g_matWorld2);
+    // ===== draw object =====
+    g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 
-    // sprite를 그린다.
-    int padding = 5;
-    
-    RECT rect;
-    rect.left = 0;
-    rect.top = 0;
-    rect.right = 540;
-    rect.bottom = 540;
-    
-    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
-    
-    rect.left = 540;
-    rect.top = 0;
-    rect.right = 1080;
-    rect.bottom = 540;
-    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 0, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
-
-    rect.left = 0;
-    rect.top = 540;
-    rect.right = 540;
-    rect.bottom = 1080;
-    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 0, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle1);
-
-    rect.left = 540;
-    rect.top = 540;
-    rect.right = 1080;
-    rect.bottom = 1080;
-    //g_pRenderer->RenderSpriteWithTex(g_pSpriteObjCommon, 270 + padding, 270 + padding, 0.25f, 0.25f, &rect, 0.f, g_pTexHandle0);
-    
-    //g_pRenderer->RenderSprite(g_pSpriteObj0, 540 + padding + padding, 0, 0.25f, 0.25f, 0.f);
-    //g_pRenderer->RenderSprite(g_pSpriteObj1, 540 + padding + padding + 160 + padding, 0, 0.25f, 0.25f, 0.f);
-    //g_pRenderer->RenderSprite(g_pSpriteObj2, 540 + padding + padding, 160+ padding, 0.25f, 0.25f, 0.f);
-    //g_pRenderer->RenderSprite(g_pSpriteObj3, 540 + padding + padding + 160 + padding, 160 + padding, 0.25f, 0.25f, 0.f);
-    
-    
-    //XMMATRIX identitiy = XMMatrixIdentity();
-    g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid);
+    g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
+    // =======================
 
     // end
     g_pRenderer->EndRender();
@@ -240,6 +215,7 @@ void RunGame()
 
 void Update()
 {
+    g_matWorldCube = XMMatrixIdentity();
     UpdateGridPos();
 }
 
@@ -273,11 +249,93 @@ void* CreateTileGrid()
         refMeshData.Indices32[curIndex + 1] = curIndex + 1;
     }
 
-    Grid_RenderMesh* newGrid = new Grid_RenderMesh;
-    newGrid->Initialize(g_pRenderer, D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
-    newGrid->CreateRenderAssets(meshData, 1);
+    Grid_RenderMesh* pNewGrid = new Grid_RenderMesh;
+    pNewGrid->Initialize(g_pRenderer, D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+    pNewGrid->CreateRenderAssets(meshData, 1);
 
-    return newGrid;
+    return pNewGrid;
+}
+
+void* CreateCube(float _width, float _height, float _depth)
+{
+    std::vector<TextureMeshData> meshData;
+    meshData.push_back(TextureMeshData());
+
+    TextureMeshData& refMeshData = meshData[0];
+
+    float w2 = 0.5f * _width;
+    float h2 = 0.5f * _height;
+    float d2 = 0.5f * _depth;
+
+    refMeshData.Vertices.resize(24);
+    // 앞면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[0] = TextureVertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[1] = TextureVertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[2] = TextureVertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    refMeshData.Vertices[3] = TextureVertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    // 뒷면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[4] = TextureVertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    refMeshData.Vertices[5] = TextureVertex(+w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[6] = TextureVertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[7] = TextureVertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+    // 윗면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[8] = TextureVertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[9] = TextureVertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[10] =TextureVertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    refMeshData.Vertices[11] =TextureVertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    // 밑면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[12] = TextureVertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    refMeshData.Vertices[13] = TextureVertex(+w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[14] = TextureVertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[15] = TextureVertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+    // 왼면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[16] = TextureVertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[17] = TextureVertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[18] = TextureVertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f);
+    refMeshData.Vertices[19] = TextureVertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f);
+
+    // 오른면 (pos, norm, tangent, UVc 순)
+    refMeshData.Vertices[20] = TextureVertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    refMeshData.Vertices[21] = TextureVertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+    refMeshData.Vertices[22] = TextureVertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
+    refMeshData.Vertices[23] = TextureVertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+    // Index 버퍼를 만든다.
+
+    refMeshData.Indices32.resize(36);
+    // 전면 인덱스
+    refMeshData.Indices32[0] = 0; refMeshData.Indices32[1] = 1; refMeshData.Indices32[2] = 2;
+    refMeshData.Indices32[3] = 0; refMeshData.Indices32[4] = 2; refMeshData.Indices32[5] = 3;
+
+    // 후면 인덱스
+    refMeshData.Indices32[6] = 4; refMeshData.Indices32[7] = 5; refMeshData.Indices32[8] = 6;
+    refMeshData.Indices32[9] = 4; refMeshData.Indices32[10] = 6; refMeshData.Indices32[11] = 7;
+
+    // 윗면 인덱스
+    refMeshData.Indices32[12] = 8; refMeshData.Indices32[13] = 9; refMeshData.Indices32[14] = 10;
+    refMeshData.Indices32[15] = 8; refMeshData.Indices32[16] = 10; refMeshData.Indices32[17] = 11;
+
+    // 밑면 인덱스
+    refMeshData.Indices32[18] = 12; refMeshData.Indices32[19] = 13; refMeshData.Indices32[20] = 14;
+    refMeshData.Indices32[21] = 12; refMeshData.Indices32[22] = 14; refMeshData.Indices32[23] = 15;
+
+    // 왼면 인덱스
+    refMeshData.Indices32[24] = 16; refMeshData.Indices32[25] = 17; refMeshData.Indices32[26] = 18;
+    refMeshData.Indices32[27] = 16; refMeshData.Indices32[28] = 18; refMeshData.Indices32[29] = 19;
+
+    // 오른면 인덱스
+    refMeshData.Indices32[30] = 20; refMeshData.Indices32[31] = 21; refMeshData.Indices32[32] = 22;
+    refMeshData.Indices32[33] = 20; refMeshData.Indices32[34] = 22; refMeshData.Indices32[35] = 23;
+
+    TextureRenderMesh* pNewCube = new TextureRenderMesh;
+    pNewCube->Initialize(g_pRenderer);
+    pNewCube->CreateRenderAssets(meshData, 1);
+
+    return pNewCube;
 }
 
 

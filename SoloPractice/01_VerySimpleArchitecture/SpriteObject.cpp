@@ -73,7 +73,7 @@ void SpriteObject::DrawWithTex(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::SPRITE);
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::SPRITE);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
@@ -132,11 +132,11 @@ void SpriteObject::DrawWithTex(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1
 	_pCommandList->SetDescriptorHeaps(1, pPoolDescriptorHeap.GetAddressOf());
 
 	// CBV와 SRV를 pooling 한 Descriptor에 복사하고
-	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvDest(cpuDescriptorTable, (UINT)SPRITE_DESCRIPTOR_INDEX::CBV, srvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvDest(cpuDescriptorTable, (UINT)E_SPRITE_DESCRIPTOR_INDEX::CBV, srvDescriptorSize);
 	pD3DDevice->CopyDescriptorsSimple(1, cbvDest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	if (srv.ptr) {
-		CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest(cpuDescriptorTable, (UINT)SPRITE_DESCRIPTOR_INDEX::TEX, srvDescriptorSize);
+		CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest(cpuDescriptorTable, (UINT)E_SPRITE_DESCRIPTOR_INDEX::TEX, srvDescriptorSize);
 		pD3DDevice->CopyDescriptorsSimple(1, srvDest, srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
@@ -227,7 +227,7 @@ bool SpriteObject::InitPipelineState()
 {
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
 
-	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::SPRITE_FILL];
+	std::string psoKey = g_PSOKeys[(UINT)E_PSO_KEYS_INDEX::SPRITE_FILL];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
 		m_pPipelineState = pPipelineState;

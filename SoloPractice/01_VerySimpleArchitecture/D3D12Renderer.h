@@ -29,10 +29,8 @@ public:
 	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
 
 	// Render Mesh
-	void* CreateRenderMesh();
-	void* CreateRenderMesh(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount);
-	void DeleteRenderMesh(void* _pMeshObjectHandle);
-	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
+	void DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
+	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType);
 	
 	// mesh
 	void* CreateBasicMeshObject();
@@ -66,6 +64,8 @@ public:
 	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
 	void OnMouseMove(WPARAM _btnState, int _x, int _y);
 	void OnKeyboardInput(const GameTimer& _gameTimer);
+
+	void FlushMultiRendering();
 
 protected:
 private:
@@ -151,7 +151,7 @@ public:
 
 	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
 	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
-	ConstantBufferPool* INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _type);
+	ConstantBufferPool* INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type);
 	DescriptorPool* INL_DescriptorPool() { return m_ppDescriptorPool[m_dwCurContextIndex]; }
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }

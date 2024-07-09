@@ -14,6 +14,7 @@
 #include "D3D12PSOCache.h"
 #include "ColorRenderMesh.h"
 #include "FlyCamera.h"
+#include "TextureRenderMesh.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -436,41 +437,47 @@ bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
 	return true;
 }
 
-void* D3D12Renderer::CreateRenderMesh()
-{
-	ColorRenderMesh* pRenderMesh = new ColorRenderMesh;
-	pRenderMesh->Initialize(this);
-
-	return pRenderMesh;
-}
-
-void* D3D12Renderer::CreateRenderMesh(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount)
-{
-	ColorRenderMesh* pRenderMesh = new ColorRenderMesh;
-	pRenderMesh->Initialize(this);
-	pRenderMesh->CreateRenderAssets(_ppMeshData, _meshDataCount);
-
-	return pRenderMesh;
-}
-
-void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle)
+void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType)
 {
 	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
-	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
-	ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
-	delete pMeshObj;
+	switch (_eRenderMeshType)
+	{
+	case E_RENDER_MESH_TYPE::COLOR:
+	{
+		ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
+		delete pMeshObj;
+	}break;
+	case E_RENDER_MESH_TYPE::TEXTURE:
+	{		
+		TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
+		delete pMeshObj;
+
+	}break;
+	}
 }
 
-void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
+void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType)
 {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
-	ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
-	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+	switch (_eRenderMeshType)
+	{
+	case E_RENDER_MESH_TYPE::COLOR:
+	{
+		ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
+		pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+	}break;
+	case E_RENDER_MESH_TYPE::TEXTURE:
+	{		
+		TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
+		pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+
+	}break;
+	}
 }
 
 void* D3D12Renderer::CreateBasicMeshObject()
@@ -743,6 +750,14 @@ void D3D12Renderer::OnKeyboardInput(const GameTimer& _gameTimer)
 		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * -15.f);
 }
 
+void D3D12Renderer::FlushMultiRendering()
+{
+	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	}
+}
+
 void D3D12Renderer::CreateCommandList()
 {
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -973,7 +988,7 @@ D3D12Renderer::~D3D12Renderer()
 	CleanUpRenderer();
 }
 
-ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _type)
+ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type)
 {
 	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex];
 	ConstantBufferPool* pConstBufferPool = pConstBufferManager->GetConstantBufferPool(_type);

@@ -28,7 +28,7 @@ void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::DEFAULT);
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
@@ -62,7 +62,7 @@ void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
 
 	// Object 마다 넘어가는 CB는 CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(E_COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
 	pD3DDevice->CopyDescriptorsSimple(1, dest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
 
 	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
@@ -97,7 +97,7 @@ void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
 	{
 		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
-		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
 		if (pSubRenderGeo) {
 			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
@@ -240,7 +240,7 @@ bool ColorRenderMesh::InitPipelineState()
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
-	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_FILL];
+	std::string psoKey = g_PSOKeys[(UINT)E_PSO_KEYS_INDEX::DEFAULT_FILL];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
 		m_pPipelineState = pPipelineState;

@@ -70,7 +70,7 @@ struct CONSTANT_BUFFER_SPRITE
 	float pad1;
 };
 
-enum class CONSTANT_BUFFER_TYPE : UINT
+enum class E_CONSTANT_BUFFER_TYPE : UINT
 {
 	DEFAULT = 0,
 	SPRITE,
@@ -79,7 +79,7 @@ enum class CONSTANT_BUFFER_TYPE : UINT
 
 struct CONSTANT_BUFFER_PROPERTY
 {
-	CONSTANT_BUFFER_TYPE type;
+	E_CONSTANT_BUFFER_TYPE type;
 	UINT size;
 };
 
@@ -158,3 +158,9 @@ private:
 	std::vector<uint16_t> mIndices16;
 };
 
+enum class E_RENDER_MESH_TYPE : UINT
+{
+	COLOR = 0,
+	TEXTURE,
+	END
+};

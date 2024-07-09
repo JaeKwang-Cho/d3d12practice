@@ -12,7 +12,7 @@ bool Grid_RenderMesh::InitPipelineState()
 	//D3D12PSOCache* pD3DPSOCache = m_pRenderer->INL_GetD3D12PSOCache();
 
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
-	std::string psoKey = g_PSOKeys[(UINT)PSO_KEYS_INDEX::DEFAULT_WIREFRAME];
+	std::string psoKey = g_PSOKeys[(UINT)E_PSO_KEYS_INDEX::DEFAULT_WIREFRAME];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
 		m_pPipelineState = pPipelineState;

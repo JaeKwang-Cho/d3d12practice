@@ -1,7 +1,7 @@
 // SpriteObject.h from "megayuchi"
 #pragma once
 
-enum class SPRITE_DESCRIPTOR_INDEX : UINT
+enum class E_SPRITE_DESCRIPTOR_INDEX : UINT
 {
 	CBV = 0,
 	TEX = 1
