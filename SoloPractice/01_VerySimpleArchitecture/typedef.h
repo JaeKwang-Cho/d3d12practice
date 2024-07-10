@@ -1,6 +1,8 @@
 // typedef.h from "megayuchi"
 
 #pragma once
+#define MAX_LIGHT_COUNTS (16)
+#define D3D_COMPILE_STANDARD_FILE_INCLUDE ((ID3DInclude*)(UINT_PTR)1)
 
 struct ColorVertex {
 	XMFLOAT3 position;
@@ -48,6 +50,16 @@ union RGBA
 	BYTE bColorFactor[4];
 };
 
+struct Light
+{
+	XMFLOAT3 strength;
+	float falloffStart;  // point/spot light only
+	XMFLOAT3 direction;	 // directional/spot light only
+	float falloffEnd;	 // point/spot light only
+	XMFLOAT3 position;	 // point/spot light only
+	float spotPower;	 // spot light only
+};
+
 struct CONSTANT_BUFFER_OBJECT
 {
 	XMMATRIX matWorld;
@@ -57,8 +69,21 @@ struct CONSTANT_BUFFER_OBJECT
 struct CONSTANT_BUFFER_FRAME
 {
 	XMMATRIX matView;
+	XMMATRIX intView;
+
 	XMMATRIX matProj;
+	XMMATRIX invProj;
+
 	XMMATRIX matViewProj;
+	XMMATRIX invViewProj;
+
+	XMFLOAT3 eyePosW;
+	float pad0;
+	XMFLOAT2 renderTargetSize;
+	XMFLOAT2 renderTargetSize_reciprocal;
+
+	XMFLOAT4 ambientLight;
+	Light lights[MAX_LIGHT_COUNTS];
 };
 
 struct CONSTANT_BUFFER_SPRITE 

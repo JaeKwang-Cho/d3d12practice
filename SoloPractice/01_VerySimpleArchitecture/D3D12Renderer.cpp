@@ -932,6 +932,31 @@ void D3D12Renderer::UpdateFrameCB()
 	pFrameCB->matProj = XMMatrixTranspose(m_flyCamera->GetProjMat());
 	pFrameCB->matView = XMMatrixTranspose(m_flyCamera->GetViewMat());
 	pFrameCB->matViewProj = XMMatrixMultiplyTranspose(m_flyCamera->GetViewMat(), m_flyCamera->GetProjMat());
+
+	XMVECTOR detProj = XMMatrixDeterminant(m_flyCamera->GetProjMat());
+	XMVECTOR detView = XMMatrixDeterminant(m_flyCamera->GetViewMat());
+	XMMATRIX matViewProj = XMMatrixMultiply(m_flyCamera->GetViewMat(), m_flyCamera->GetProjMat());
+	XMVECTOR detViewProj = XMMatrixDeterminant(matViewProj);
+
+	pFrameCB->invProj = XMMatrixTranspose(XMMatrixInverse(&detProj, m_flyCamera->GetProjMat()));
+	pFrameCB->intView = XMMatrixTranspose(XMMatrixInverse(&detProj, m_flyCamera->GetProjMat()));
+	pFrameCB->invViewProj = XMMatrixTranspose(XMMatrixInverse(&detProj, m_flyCamera->GetProjMat()));
+
+	pFrameCB->eyePosW = m_flyCamera->GetPosition();
+	pFrameCB->renderTargetSize = XMFLOAT2((float)m_dwWidth, (float)m_dwHeight);
+	pFrameCB->renderTargetSize_reciprocal = XMFLOAT2(1.f / m_dwWidth, 1.f / m_dwHeight);
+
+	// light
+	pFrameCB->ambientLight = XMFLOAT4(0.25f, 0.25f, 0.25f, 1.f);
+	float sunPhi = 1.25f * XM_PI;
+	float sunTheta = XM_PIDIV4;
+
+	pFrameCB->lights[0].direction = XMFLOAT3(
+		-1.f * sinf(sunTheta) * cosf(sunPhi),
+		-1.f * cosf(sunTheta),
+		-1.f * sinf(sunTheta) * sinf(sunPhi)
+	);
+	pFrameCB->lights[0].strength = XMFLOAT3(1.f, 1.f, 1.f);
 }
 
 void D3D12Renderer::CreateFence()

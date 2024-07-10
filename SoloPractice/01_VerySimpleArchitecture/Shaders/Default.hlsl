@@ -1,20 +1,6 @@
 // Default.hlsl from "megayuchi"
 
-Texture2D texDiffuse : register(t0);
-SamplerState samplerDiffuse : register(s0);
-
-cbuffer CONSTANT_BUFFER_FRAME : register(b1)
-{
-    matrix g_matView;
-    matrix g_matProj;
-    matrix g_matViewProj;
-};
-
-cbuffer CONSTANT_BUFFER_OBJECT : register(b0)
-{
-    matrix g_matWorld;
-    matrix g_invWorldTranspose;
-};
+#include "Commons.hlsl"
 
 struct VSInput
 {
@@ -48,7 +34,29 @@ PSInput VS(VSInput _vin)
 
 float4 PS(PSInput _pin) : SV_Target
 {
+    // 원래 색 저장
     float4 texColor = texDiffuse.Sample(samplerDiffuse, _pin.TexCoord);
-    return texColor;
+
+    // 노멀 정규화 하기
+    _pin.normalW = normalize(_pin.normalW);
+    // 표면에서 카메라까지 벡터 구하기
+    float3 toEyeW = normalize(g_eyePosW - _pin.posW);
+    // 간접광 계산
+    float4 ambientLight = g_ambientLight * texColor;
+    // 일단 임의 Material (0.5 정도)
+    Material tempMat =
+    {
+        float4(1.0f, 1.0f, 1.0f, 1.0f),
+        float3(0.05f, 0.05f, 0.05f),
+        0.5f
+    };
+    // (그림자는 나중에)
+    float shadowFactor = 1.0f;
+    float4 directionalLight = ComputeLighting(g_lights, tempMat, _pin.posW, _pin.normalW, toEyeW, shadowFactor);
+    
+    float4 litColor = directionalLight + ambientLight;
+    litColor.a = 1.f;
+    
+    return litColor;
 
 }

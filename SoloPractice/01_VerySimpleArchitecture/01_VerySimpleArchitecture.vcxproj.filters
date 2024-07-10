@@ -13,9 +13,6 @@
     <Filter Include="Renderer\D3D12Renderer">
       <UniqueIdentifier>{594a5c16-3dd4-4cf9-9b63-f43603932928}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Renderer\BasicMeshObject">
-      <UniqueIdentifier>{507bfa22-9749-4bbe-a7f9-dcf5627b398d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="typedef">
       <UniqueIdentifier>{f8d401d7-b609-40d7-a585-5387b38e904a}</UniqueIdentifier>
     </Filter>
@@ -72,6 +69,15 @@
     </Filter>
     <Filter Include="RenderAssets\TextureRenderMesh">
       <UniqueIdentifier>{dd0d1fc3-f541-4e76-9e84-ba70613cc59e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="[Deleted]">
+      <UniqueIdentifier>{92dd4bbe-d461-452f-8b24-5d75a06e0e30}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="[Deleted]\BasicMeshObject">
+      <UniqueIdentifier>{507bfa22-9749-4bbe-a7f9-dcf5627b398d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\Common">
+      <UniqueIdentifier>{f84ede07-ee50-4244-985f-5dd22c06d1c9}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -161,10 +167,16 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="BasicMeshObject.cpp">
-      <Filter>Renderer\BasicMeshObject</Filter>
+      <Filter>[Deleted]\BasicMeshObject</Filter>
     </None>
     <None Include="BasicMeshObject.h">
-      <Filter>Renderer\BasicMeshObject</Filter>
+      <Filter>[Deleted]\BasicMeshObject</Filter>
+    </None>
+    <None Include="Shaders\Commons.hlsl">
+      <Filter>Shaders\Common</Filter>
+    </None>
+    <None Include="Shaders\LightingUtil.hlsl">
+      <Filter>Shaders\Common</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
