@@ -178,6 +178,9 @@
     <None Include="Shaders\LightingUtil.hlsl">
       <Filter>Shaders\Common</Filter>
     </None>
+    <None Include="Shaders\Outline.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />

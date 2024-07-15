@@ -2,6 +2,30 @@
 
 #include "pch.h"
 #include "VertexUtil.h"
+#include <unordered_map>
+#include <cstdlib>
+#include <boost/functional/hash.hpp>
+
+bool Float3ForKey::operator==(const Float3ForKey& _other) const
+{
+	return std::fabs(x - _other.x) < EPSILON &&
+		std::fabs(y - _other.y) < EPSILON &&
+		std::fabs(z - _other.z) < EPSILON;
+}
+
+size_t Float3Hash::operator()(const Float3ForKey& _f3key) const
+{
+	std::size_t seed = 0;
+	int xVal = std::round(_f3key.x * 1e6);
+	int yVal = std::round(_f3key.y * 1e6);
+	int zVal = std::round(_f3key.z * 1e6);
+
+	boost::hash_combine(seed, xVal);
+	boost::hash_combine(seed, yVal);
+	boost::hash_combine(seed, zVal);
+
+	return seed;
+}
 
 uint16_t AddVertex(ColorVertex* _pVertexList, DWORD _dwMaxVertexCount, DWORD* _pdwInOutVertexCount, const ColorVertex* _pVertex) {
 	uint16_t dwFoundIndex = -1;
@@ -129,3 +153,51 @@ void DeleteBoxMesh(ColorVertex* _pVertexList)
 {
 	delete[] _pVertexList;
 }
+
+int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::vector<uint32_t>& _indices, std::vector<uint32_t>& _adjIndicies)
+{
+	size_t numVerts = _vertices.size();
+	size_t numFaces = _indices.size() / 3;
+
+	_adjIndicies.resize(numFaces * 6);
+	TriFaceGroup* triFaceGroups = new TriFaceGroup[numFaces];
+	std::unordered_map<Float3ForKey, TriFaceGroupPerVertPos, Float3Hash> findIndicesByPos;
+
+	// vertex pos로 face group을 찾을 수 있게 만듦.
+	for (size_t f = 0; f < numFaces; f++)
+	{
+		triFaceGroups[f].indice[0] = _indices[f];
+		triFaceGroups[f].indice[1] = _indices[f + 1];
+		triFaceGroups[f].indice[2] = _indices[f + 2];
+
+		triFaceGroups[f].vertPos[0] = _vertices[_indices[f]];
+		triFaceGroups[f].vertPos[1] = _vertices[_indices[f + 1]];
+		triFaceGroups[f].vertPos[2] = _vertices[_indices[f + 2]];
+
+		// vert pos로 index 찾는 map
+		for (size_t i = f * 3; i < (f + 1) * 3; i++) {
+			Float3ForKey vertPos = _vertices[_indices[i]];
+			auto iter = findIndicesByPos.find(vertPos);
+
+			if (iter == findIndicesByPos.end()) {
+				TriFaceGroupPerVertPos triFaceGroupPerVertPos;
+				triFaceGroupPerVertPos.numTriFaceGroups = 0;
+				triFaceGroupPerVertPos.triFaceGroups[0] = triFaceGroups + f;
+				findIndicesByPos.insert({ vertPos, triFaceGroupPerVertPos });
+			}
+			else {
+				UINT numTriFaceGroup = iter->second.numTriFaceGroups++;
+				if (numTriFaceGroup >= MAX_SHARED_TRIANGLES) {
+					__debugbreak();
+					exit(1);
+				}
+				iter->second.triFaceGroups[numTriFaceGroup] = triFaceGroups + f;
+				iter->second.numTriFaceGroups = numTriFaceGroup + 1;
+			}
+		}
+	}
+	delete[] triFaceGroups;
+	triFaceGroups = nullptr;
+	return _indices.size();
+}
+

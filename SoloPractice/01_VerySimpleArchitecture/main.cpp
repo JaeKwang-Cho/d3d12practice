@@ -267,16 +267,25 @@ void* CreateCube(float _width, float _height, float _depth)
 
     TextureMeshData& refMeshData = meshData[0];
 
+    // adjacency test
+    std::vector<XMFLOAT3> posL;
+
     float w2 = 0.5f * _width;
     float h2 = 0.5f * _height;
     float d2 = 0.5f * _depth;
 
     refMeshData.Vertices.resize(24);
+    posL.resize(24);
     // 앞면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[0] = TextureVertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
     refMeshData.Vertices[1] = TextureVertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     refMeshData.Vertices[2] = TextureVertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
     refMeshData.Vertices[3] = TextureVertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    posL[0] = XMFLOAT3(-w2, -h2, -d2);
+    posL[1] = XMFLOAT3(-w2, +h2, -d2);
+    posL[2] = XMFLOAT3(+w2, +h2, -d2);
+    posL[3] = XMFLOAT3(+w2, -h2, -d2);
 
     // 뒷면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[4] = TextureVertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
@@ -284,11 +293,21 @@ void* CreateCube(float _width, float _height, float _depth)
     refMeshData.Vertices[6] = TextureVertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     refMeshData.Vertices[7] = TextureVertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
+    posL[4] = XMFLOAT3(-w2, -h2, +d2);
+    posL[5] = XMFLOAT3(+w2, -h2, +d2);
+    posL[6] = XMFLOAT3(+w2, +h2, +d2);
+    posL[7] = XMFLOAT3(-w2, +h2, +d2);
+
     // 윗면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[8] = TextureVertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
     refMeshData.Vertices[9] = TextureVertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     refMeshData.Vertices[10] =TextureVertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
     refMeshData.Vertices[11] =TextureVertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+    posL[8]  = XMFLOAT3(-w2, +h2, -d2);
+    posL[9]  = XMFLOAT3(-w2, +h2, +d2);
+    posL[10] = XMFLOAT3(+w2, +h2, +d2);
+    posL[11] = XMFLOAT3(+w2, +h2, -d2);
 
     // 밑면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[12] = TextureVertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
@@ -296,17 +315,32 @@ void* CreateCube(float _width, float _height, float _depth)
     refMeshData.Vertices[14] = TextureVertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     refMeshData.Vertices[15] = TextureVertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
+    posL[12] = XMFLOAT3(-w2, -h2, -d2);
+    posL[13] = XMFLOAT3(+w2, -h2, -d2);
+    posL[14] = XMFLOAT3(+w2, -h2, +d2);
+    posL[15] = XMFLOAT3(-w2, -h2, +d2);
+
     // 왼면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[16] = TextureVertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f);
     refMeshData.Vertices[17] = TextureVertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f);
     refMeshData.Vertices[18] = TextureVertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f);
     refMeshData.Vertices[19] = TextureVertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f);
 
+    posL[16] = XMFLOAT3(-w2, -h2, +d2);
+    posL[17] = XMFLOAT3(-w2, +h2, +d2);
+    posL[18] = XMFLOAT3(-w2, +h2, -d2);
+    posL[19] = XMFLOAT3(-w2, -h2, -d2);
+
     // 오른면 (pos, norm, tangent, UVc 순)
     refMeshData.Vertices[20] = TextureVertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
     refMeshData.Vertices[21] = TextureVertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
     refMeshData.Vertices[22] = TextureVertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
     refMeshData.Vertices[23] = TextureVertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+    posL[20] = XMFLOAT3(+w2, -h2, -d2);
+    posL[21] = XMFLOAT3(+w2, +h2, -d2);
+    posL[22] = XMFLOAT3(+w2, +h2, +d2);
+    posL[23] = XMFLOAT3(+w2, -h2, +d2);
 
     // Index 버퍼를 만든다.
 
@@ -339,6 +373,9 @@ void* CreateCube(float _width, float _height, float _depth)
     pNewCube->Initialize(g_pRenderer);
     pNewCube->CreateRenderAssets(meshData, 1);
 
+    // adjacency test
+    std::vector<uint32_t> adjIndices;
+    GenerateAdjacencyIndices(posL, refMeshData.Indices32, adjIndices);
     return pNewCube;
 }
 
