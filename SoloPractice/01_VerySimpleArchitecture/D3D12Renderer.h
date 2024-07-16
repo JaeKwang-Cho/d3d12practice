@@ -31,6 +31,7 @@ public:
 	// Render Mesh
 	void DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
 	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType);
+	void DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 	
 	// mesh
 #if 0

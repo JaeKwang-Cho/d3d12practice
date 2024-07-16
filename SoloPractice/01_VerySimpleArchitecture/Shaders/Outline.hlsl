@@ -3,21 +3,21 @@
 struct VSInput
 {
     float3 posL : POSITION;
-    float4 color : COLOR;
     float3 normalL : NORMAL;
+    float3 tanU : TANGENT;
+    float2 TexCoord : TEXCOORD;
 };
 
 struct VSOutput
 {
     float3 posW : POSITION;
-    float4 color : COLOR;
     float3 normalW : NORMAL;
+    float2 TexCoord : TEXCOORD0;
 };
 
 struct PSInput
 {
     float4 pos : SV_POSITION;
-    float4 color : COLOR;
     float2 texCoord : TEXCOORD;
     uint PrimID : SV_PrimitiveID;
 };
@@ -26,9 +26,9 @@ VSOutput VS(VSInput _vin)
 {
     VSOutput vout;
     
-    vout.posW = mul(float4(_vin.posL, 1.0f), g_matWorld);
-    vout.color = _vin.color;
-    vout.normalW = mul(float4(_vin.normalL, 1.0f), g_invWorldTranspose);
+    vout.posW = mul(float4(_vin.posL, 1.0f), g_matWorld).xyz;
+    vout.normalW = mul(float4(_vin.normalL, 1.0f), g_invWorldTranspose).xyz;
+    vout.TexCoord = _vin.TexCoord;
 
     return vout;
 }
@@ -36,46 +36,47 @@ VSOutput VS(VSInput _vin)
 //  축 수직 양방향으로 50개 그리기
 [maxvertexcount(12)]
 void GS(
-    triangle VSOutput _gin[4],
+    triangleadj VSOutput _gin[6],
     uint _primID : SV_PrimitiveID,
     inout LineStream<PSInput> _lineStream
 )
 {
-    PSInput gout0;
-    PSInput gout1;
+    PSInput v0;
+    PSInput v1;
     
-    float4 v1 = float4(_gin[0].pos, 1.f);
-    float4 v2 = float4(_gin[0].pos, 1.f);
-   
-    [branch]
-    if (_primID % 2 == 0)
-    {
-        v1.z = -125.f;
-        v2.z = 125.f;
-    }
-    else
-    {
-        v1.x = -125.f;
-        v2.x = 125.f;
-    }
+    int v0Index;
+    int v1Index;
     
-    float4 posW = mul(v1, g_matWorld);
-    gout0.pos = mul(posW, g_matViewProj);
-    gout0.color = _gin[0].color;
-    gout0.texCoord = _gin[0].texCoord;
-    gout0.PrimID = _primID;
-
-    posW = mul(v2, g_matWorld);
-    gout1.pos = mul(posW, g_matViewProj);
-    gout1.color = _gin[0].color;
-    gout1.texCoord = _gin[0].texCoord;
-    gout1.PrimID = _primID;
-  
-    _lineStream.Append(gout0);
-    _lineStream.Append(gout1);
+    float3 triCenter = (_gin[0].posW + _gin[2].posW + _gin[4].posW) / 3.0f;
+    float3 viewDir = normalize(g_eyePosW - triCenter);
+    
+    for (int i = 0; i < 3; i++)
+    {
+        float3 triNormal = _gin[(i * 2)].normalW;
+        float3 adjNormal = _gin[(i * 2) + 1].normalW;
+        
+        float triDotV = dot(triNormal, viewDir);
+        float adjDotV = dot(adjNormal, viewDir);
+        
+        if (triDotV * adjDotV < 0.0f)
+        {
+            int v0Index = (i * 2);
+            int v1Index = ((i + 1) * 2) % 6;
+            
+            v0.pos = mul(float4(_gin[v0Index].posW, 1.0f), g_matViewProj);
+            v0.PrimID = _primID;
+            v0.texCoord = _gin[v0Index].TexCoord;
+            v1.pos = mul(float4(_gin[v1Index].posW, 1.0f), g_matViewProj);
+            v1.PrimID = _primID;
+            v1.texCoord = _gin[v1Index].TexCoord;
+            
+            _lineStream.Append(v0);
+            _lineStream.Append(v1);
+        }
+    }
 }
 
 float4 PS(PSInput _pin) : SV_Target
 {
-    return _pin.color;
+    return float4(1.0f, 0.0f, 0.0f, 1.0f);
 }

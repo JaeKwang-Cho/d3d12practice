@@ -485,6 +485,13 @@ void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMa
 	}break;
 	}
 }
+void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
+{
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+
+	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
+	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
+}
 #if 0
 void* D3D12Renderer::CreateBasicMeshObject()
 {

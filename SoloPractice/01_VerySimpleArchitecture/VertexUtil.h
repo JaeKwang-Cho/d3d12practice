@@ -3,7 +3,7 @@
 #pragma once
 
 const int MAX_SHARED_TRIANGLES = 16;
-const int EPSILON = 1e-6;
+const float EPSILON = 1e-5;
 
 struct Float3ForKey
 {
@@ -12,6 +12,7 @@ struct Float3ForKey
 	float z;
 
 	bool operator==(const Float3ForKey& _other) const;
+	bool operator!=(const Float3ForKey& _other) const;
 
 	Float3ForKey& operator=(const Float3ForKey& _other) = default;
 	Float3ForKey& operator=(const XMFLOAT3& _other)
@@ -35,7 +36,7 @@ struct Float3Hash
 
 struct TriFaceGroup
 {
-	XMFLOAT3 vertPos[3];
+	Float3ForKey vertPos[3];
 	uint32_t indice[3];
 };
 

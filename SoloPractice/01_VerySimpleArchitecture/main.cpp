@@ -196,7 +196,9 @@ void RunGame()
     // ===== draw object =====
     g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 
-    g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
+    //g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
+
+    g_pRenderer->DrawOutlineMesh(g_pCube, &g_matWorldCube);
     // =======================
 
     // end
@@ -371,11 +373,14 @@ void* CreateCube(float _width, float _height, float _depth)
 
     TextureRenderMesh* pNewCube = new TextureRenderMesh;
     pNewCube->Initialize(g_pRenderer);
-    pNewCube->CreateRenderAssets(meshData, 1);
 
     // adjacency test
     std::vector<uint32_t> adjIndices;
     GenerateAdjacencyIndices(posL, refMeshData.Indices32, adjIndices);
+
+    pNewCube->CreateRenderAssets(meshData, 1, adjIndices);
+
+    
     return pNewCube;
 }
 

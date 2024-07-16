@@ -8,17 +8,26 @@
 
 bool Float3ForKey::operator==(const Float3ForKey& _other) const
 {
-	return std::fabs(x - _other.x) < EPSILON &&
+	bool bResult = std::fabs(x - _other.x) < EPSILON &&
 		std::fabs(y - _other.y) < EPSILON &&
 		std::fabs(z - _other.z) < EPSILON;
+	return bResult;
+}
+
+bool Float3ForKey::operator!=(const Float3ForKey& _other) const
+{
+	bool bResult = std::fabs(x - _other.x) > EPSILON ||
+		std::fabs(y - _other.y) > EPSILON ||
+		std::fabs(z - _other.z) > EPSILON;
+	return bResult;
 }
 
 size_t Float3Hash::operator()(const Float3ForKey& _f3key) const
 {
 	std::size_t seed = 0;
-	int xVal = std::round(_f3key.x * 1e6);
-	int yVal = std::round(_f3key.y * 1e6);
-	int zVal = std::round(_f3key.z * 1e6);
+	int xVal = std::round(_f3key.x * 1e5);
+	int yVal = std::round(_f3key.y * 1e5);
+	int zVal = std::round(_f3key.z * 1e5);
 
 	boost::hash_combine(seed, xVal);
 	boost::hash_combine(seed, yVal);
@@ -154,6 +163,72 @@ void DeleteBoxMesh(ColorVertex* _pVertexList)
 	delete[] _pVertexList;
 }
 
+uint32_t FindOtherOneIndex(
+	Float3ForKey& _vertPos0,
+	Float3ForKey& _vertPos1,
+	Float3ForKey& _vertPos2_Excluded,
+	std::unordered_map<Float3ForKey, TriFaceGroupPerVertPos, Float3Hash>& _findFaceGroupByPos)
+{	
+	// first
+	auto iter0 = _findFaceGroupByPos.find(_vertPos0);
+	UINT numTriFaceGroups0 = iter0->second.numTriFaceGroups;
+	// second
+	auto iter1 = _findFaceGroupByPos.find(_vertPos1);
+	UINT numTriFaceGroups1 = iter1->second.numTriFaceGroups;
+
+	int includedVert = -1;
+	int otherVert = -1;
+	bool bItself = false;
+	for (UINT i = 0; i < numTriFaceGroups0; i++) {
+		TriFaceGroup* pFaceGroup0 = iter0->second.triFaceGroups[i];
+		for (int v = 0; v < 3; v++) {
+			if (pFaceGroup0->vertPos[v] == _vertPos1) {
+				includedVert = v;
+			}
+			else if (pFaceGroup0->vertPos[v] == _vertPos2_Excluded) 
+			{
+				bItself = true;
+			}
+			else if (pFaceGroup0->vertPos[v] != _vertPos0)
+			{
+				otherVert = v;
+			}
+		}
+		if (includedVert >= 0 && !bItself)
+		{
+			return pFaceGroup0->indice[otherVert];
+		}
+		includedVert = -1;
+		otherVert = -1;
+		bItself = false;
+	}
+	
+	for (UINT j = 0; j < numTriFaceGroups1; j++) {
+		TriFaceGroup* pFaceGroup1 = iter1->second.triFaceGroups[j];
+		for (int v = 0; v < 3; v++) {
+			if (pFaceGroup1->vertPos[v] == _vertPos0) {
+				includedVert = v;
+			}
+			else if (pFaceGroup1->vertPos[v] == _vertPos2_Excluded)
+			{
+				bItself = true;
+			}
+			else if (pFaceGroup1->vertPos[v] != _vertPos1)
+			{
+				otherVert = v;
+			}
+		}
+		if (includedVert >= 0 && !bItself)
+		{
+			return pFaceGroup1->indice[otherVert];
+		}
+		includedVert = -1;
+		otherVert = -1;
+		bItself = false;
+	}
+	__debugbreak();
+}
+
 int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::vector<uint32_t>& _indices, std::vector<uint32_t>& _adjIndicies)
 {
 	size_t numVerts = _vertices.size();
@@ -161,33 +236,36 @@ int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::
 
 	_adjIndicies.resize(numFaces * 6);
 	TriFaceGroup* triFaceGroups = new TriFaceGroup[numFaces];
-	std::unordered_map<Float3ForKey, TriFaceGroupPerVertPos, Float3Hash> findIndicesByPos;
+	std::unordered_map<Float3ForKey, TriFaceGroupPerVertPos, Float3Hash> findFaceGroupByPos;
 
 	// vertex pos로 face group을 찾을 수 있게 만듦.
-	for (size_t f = 0; f < numFaces; f++)
+	for (size_t f = 0; f < numFaces;f++)
 	{
-		triFaceGroups[f].indice[0] = _indices[f];
-		triFaceGroups[f].indice[1] = _indices[f + 1];
-		triFaceGroups[f].indice[2] = _indices[f + 2];
+		triFaceGroups[f].indice[0] = _indices[(f * 3)];
+		triFaceGroups[f].indice[1] = _indices[(f * 3) + 1];
+		triFaceGroups[f].indice[2] = _indices[(f * 3) + 2];
 
-		triFaceGroups[f].vertPos[0] = _vertices[_indices[f]];
-		triFaceGroups[f].vertPos[1] = _vertices[_indices[f + 1]];
-		triFaceGroups[f].vertPos[2] = _vertices[_indices[f + 2]];
+		triFaceGroups[f].vertPos[0] = _vertices[_indices[(f * 3)]];
+		triFaceGroups[f].vertPos[1] = _vertices[_indices[(f * 3) + 1]];
+		triFaceGroups[f].vertPos[2] = _vertices[_indices[(f * 3) + 2]];
 
 		// vert pos로 index 찾는 map
 		for (size_t i = f * 3; i < (f + 1) * 3; i++) {
 			Float3ForKey vertPos = _vertices[_indices[i]];
-			auto iter = findIndicesByPos.find(vertPos);
+			auto iter = findFaceGroupByPos.find(vertPos);
 
-			if (iter == findIndicesByPos.end()) {
+			Float3Hash float3Hash;
+			size_t tmpHash0 = float3Hash(vertPos);
+
+			if (iter == findFaceGroupByPos.end()) {
 				TriFaceGroupPerVertPos triFaceGroupPerVertPos;
-				triFaceGroupPerVertPos.numTriFaceGroups = 0;
+				triFaceGroupPerVertPos.numTriFaceGroups = 1;
 				triFaceGroupPerVertPos.triFaceGroups[0] = triFaceGroups + f;
-				findIndicesByPos.insert({ vertPos, triFaceGroupPerVertPos });
+				findFaceGroupByPos.insert({ vertPos, triFaceGroupPerVertPos });
 			}
 			else {
-				UINT numTriFaceGroup = iter->second.numTriFaceGroups++;
-				if (numTriFaceGroup >= MAX_SHARED_TRIANGLES) {
+				UINT numTriFaceGroup = iter->second.numTriFaceGroups;
+				if (numTriFaceGroup >= MAX_SHARED_TRIANGLES - 1) {
 					__debugbreak();
 					exit(1);
 				}
@@ -196,6 +274,23 @@ int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::
 			}
 		}
 	}
+
+	for (size_t f = 0; f < numFaces; f++)
+	{
+		size_t i = f * 3;
+		Float3ForKey vertPos0 = _vertices[_indices[i]];
+		Float3ForKey vertPos1 = _vertices[_indices[i + 1]];
+		Float3ForKey vertPos2 = _vertices[_indices[i + 2]];
+
+		size_t adjI = f * 6;
+		_adjIndicies[adjI] = _indices[i];
+		_adjIndicies[adjI + 1] = FindOtherOneIndex(vertPos0, vertPos1, vertPos2, findFaceGroupByPos);
+		_adjIndicies[adjI + 2] = _indices[i + 1];
+		_adjIndicies[adjI + 3] = FindOtherOneIndex(vertPos1, vertPos2, vertPos0, findFaceGroupByPos);
+		_adjIndicies[adjI + 4] = _indices[i + 2];
+		_adjIndicies[adjI + 5] = FindOtherOneIndex(vertPos2, vertPos0, vertPos1, findFaceGroupByPos);
+	}
+
 	delete[] triFaceGroups;
 	triFaceGroups = nullptr;
 	return _indices.size();

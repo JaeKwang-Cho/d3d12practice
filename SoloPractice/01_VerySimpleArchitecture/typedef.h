@@ -123,6 +123,7 @@ struct TEXTURE_HANDLE
 struct SubRenderGeometry 
 {
 	UINT indexCount;
+	UINT adjIndexCount;
 	UINT startIndexLocation;
 	UINT baseVertexLocation;
 
@@ -132,12 +133,16 @@ struct SubRenderGeometry
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
 
+	Microsoft::WRL::ComPtr< ID3D12Resource> m_pAdjIndexBuffer;
+	D3D12_INDEX_BUFFER_VIEW m_AdjIndexBufferView;
+
 	TEXTURE_HANDLE* pTexHandle;
 
 	SubRenderGeometry() 
-		: indexCount(0), startIndexLocation(0), baseVertexLocation(0),
+		: indexCount(0), adjIndexCount(0), startIndexLocation(0), baseVertexLocation(0),
 		m_pVertexBuffer(nullptr), m_VertexBufferView{},
 		m_pIndexBuffer(nullptr), m_IndexBufferView{},
+		m_pAdjIndexBuffer(nullptr), m_AdjIndexBufferView{},
 		pTexHandle(nullptr)
 	{}
 };
