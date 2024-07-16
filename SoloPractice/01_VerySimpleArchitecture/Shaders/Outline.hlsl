@@ -43,8 +43,7 @@ void GS(
 {
     PSInput v0;
     PSInput v1;
-    
-    /*
+
     int v0Index;
     int v1Index;
     
@@ -75,23 +74,6 @@ void GS(
             _lineStream.Append(v0);
             _lineStream.Append(v1);
         }
-    }
-    */
-        
-    for (int i = 0; i < 6; i +=2)
-    {
-        v0.pos = mul(float4(_gin[i].posW, 1.0f), g_matViewProj);
-        v0.PrimID = _primID;
-        v0.texCoord = _gin[i].TexCoord;
-        
-        v1.pos = mul(float4(_gin[(i + 1) % 6].posW, 1.0f), g_matViewProj);
-        v1.PrimID = _primID;
-        v1.texCoord = _gin[(i + 1) % 6].TexCoord;
-        
-        _lineStream.Append(v0);
-        _lineStream.Append(v1);
-        
-        _lineStream.RestartStrip();
     }
 }
 

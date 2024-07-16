@@ -102,7 +102,8 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 
 			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_IndexBufferView);
-			_pCommandList->DrawIndexedInstanced(3, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			//_pCommandList->DrawIndexedInstanced(3, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
@@ -190,8 +191,8 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 			// index 버퍼도 잘 설정해준다.
 			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_AdjIndexBufferView);
-			//_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
-			_pCommandList->DrawIndexedInstanced(6, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			//_pCommandList->DrawIndexedInstanced(6, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
