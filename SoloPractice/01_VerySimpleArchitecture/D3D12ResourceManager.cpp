@@ -126,14 +126,14 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwV
 			return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData)
+HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize)
 {
 	HRESULT hr = S_OK;
 
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
 	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
 	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
-	UINT indexBufferSize = sizeof(uint16_t) * _dwIndexNum;
+	UINT indexBufferSize = _indexTypeSize * _dwIndexNum;
 
 	// Index도 upload heap buffer를 이용해서 default heap buffer에 데이터를 올린다.
 	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -206,7 +206,12 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 
 	// Index Buffer View를 채운다.
 	indexBufferView.BufferLocation = pIndexBuffer->GetGPUVirtualAddress();
-	indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+	if (_indexTypeSize == sizeof(uint32_t)) {
+		indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	}
+	else {
+		indexBufferView.Format = DXGI_FORMAT_R16_UINT;
+	}
 	indexBufferView.SizeInBytes = indexBufferSize;
 
 	*_pOutIndexBufferView = indexBufferView;

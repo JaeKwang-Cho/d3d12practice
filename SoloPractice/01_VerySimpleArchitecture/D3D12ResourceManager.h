@@ -14,7 +14,7 @@ public:
 
 	HRESULT CreateIndexBuffer(
 		DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView,
-		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData);
+		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize = sizeof(uint16_t));
 
 	HRESULT CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage);
 	HRESULT CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName);

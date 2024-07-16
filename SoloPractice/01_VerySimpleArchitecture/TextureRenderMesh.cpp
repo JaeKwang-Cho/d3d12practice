@@ -102,7 +102,7 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 
 			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_IndexBufferView);
-			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			_pCommandList->DrawIndexedInstanced(3, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
@@ -190,7 +190,8 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 			// index 버퍼도 잘 설정해준다.
 			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_AdjIndexBufferView);
-			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			//_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+			_pCommandList->DrawIndexedInstanced(6, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
@@ -253,7 +254,8 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 			_adjIndices.size(),
 			&(m_subRenderGeometries[i]->m_AdjIndexBufferView),
 			&(m_subRenderGeometries[i]->m_pAdjIndexBuffer),
-			(void*)(_adjIndices.data())
+			(void*)(_adjIndices.data()),
+			sizeof(uint32_t)
 		)))
 		{
 			__debugbreak();
@@ -374,7 +376,6 @@ bool TextureRenderMesh::InitPipelineState()
 		// vertex shader를 컴파일하고
 		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
@@ -382,7 +383,6 @@ bool TextureRenderMesh::InitPipelineState()
 		// pixel shader도 컴파일 한다.
 		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
@@ -460,7 +460,6 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		// vertex shader를 컴파일하고
 		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
@@ -468,7 +467,6 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		// Geometry shader 컴파일하고
 		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "GS", "gs_5_1", compileFlags, 0, pGeoShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
@@ -476,7 +474,6 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		// pixel shader도 컴파일 한다.
 		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();

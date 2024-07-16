@@ -33,22 +33,24 @@ VSOutput VS(VSInput _vin)
     return vout;
 }
 
-//  축 수직 양방향으로 50개 그리기
 [maxvertexcount(12)]
 void GS(
     triangleadj VSOutput _gin[6],
     uint _primID : SV_PrimitiveID,
     inout LineStream<PSInput> _lineStream
+    //inout TriangleStream<PSInput> _triStream
 )
 {
     PSInput v0;
     PSInput v1;
     
+    /*
     int v0Index;
     int v1Index;
     
     float3 triCenter = (_gin[0].posW + _gin[2].posW + _gin[4].posW) / 3.0f;
     float3 viewDir = normalize(g_eyePosW - triCenter);
+    
     
     for (int i = 0; i < 3; i++)
     {
@@ -73,6 +75,23 @@ void GS(
             _lineStream.Append(v0);
             _lineStream.Append(v1);
         }
+    }
+    */
+        
+    for (int i = 0; i < 6; i +=2)
+    {
+        v0.pos = mul(float4(_gin[i].posW, 1.0f), g_matViewProj);
+        v0.PrimID = _primID;
+        v0.texCoord = _gin[i].TexCoord;
+        
+        v1.pos = mul(float4(_gin[(i + 1) % 6].posW, 1.0f), g_matViewProj);
+        v1.PrimID = _primID;
+        v1.texCoord = _gin[(i + 1) % 6].TexCoord;
+        
+        _lineStream.Append(v0);
+        _lineStream.Append(v1);
+        
+        _lineStream.RestartStrip();
     }
 }
 

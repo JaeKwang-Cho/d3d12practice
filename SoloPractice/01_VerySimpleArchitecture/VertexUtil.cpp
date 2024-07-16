@@ -283,6 +283,12 @@ int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::
 		Float3ForKey vertPos2 = _vertices[_indices[i + 2]];
 
 		size_t adjI = f * 6;
+		//_adjIndicies[adjI] = _indices[i];
+		//_adjIndicies[adjI + 1] = _indices[i + 1];
+		//_adjIndicies[adjI + 2] = _indices[i + 2];
+		//_adjIndicies[adjI + 3] = FindOtherOneIndex(vertPos0, vertPos1, vertPos2, findFaceGroupByPos);
+		//_adjIndicies[adjI + 4] = FindOtherOneIndex(vertPos1, vertPos2, vertPos0, findFaceGroupByPos);
+		//_adjIndicies[adjI + 5] = FindOtherOneIndex(vertPos2, vertPos0, vertPos1, findFaceGroupByPos);
 		_adjIndicies[adjI] = _indices[i];
 		_adjIndicies[adjI + 1] = FindOtherOneIndex(vertPos0, vertPos1, vertPos2, findFaceGroupByPos);
 		_adjIndicies[adjI + 2] = _indices[i + 1];

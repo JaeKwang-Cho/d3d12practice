@@ -196,7 +196,7 @@ void RunGame()
     // ===== draw object =====
     g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 
-    //g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
+    g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
 
     g_pRenderer->DrawOutlineMesh(g_pCube, &g_matWorldCube);
     // =======================
