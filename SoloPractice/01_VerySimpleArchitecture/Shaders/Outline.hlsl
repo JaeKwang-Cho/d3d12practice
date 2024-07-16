@@ -38,7 +38,6 @@ void GS(
     triangleadj VSOutput _gin[6],
     uint _primID : SV_PrimitiveID,
     inout LineStream<PSInput> _lineStream
-    //inout TriangleStream<PSInput> _triStream
 )
 {
     PSInput v0;
@@ -47,19 +46,17 @@ void GS(
     int v0Index;
     int v1Index;
     
-    float3 triCenter = (_gin[0].posW + _gin[2].posW + _gin[4].posW) / 3.0f;
-    float3 viewDir = normalize(g_eyePosW - triCenter);
-    
-    
     for (int i = 0; i < 3; i++)
     {
+        float3 viewDir = normalize(g_eyePosW - _gin[(i * 2)].posW);
+        
         float3 triNormal = _gin[(i * 2)].normalW;
         float3 adjNormal = _gin[(i * 2) + 1].normalW;
         
         float triDotV = dot(triNormal, viewDir);
         float adjDotV = dot(adjNormal, viewDir);
         
-        if (triDotV * adjDotV < 0.0f)
+        if (triDotV * adjDotV < 0.0f && triDotV > 0.0f)
         {
             int v0Index = (i * 2);
             int v1Index = ((i + 1) * 2) % 6;
