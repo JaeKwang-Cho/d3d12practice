@@ -28,18 +28,19 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
 
-	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
-	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
+	// subRenderGeoCount *2 + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture + Material 개수
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount * 2 + 1)) {
 		__debugbreak();
 	}
 
+	// 모델별로 넘어가는 CB
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
 	if (!pCB) {
 		__debugbreak();
@@ -64,9 +65,12 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
 	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
 
+	// Texture와 Material
 	for (UINT i = 0; i < m_subRenderGeoCount; i++)
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
+
+		// Texture
 		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
 		if (pTexHandle)
 		{
@@ -76,6 +80,34 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 		{
 			pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		}
+		dest.Offset(1, srvDescriptorSize);
+
+		// Material
+		// 머테리얼은 부위마다 다를 수 있고, 시간에 따라 바뀔 수도 있다.
+		ConstantBufferPool* pMatCBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::MATERIAL);
+
+		CB_CONTAINER* pMatCB = pMatCBufferPool->Alloc();
+		if (!pMatCB) {
+			__debugbreak();
+		}
+		CONSTANT_BUFFER_MATERIAL* pMaterial = pSubRenderGeo->upMaterial.get();
+		CONSTANT_BUFFER_MATERIAL* pMatCBBuffer = reinterpret_cast<CONSTANT_BUFFER_MATERIAL*>(pMatCB->pSystemMemAddr);
+		if (pMaterial)
+		{
+			pMatCBBuffer->diffuseAlbedo = pMaterial->diffuseAlbedo;
+			pMatCBBuffer->fresnelR0 = pMaterial->fresnelR0;
+			pMatCBBuffer->roughness = pMaterial->roughness;
+			pMatCBBuffer->matTransform = pMaterial->matTransform;
+		}
+		else
+		{
+			pMatCBBuffer->diffuseAlbedo = DEFAULT_MATERIAL.diffuseAlbedo;
+			pMatCBBuffer->fresnelR0 = DEFAULT_MATERIAL.fresnelR0;
+			pMatCBBuffer->roughness = DEFAULT_MATERIAL.roughness;
+			pMatCBBuffer->matTransform = DEFAULT_MATERIAL.matTransform;
+		}
+		pD3DDevice->CopyDescriptorsSimple(1, dest, pMatCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
 		dest.Offset(1, srvDescriptorSize);
 	}
 
@@ -96,16 +128,19 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 	for (UINT i = 0; i < m_subRenderGeoCount; i++)
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
-		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForSubrenderGeo(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
 		if (pSubRenderGeo) {
-			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
-			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
+			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
+			// Texture
+			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForSubrenderGeo);
+			gpuDescriptorTableForSubrenderGeo.Offset(1, srvDescriptorSize);
+			// Material
+			_pCommandList->SetGraphicsRootDescriptorTable(3, gpuDescriptorTableForSubrenderGeo);
+			gpuDescriptorTableForSubrenderGeo.Offset(1, srvDescriptorSize);
 
-			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_IndexBufferView);
+			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->IndexBufferView);
 			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
-			//_pCommandList->DrawIndexedInstanced(3, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
-		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
 }
 
@@ -115,17 +150,19 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
 
-	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
+	// subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
 	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
 		__debugbreak();
 	}
+
+	// 모델별로 넘어가는 CB
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 
 	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
 	if (!pCB) {
@@ -151,6 +188,7 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
 	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
 
+	// Texture를 넘겨주는 것
 	for (UINT i = 0; i < m_subRenderGeoCount; i++)
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
@@ -165,6 +203,7 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 		}
 		dest.Offset(1, srvDescriptorSize);
 	}
+
 
 	// 루트 시그니처를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
@@ -186,13 +225,13 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
 		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+
 		if (pSubRenderGeo) {
-			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
+			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 			// index 버퍼도 잘 설정해준다.
-			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_AdjIndexBufferView);
+			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->AdjIndexBufferView);
 			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
-			//_pCommandList->DrawIndexedInstanced(6, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
 	}
@@ -217,8 +256,8 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 		// TextureVertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
 			sizeof(TextureVertex), pCurMeshData.Vertices.size(),
-			&(m_subRenderGeometries[i]->m_VertexBufferView),
-			&(m_subRenderGeometries[i]->m_pVertexBuffer),
+			&(m_subRenderGeometries[i]->VertexBufferView),
+			&(m_subRenderGeometries[i]->pVertexBuffer),
 			(void*)pCurMeshData.Vertices.data()
 		)))
 		{
@@ -228,8 +267,8 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 		// Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
 			pCurMeshData.Indices32.size(),
-			&(m_subRenderGeometries[i]->m_IndexBufferView),
-			&(m_subRenderGeometries[i]->m_pIndexBuffer),
+			&(m_subRenderGeometries[i]->IndexBufferView),
+			&(m_subRenderGeometries[i]->pIndexBuffer),
 			(void*)(pCurMeshData.GetIndices16().data())
 		)))
 		{
@@ -253,8 +292,8 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 		// Adj - Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
 			_adjIndices.size(),
-			&(m_subRenderGeometries[i]->m_AdjIndexBufferView),
-			&(m_subRenderGeometries[i]->m_pAdjIndexBuffer),
+			&(m_subRenderGeometries[i]->AdjIndexBufferView),
+			&(m_subRenderGeometries[i]->pAdjIndexBuffer),
 			(void*)(_adjIndices.data()),
 			sizeof(uint32_t)
 		)))
@@ -272,6 +311,15 @@ void TextureRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UIN
 		__debugbreak();
 	}
 	m_subRenderGeometries[_subRenderAssetIndex]->pTexHandle = _pTexHandle;
+}
+
+void TextureRenderMesh::SetMaterial(CONSTANT_BUFFER_MATERIAL& _MaterialData, const UINT _subRenderAssetIndex)
+{
+	if (m_subRenderGeoCount <= _subRenderAssetIndex) 
+	{
+		__debugbreak();
+	}
+	m_subRenderGeometries[_subRenderAssetIndex]->upMaterial = std::make_unique<CONSTANT_BUFFER_MATERIAL>(_MaterialData);
 }
 
 bool TextureRenderMesh::InitCommonResources()
@@ -315,15 +363,20 @@ bool TextureRenderMesh::InitRootSignature()
 	CD3DX12_DESCRIPTOR_RANGE rangePerObj[1] = {};
 	rangePerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 :  Object 마다 넘기는 Constant Buffer View
 
-	CD3DX12_DESCRIPTOR_RANGE rangePerSub[1] = {};
-	rangePerSub[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Sub - Object 마다 넘기는 SRV(texture)
+	CD3DX12_DESCRIPTOR_RANGE rangePerSubTex[1] = {};
+	rangePerSubTex[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 : Sub - Object 마다 넘기는 SRV(texture)
+
+	CD3DX12_DESCRIPTOR_RANGE rangePerSubMat[1] = {};
+	rangePerSubMat[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 1); // b1 : Sub - Object 마다 넘기는 CBV(Material)
 
 	// table 0번과 1번에 저장한다.
 	// 그리고 CBV로 2번에 저장한다.
-	CD3DX12_ROOT_PARAMETER rootParameters[3] = {};
+	// Material은 3번에 저장한다.
+	CD3DX12_ROOT_PARAMETER rootParameters[4] = {};
 	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
-	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSub), rangePerSub, D3D12_SHADER_VISIBILITY_ALL);
-	rootParameters[2].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL); // b1 : Frame 마다 넘기는 Constant Buffer View
+	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSubTex), rangePerSubTex, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[2].InitAsConstantBufferView(0, 1, D3D12_SHADER_VISIBILITY_ALL); // space 1, b0 : Frame 마다 넘기는 Constant Buffer View
+	rootParameters[3].InitAsDescriptorTable(_countof(rangePerSubMat), rangePerSubMat, D3D12_SHADER_VISIBILITY_ALL); // b0 : subrender geo 마다 넘기는 Material CB
 
 
 	// Texture Sample을 할때 사용하는 Sampler를

@@ -2,6 +2,14 @@
 
 #include "Commons.hlsl"
 
+cbuffer CONSTANT_BUFFER_MATERIAL : register(b1)
+{
+    float4 gDiffuseAlbedo;
+    float3 gFresnelR0;
+    float gRoughness;
+    float4x4 gMatTransform;
+};
+
 struct VSInput
 {
     float3 posL : POSITION;
@@ -46,9 +54,9 @@ float4 PS(PSInput _pin) : SV_Target
     // 일단 임의 Material (0.5 정도)
     Material tempMat =
     {
-        float4(1.0f, 1.0f, 1.0f, 1.0f),
-        float3(0.05f, 0.05f, 0.05f),
-        0.5f
+        gDiffuseAlbedo,
+        gFresnelR0,
+        gRoughness
     };
     // (그림자는 나중에)
     float shadowFactor = 1.0f;

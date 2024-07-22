@@ -6,6 +6,7 @@ enum class E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ
 {
 	CBV = 0,
 	TEX,
+	MAT,
 	END
 };
 
@@ -26,6 +27,7 @@ public:
 	void CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount);
 	void CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount, std::vector<uint32_t>& _adjIndices);
 	void BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex);
+	void SetMaterial(CONSTANT_BUFFER_MATERIAL& _MaterialData, const UINT _subRenderAssetIndex);
 
 protected:
 	bool InitCommonResources();

@@ -379,7 +379,8 @@ void* CreateCube(float _width, float _height, float _depth)
     GenerateAdjacencyIndices(posL, refMeshData.Indices32, adjIndices);
 
     pNewCube->CreateRenderAssets(meshData, 1, adjIndices);
-
+    CONSTANT_BUFFER_MATERIAL purpleMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(0.5f, 0.2f, 0.7f, 1.f));
+    pNewCube->SetMaterial(purpleMat, 0);
     
     return pNewCube;
 }

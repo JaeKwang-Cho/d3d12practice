@@ -94,7 +94,8 @@ bool Grid_RenderMesh::InitPipelineState()
 		psoDesc.SampleDesc.Count = 1;
 		psoDesc.SampleMask = UINT_MAX; // 지 혼자 0으로 초기회 된다.
 
-		if (FAILED(pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pPipelineState.GetAddressOf())))) {
+		hr = pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pPipelineState.GetAddressOf()));
+		if (FAILED(hr)) {
 			__debugbreak();
 		}
 

@@ -97,10 +97,10 @@ void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
 		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
 		if (pSubRenderGeo) {
-			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->m_VertexBufferView);
+			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
 			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
 
-			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->m_IndexBufferView);
+			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->IndexBufferView);
 			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
 		}
 		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
@@ -126,8 +126,8 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 		// TextureVertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
 			sizeof(ColorVertex), pCurMeshData.Vertices.size(), 
-			&(subRenderGeometries[i]->m_VertexBufferView),
-			&(subRenderGeometries[i]->m_pVertexBuffer), 
+			&(subRenderGeometries[i]->VertexBufferView),
+			&(subRenderGeometries[i]->pVertexBuffer), 
 			(void*)pCurMeshData.Vertices.data()
 		)))
 		{
@@ -137,8 +137,8 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 		// Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
 			pCurMeshData.Indices32.size(),
-			&(subRenderGeometries[i]->m_IndexBufferView),
-			&(subRenderGeometries[i]->m_pIndexBuffer),
+			&(subRenderGeometries[i]->IndexBufferView),
+			&(subRenderGeometries[i]->pIndexBuffer),
 			(void*)(pCurMeshData.GetIndices16().data())
 		)))
 		{
@@ -207,7 +207,7 @@ bool ColorRenderMesh::InitRootSignature()
 	CD3DX12_ROOT_PARAMETER rootParameters[3] = {};
 	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
 	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSub), rangePerSub, D3D12_SHADER_VISIBILITY_ALL);
-	rootParameters[2].InitAsConstantBufferView(1, 0, D3D12_SHADER_VISIBILITY_ALL); // b1 : Frame 마다 넘기는 Constant Buffer View
+	rootParameters[2].InitAsConstantBufferView(0, 1, D3D12_SHADER_VISIBILITY_ALL); // b0 / space 1 : Frame 마다 넘기는 Constant Buffer View
 
 
 	// Texture Sample을 할때 사용하는 Sampler를

@@ -16,7 +16,7 @@
 Texture2D texDiffuse : register(t0);
 SamplerState samplerDiffuse : register(s0);
 
-cbuffer CONSTANT_BUFFER_FRAME : register(b1)
+cbuffer CONSTANT_BUFFER_FRAME : register(b0, space1)
 {
     matrix g_matView;
     matrix g_intView;

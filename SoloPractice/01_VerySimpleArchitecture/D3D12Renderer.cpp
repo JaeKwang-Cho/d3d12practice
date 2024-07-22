@@ -902,16 +902,7 @@ void D3D12Renderer::InitFrameCB()
 {
 	UINT alignedByteSize = AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_FRAME));
 	D3D12_RESOURCE_DESC cbDesc_Size = CD3DX12_RESOURCE_DESC::Buffer(alignedByteSize);
-	/*
-	D3D12_DESCRIPTOR_HEAP_DESC commonHeapDesc = {};
-	commonHeapDesc.NumDescriptors = MAX_PENDING_FRAME_COUNT;
-	commonHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	commonHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&commonHeapDesc, IID_PPV_ARGS(m_pPassFrameHeap.GetAddressOf()))))
-	{
-		__debugbreak();
-	}
-	*/
+
 	HRESULT hr = S_OK;
 	for (int i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		hr = m_pD3DDevice->CreateCommittedResource(

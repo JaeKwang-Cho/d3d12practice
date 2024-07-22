@@ -60,6 +60,34 @@ struct Light
 	float spotPower;	 // spot light only
 };
 
+struct CONSTANT_BUFFER_MATERIAL
+{
+	XMFLOAT4 diffuseAlbedo;
+	XMFLOAT3 fresnelR0;
+	float roughness;
+	XMMATRIX matTransform;
+
+	CONSTANT_BUFFER_MATERIAL() :
+		diffuseAlbedo(1.f, 1.f, 1.f, 1.f),
+		fresnelR0(0.05f, 0.05f, 0.05f),
+		roughness(0.5f)
+	{
+		matTransform = XMMatrixIdentity();
+	}
+
+	CONSTANT_BUFFER_MATERIAL(const CONSTANT_BUFFER_MATERIAL& _other):
+		diffuseAlbedo(_other.diffuseAlbedo), fresnelR0(_other.fresnelR0), roughness(_other.roughness), matTransform(_other.matTransform)
+	{}
+
+	CONSTANT_BUFFER_MATERIAL(XMFLOAT4 _diffuseAlbedo, XMFLOAT3 _fresnelR0, float _roughness, XMMATRIX _matTransform = XMMatrixIdentity()):
+		diffuseAlbedo(_diffuseAlbedo), fresnelR0(_fresnelR0), roughness(_roughness),  matTransform(_matTransform)
+	{}
+
+	CONSTANT_BUFFER_MATERIAL(XMFLOAT4 _diffuseAlbedo):
+		diffuseAlbedo(_diffuseAlbedo), fresnelR0(0.05f, 0.05f, 0.05f), roughness(0.5f), matTransform(XMMatrixIdentity())
+	{}
+};
+
 struct CONSTANT_BUFFER_OBJECT
 {
 	XMMATRIX matWorld;
@@ -104,6 +132,7 @@ enum class E_CONSTANT_BUFFER_TYPE : UINT
 {
 	DEFAULT = 0,
 	SPRITE,
+	MATERIAL,
 	END
 };
 
@@ -127,23 +156,24 @@ struct SubRenderGeometry
 	UINT startIndexLocation;
 	UINT baseVertexLocation;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pVertexBuffer;
-	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pVertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
-	D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
 
-	Microsoft::WRL::ComPtr< ID3D12Resource> m_pAdjIndexBuffer;
-	D3D12_INDEX_BUFFER_VIEW m_AdjIndexBufferView;
+	Microsoft::WRL::ComPtr< ID3D12Resource> pAdjIndexBuffer;
+	D3D12_INDEX_BUFFER_VIEW AdjIndexBufferView;
 
 	TEXTURE_HANDLE* pTexHandle;
+	std::unique_ptr<CONSTANT_BUFFER_MATERIAL> upMaterial;
 
 	SubRenderGeometry() 
 		: indexCount(0), adjIndexCount(0), startIndexLocation(0), baseVertexLocation(0),
-		m_pVertexBuffer(nullptr), m_VertexBufferView{},
-		m_pIndexBuffer(nullptr), m_IndexBufferView{},
-		m_pAdjIndexBuffer(nullptr), m_AdjIndexBufferView{},
-		pTexHandle(nullptr)
+		pVertexBuffer(nullptr), VertexBufferView{},
+		pIndexBuffer(nullptr), IndexBufferView{},
+		pAdjIndexBuffer(nullptr), AdjIndexBufferView{},
+		pTexHandle(nullptr), upMaterial(nullptr)
 	{}
 };
 
