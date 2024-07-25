@@ -79,6 +79,9 @@
     <Filter Include="Shaders\Common">
       <UniqueIdentifier>{f84ede07-ee50-4244-985f-5dd22c06d1c9}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Streamer">
+      <UniqueIdentifier>{a034c2d6-5c8c-457f-b87e-c340e743e6ca}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -150,6 +153,9 @@
     </ClInclude>
     <ClInclude Include="TextureRenderMesh.h">
       <Filter>RenderAssets\TextureRenderMesh</Filter>
+    </ClInclude>
+    <ClInclude Include="ScreenStreamer.h">
+      <Filter>Streamer</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -246,6 +252,9 @@
     </ClCompile>
     <ClCompile Include="TextureRenderMesh.cpp">
       <Filter>RenderAssets\TextureRenderMesh</Filter>
+    </ClCompile>
+    <ClCompile Include="ScreenStreamer.cpp">
+      <Filter>Streamer</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

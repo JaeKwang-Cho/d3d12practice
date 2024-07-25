@@ -15,6 +15,7 @@
 #include "ColorRenderMesh.h"
 #include "FlyCamera.h"
 #include "TextureRenderMesh.h"
+#include "ScreenStreamer.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -248,6 +249,10 @@ EXIT:
 	// Frame CBV
 	InitFrameCB();
 
+	// ScreenStreamer
+	m_pScreenStreamer = new ScreenStreamer;
+	m_pScreenStreamer->Initialize(this, m_pRenderTargets[0]->GetDesc());
+
 	bResult = true;
 RETURN:
 	/*
@@ -323,6 +328,22 @@ void D3D12Renderer::BeginRender()
 	pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 }
 
+void D3D12Renderer::CopyRenderTarget()
+{
+	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+
+	D3D12_RESOURCE_BARRIER trans_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	pCommandList->ResourceBarrier(1, &trans_RT_SRC);
+
+	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste().Get(), m_pScreenStreamer->GetFootPrint());
+	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
+
+	pCommandList->CopyTextureRegion(&copyDest, 0, 0, 0, &copySrc, nullptr);
+
+	D3D12_RESOURCE_BARRIER trans_SRC_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	pCommandList->ResourceBarrier(1, &trans_SRC_RT);
+}
+
 void D3D12Renderer::EndRender()
 {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
@@ -338,6 +359,7 @@ void D3D12Renderer::EndRender()
 	ID3D12CommandList* ppCommandLists[] = { pCommandList.Get()};
 	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
+	m_pScreenStreamer->CreatFileFromTexture();
 }
 
 void D3D12Renderer::Present()
@@ -1058,7 +1080,8 @@ D3D12Renderer::D3D12Renderer()
 	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
-	m_flyCamera(nullptr), m_LastMousePos{}
+	m_flyCamera(nullptr), m_LastMousePos{},
+	m_pScreenStreamer(nullptr)
 {
 }
 

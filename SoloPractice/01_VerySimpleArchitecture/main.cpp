@@ -12,6 +12,10 @@
 #include <windowsx.h>
 #include <shellapi.h> // 파일 드래그앤드롭
 
+// COM
+#include <combaseapi.h>
+
+
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
 #pragma comment(lib, "dxguid.lib")
@@ -50,6 +54,7 @@ WCHAR g_tempPath[MAX_PATH];
 // D3D12 전역변수
 D3D12_HEAP_PROPERTIES HEAP_PROPS_DEFAULT = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 D3D12_HEAP_PROPERTIES HEAP_PROPS_UPLOAD = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+D3D12_HEAP_PROPERTIES HEAP_PROPS_READBACK = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK);
 
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
@@ -104,6 +109,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         __debugbreak();
         return FALSE;
     }
+
+    // COM 초기화
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(hr))
+    {
+        __debugbreak();
+    }
+
     // Timer 초기화
     g_GameTimer.Reset();
     g_GameTimer.Start();
@@ -200,6 +213,9 @@ void RunGame()
 
     g_pRenderer->DrawOutlineMesh(g_pCube, &g_matWorldCube);
     // =======================
+
+    // copy render target
+    g_pRenderer->CopyRenderTarget();
 
     // end
     g_pRenderer->EndRender();

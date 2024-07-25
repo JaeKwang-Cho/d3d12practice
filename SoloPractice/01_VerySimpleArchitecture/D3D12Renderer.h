@@ -2,10 +2,6 @@
 // 괜히 최신 d3d12 사용해보기
 #pragma once
 
-// 스왑체인 개수도 3개로 늘린다.
-const UINT SWAP_CHAIN_FRAME_COUNT = 3;
-const UINT MAX_PENDING_FRAME_COUNT = SWAP_CHAIN_FRAME_COUNT - 1;
-
 class D3D12ResourceManager;
 class ConstantBufferPool;
 class DescriptorPool;
@@ -13,6 +9,7 @@ class SingleDescriptorAllocator;
 class ConstantBufferManager;
 class D3D12PSOCache;
 class FlyCamera;
+class ScreenStreamer;
 
 class D3D12Renderer
 {
@@ -21,8 +18,11 @@ public:
 	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
+
 	void Update(const GameTimer& _gameTimer);
+
 	void BeginRender();
+	void CopyRenderTarget();
 	void EndRender();
 	void Present();
 
@@ -152,6 +152,9 @@ private:
 	// Camera 
 	FlyCamera* m_flyCamera;
 	POINT m_LastMousePos;
+
+	// ScreenStreamer
+	ScreenStreamer* m_pScreenStreamer;
 
 public:
 	D3D12Renderer();
