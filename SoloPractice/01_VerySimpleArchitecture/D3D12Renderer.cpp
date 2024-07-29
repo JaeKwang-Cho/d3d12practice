@@ -358,8 +358,6 @@ void D3D12Renderer::EndRender()
 	// queue로 넘겨준다. (여기까지의 과정을 매 프레임마다 하는 것이다.)
 	ID3D12CommandList* ppCommandLists[] = { pCommandList.Get()};
 	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-
-	m_pScreenStreamer->CreatFileFromTexture();
 }
 
 void D3D12Renderer::Present()
@@ -394,6 +392,9 @@ void D3D12Renderer::Present()
 	// 다음 프레임 작업을 하기 전에, 다음 렌더링할 CommandList에 해당하는 Fence값이 만족했는지 확인한다.
 	DWORD dwNextContextIndex = (m_dwCurContextIndex + 1) & MAX_PENDING_FRAME_COUNT;
 	WaitForFenceValue(m_pui64LastFenceValue[dwNextContextIndex]);
+
+	// fence 값이 만족했으면, copy도 완료된 것이니 파일로 만든다.
+	m_pScreenStreamer->CreatFileFromTexture(dwNextContextIndex);
 
 	// 한 프레임이 끝났으니 0으로 초기화 한다.
 	m_ppConstantBufferManager[dwNextContextIndex]->Reset();

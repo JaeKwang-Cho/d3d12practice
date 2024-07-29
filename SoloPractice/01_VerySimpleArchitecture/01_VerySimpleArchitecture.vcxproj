@@ -112,6 +112,7 @@
       <PrecompiledHeader>Create</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -126,6 +127,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -140,6 +142,7 @@
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
     <ClInclude Include="ScreenStreamer.h" />
+    <ClInclude Include="StreamingHeader.h" />
     <ClInclude Include="TextureRenderMesh.h" />
     <ClInclude Include="WICTextureLoader12.h" />
     <ClInclude Include="ColorRenderMesh.h" />
@@ -168,6 +171,7 @@
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />
+    <ClCompile Include="StreamingHeader.cpp" />
     <ClCompile Include="TextureRenderMesh.cpp" />
     <ClCompile Include="WICTextureLoader12.cpp" />
     <ClCompile Include="ColorRenderMesh.cpp" />

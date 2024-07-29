@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "ScreenStreamer.h"
 #include "D3D12Renderer.h"
+#include "StreamingHeader.h"
 
 DWORD WINAPI CreateFileFromTexture_Thread(LPVOID _pParam) 
 {
@@ -13,6 +14,7 @@ DWORD WINAPI CreateFileFromTexture_Thread(LPVOID _pParam)
 	);
 
 	if (FAILED(hr)) {
+		__debugbreak();
 		OutputDebugString(L"SaveToWICFile Failed\n");
 		return 1;
 	}
@@ -58,11 +60,15 @@ void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _
 		}
 		m_pScreenTexture[i]->Map(0, nullptr, (void**)(m_pMappedData + i));
 	}
+
+	// winsock 작업을 할 구조체를 초기화.
+	m_winsockProps = new WinSock_Properties;
+	m_winsockProps->InitializeWinsock();
 }
 
-void ScreenStreamer::CreatFileFromTexture()
+void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
 {
-	m_Image.pixels = m_pMappedData[m_uiCurTextureIndex];
+	m_Image.pixels = m_pMappedData[_dwTexIndex];
 	DWORD dwThreadID = 0;
 	if (m_hThread == 0)
 	{
@@ -86,13 +92,25 @@ void ScreenStreamer::CreatFileFromTexture()
 	}
 }
 
+void ScreenStreamer::SendFileFromTexture(DWORD _dwTexIndex)
+{
+	if (m_winsockProps)
+	{
+		m_winsockProps->SendData(m_pMappedData[_dwTexIndex], m_Image.slicePitch);
+	}
+}
+
 ScreenStreamer::ScreenStreamer()
 	:m_pScreenTexture{}, m_pMappedData{}, 
 	m_uiCurTextureIndex(0), m_TextureDesc{}, m_Image{},
-	m_hThread(0), m_footPrint{}
+	m_hThread(0), m_footPrint{}, m_winsockProps(nullptr)
 {
 }
 
 ScreenStreamer::~ScreenStreamer()
 {
+	if (m_winsockProps) 
+	{
+		delete m_winsockProps;
+	}
 }

@@ -157,6 +157,9 @@
     <ClInclude Include="ScreenStreamer.h">
       <Filter>Streamer</Filter>
     </ClInclude>
+    <ClInclude Include="StreamingHeader.h">
+      <Filter>Streamer</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -254,6 +257,9 @@
       <Filter>RenderAssets\TextureRenderMesh</Filter>
     </ClCompile>
     <ClCompile Include="ScreenStreamer.cpp">
+      <Filter>Streamer</Filter>
+    </ClCompile>
+    <ClCompile Include="StreamingHeader.cpp">
       <Filter>Streamer</Filter>
     </ClCompile>
   </ItemGroup>

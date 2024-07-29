@@ -39,7 +39,7 @@
 extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
 
 #if defined(_M_AMD64)
-extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12\\x64\\"; }
+extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3D12\\x64\\"; } // c++20 이므로 이렇게 해줘야 한다.
 #endif
 
 // 윈도우 전역 변수:
@@ -528,6 +528,8 @@ bool InitWindow(HINSTANCE _hInstance)
     // 윈도우 생성
     // 드래그앤 드롭이 가능하도록 만든다.
     DWORD dwExStyle = WS_EX_ACCEPTFILES;
+    // 혹시나 Client와 맞추기 위해, 크기를 바꾸고, 최대화를 시키지 못하게 만드는 플래그다.
+    // DWORD dwStyleNoResizable = WS_OVERLAPPEDWINDOW & (~WS_MAXIMIZEBOX) & (~WS_THICKFRAME);
     g_hWnd = CreateWindowEx(dwExStyle, g_szWindowClass, g_szTitle, WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, width, height,
         nullptr, nullptr, g_hInst, nullptr);
     if (!g_hWnd) {
