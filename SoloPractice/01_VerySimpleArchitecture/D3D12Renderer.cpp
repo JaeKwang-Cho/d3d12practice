@@ -330,12 +330,16 @@ void D3D12Renderer::BeginRender()
 
 void D3D12Renderer::CopyRenderTarget()
 {
+	if (m_pScreenStreamer->CheckSendingThread(m_uiRenderTargetIndex) == false) 
+	{
+		return;
+	}
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	D3D12_RESOURCE_BARRIER trans_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	pCommandList->ResourceBarrier(1, &trans_RT_SRC);
 
-	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste().Get(), m_pScreenStreamer->GetFootPrint());
+	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste(m_uiRenderTargetIndex).Get(), m_pScreenStreamer->GetFootPrint());
 	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
 
 	pCommandList->CopyTextureRegion(&copyDest, 0, 0, 0, &copySrc, nullptr);
@@ -387,14 +391,20 @@ void D3D12Renderer::Present()
 	}
 
 	// 백 버퍼로 바뀐 친구를 다음 프레임에 그릴 인덱스로 지정한다.
+	UINT uiRTIndexToCopy = m_uiRenderTargetIndex;
 	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 
 	// 다음 프레임 작업을 하기 전에, 다음 렌더링할 CommandList에 해당하는 Fence값이 만족했는지 확인한다.
 	DWORD dwNextContextIndex = (m_dwCurContextIndex + 1) & MAX_PENDING_FRAME_COUNT;
 	WaitForFenceValue(m_pui64LastFenceValue[dwNextContextIndex]);
 
-	// fence 값이 만족했으면, copy도 완료된 것이니 파일로 만든다.
-	m_pScreenStreamer->CreatFileFromTexture(dwNextContextIndex);
+	// fence 값이 만족했으면, copy도 완료된 것이니 send를 건다.
+	// 여기서도 Thread가 작업 중이였으면 스킵하는거로 한다.
+	if (m_pScreenStreamer->CheckSendingThread(dwNextContextIndex) == true)
+	{
+		m_pScreenStreamer->SendFileFromTexture(uiRTIndexToCopy);
+	}
+	// m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy ); // 임시 코드
 
 	// 한 프레임이 끝났으니 0으로 초기화 한다.
 	m_ppConstantBufferManager[dwNextContextIndex]->Reset();

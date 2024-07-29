@@ -35,18 +35,17 @@ struct WinSock_Properties
 {
 public:
 	void InitializeWinsock();
-	void SendData(void* _data, size_t _ulByteSize);
+	void SendData(UINT _uiThreadIndex, void* _data, size_t _ulByteSize);
+	bool CanSendData(UINT _uiThreadIndex);
 private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
-
-	UINT m_uiThreadIndex;
 
 	SOCKET hSocket; // 송신 소켓
 	HANDLE hThread[THREAD_NUMBER_BY_FRAME];
 	ThreadParam threadParam[THREAD_NUMBER_BY_FRAME];
 public:
-	WinSock_Properties() = default;
+	WinSock_Properties();
 	virtual ~WinSock_Properties();
 };
 

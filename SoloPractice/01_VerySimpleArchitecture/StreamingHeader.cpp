@@ -69,43 +69,63 @@ void WinSock_Properties::InitializeWinsock()
 	}
 }
 
-void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
+void WinSock_Properties::SendData(UINT _uiThreadIndex, void* _data, size_t _ulByteSize)
 {
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
 
-	UINT curThreadIndex = m_uiThreadIndex;
-	m_uiThreadIndex = (m_uiThreadIndex + 1) % THREAD_NUMBER_BY_FRAME;
-
-	if (hThread == 0)
+	if (hThread[_uiThreadIndex] == 0)
 	{
-		threadParam[curThreadIndex].data = _data;
-		threadParam[curThreadIndex].socket = hSocket;
-		threadParam[curThreadIndex].ulByteSize = _ulByteSize;
+		threadParam[_uiThreadIndex].data = _data;
+		threadParam[_uiThreadIndex].socket = hSocket;
+		threadParam[_uiThreadIndex].ulByteSize = _ulByteSize;
 
-		threadParam[curThreadIndex].addr = addr;
+		threadParam[_uiThreadIndex].addr = addr;
 		// 지금은 LoopBack으로 테스트 한다.
-		// threadParam[curThreadIndex].addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
-		::InetPton(AF_INET, _T("127.0.0.1"), &threadParam[curThreadIndex].addr.sin_addr);
+		// threadParam[_uiThreadIndex].addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
+		::InetPton(AF_INET, _T("127.0.0.1"), &threadParam[_uiThreadIndex].addr.sin_addr);
 
-		hThread[curThreadIndex] = ::CreateThread(
+		hThread[_uiThreadIndex] = ::CreateThread(
 			NULL,
 			0,
 			ThreadSendToClient,
-			(LPVOID)(&threadParam[curThreadIndex]),
+			(LPVOID)(threadParam + _uiThreadIndex),
 			0,
 			&dwThreadID
 		);
 	}
-	else // 스레드 안 끝났으면 그냥 스킵. 그냥 화면만 보여주는 거니까 ㄱㅊ
+	else // 혹시나 해서 스킵 시키는 로직
 	{
-		DWORD result = WaitForSingleObject(hThread, 0);
+		DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
 		if (result == WAIT_OBJECT_0)
 		{
-			CloseHandle(hThread);
-			hThread[m_uiThreadIndex] = 0;
+			CloseHandle(hThread[_uiThreadIndex]);
+			hThread[_uiThreadIndex] = 0;
 		}
 	}
+}
+
+bool WinSock_Properties::CanSendData(UINT _uiThreadIndex)
+{
+	DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
+	if (result == WAIT_OBJECT_0)
+	{
+		return true;
+	}
+	else if (result == WAIT_TIMEOUT)
+	{
+		return false;
+	}
+	else
+	{
+		__debugbreak();
+		return false;
+	}
+}
+
+WinSock_Properties::WinSock_Properties()
+	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread{ 0, 0, 0 }, threadParam{ {0}, {0}, {0} }
+{
 }
 
 WinSock_Properties::~WinSock_Properties()

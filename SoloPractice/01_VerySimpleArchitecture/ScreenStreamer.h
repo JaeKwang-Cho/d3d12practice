@@ -32,12 +32,13 @@ public:
 	ScreenStreamer();
 	virtual ~ScreenStreamer();
 
+	// Mapped 된 데이터를 Sending Thread가 작업 중인지 확인하는 것
+	bool CheckSendingThread(UINT _uiRenderTargetIndex);
+
 	// 렌더링이 완료된 렌더타켓을 카피할 수 있도록, D3D12Renderer에서 호출을 잘 해야 한다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> GetTextureToPaste()
+	Microsoft::WRL::ComPtr<ID3D12Resource> GetTextureToPaste(UINT _uiRenderTargetIndex)
 	{
-		UINT curIndex = m_uiCurTextureIndex;
-		m_uiCurTextureIndex = (m_uiCurTextureIndex + 1) % SWAP_CHAIN_FRAME_COUNT;
-		return m_pScreenTexture[curIndex];
+		return m_pScreenTexture[_uiRenderTargetIndex];
 	}
 
 	const D3D12_PLACED_SUBRESOURCE_FOOTPRINT& GetFootPrint() {
