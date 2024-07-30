@@ -1,0 +1,47 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="pch">
+      <UniqueIdentifier>{d3afb99f-15f9-470f-aca3-c1911cabaf7e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Streamer">
+      <UniqueIdentifier>{d3980533-7330-490d-b9f1-9225dc14d4c2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer">
+      <UniqueIdentifier>{b1b1e58b-a275-4863-ad62-485f95d32737}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\D3D12Renderer_Client">
+      <UniqueIdentifier>{ff690349-2978-4952-a5ec-cc13e694420b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{cf749246-46c9-4d8c-80c9-df507c89afa6}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="pch.h">
+      <Filter>pch</Filter>
+    </ClInclude>
+    <ClInclude Include="targetver.h" />
+    <ClInclude Include="StreamingHeader.h">
+      <Filter>Streamer</Filter>
+    </ClInclude>
+    <ClInclude Include="D3D12Renderer_Client.h">
+      <Filter>Renderer\D3D12Renderer_Client</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="pch.cpp">
+      <Filter>pch</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="D3D12Renderer_Client.cpp">
+      <Filter>Renderer\D3D12Renderer_Client</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Screen.hlsl">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="packages.config" />
+  </ItemGroup>
+</Project>
