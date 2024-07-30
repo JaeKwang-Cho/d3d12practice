@@ -1,17 +1,21 @@
 #pragma once
+#include "StreamingHeader.h"
+
 class D3D12Renderer_Client
 {
 public:
 	bool Initialize(HWND _hWnd);
 
 	void BeginRender();
-	void DrawStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes);
+	void UploadStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes);
 	void EndRender();
 	void Present();
 
 protected:
 private:
-
+	UINT64 DoUploadFence();
+	UINT64 DoDrawFence();
+	void WaitForFenceValue(UINT64 _expectedFenceValue);
 public:
 protected:
 private:
@@ -37,14 +41,17 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture;
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture;
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture[THREAD_NUMBER_BY_FRAME];
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[THREAD_NUMBER_BY_FRAME];
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
+	UINT textureIndexByThread;
 
 
-	HANDLE m_hFenceEvent = nullptr;
+	HANDLE m_hFenceEvent;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;
 	UINT64 m_ui64FenceValue;
+	UINT64 m_pui64UploadFenceValue[THREAD_NUMBER_BY_FRAME];
+	UINT64 m_pui64DrawFenceValue[THREAD_NUMBER_BY_FRAME];
 
 	UINT m_dwSwapChainFlags;
 
@@ -52,5 +59,8 @@ private:
 	D3D12_RECT m_ScissorRect;
 	DWORD m_dwWidth;
 	DWORD m_dwHeight;
+public:
+	D3D12Renderer_Client();
+	virtual~D3D12Renderer_Client();
 };
 

@@ -230,7 +230,14 @@ bool D3D12Renderer_Client::Initialize(HWND _hWnd)
 		__debugbreak();
 	}
 
-	// #11 디폴트/업로드 텍스쳐 리소스 생성
+	// #11 SRV Heap 생성
+	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+	srvHeapDesc.NumDescriptors = THREAD_NUMBER_BY_FRAME;
+	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+	m_pD3DDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_pSRVHeap.GetAddressOf()));
+
+	// #12 디폴트/업로드 텍스쳐 리소스 생성
 	D3D12_RESOURCE_DESC textureDesc = {};
 	textureDesc.MipLevels = 1;
 	textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -243,48 +250,50 @@ bool D3D12Renderer_Client::Initialize(HWND _hWnd)
 	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
 
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
-	if (FAILED(m_pD3DDevice->CreateCommittedResource(
-		&defaultHeapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&textureDesc,
-		D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-		nullptr,
-		IID_PPV_ARGS(m_pDefaultTexture.GetAddressOf())
-	)))
-	{
-		__debugbreak();
-	}
-
-	const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pDefaultTexture.Get(), 0, 1);
 	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_DEFAULT);
-	CD3DX12_RESOURCE_DESC buffDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
-	if (FAILED(m_pD3DDevice->CreateCommittedResource(
-		&uploadHeapProps,
-		D3D12_HEAP_FLAG_NONE,
-		&buffDesc,
-		D3D12_RESOURCE_STATE_GENERIC_READ,
-		nullptr,
-		IID_PPV_ARGS(m_pUploadTexture.GetAddressOf())
-	)))
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorHandle = CD3DX12_CPU_DESCRIPTOR_HANDLE(m_pSRVHeap->GetCPUDescriptorHandleForHeapStart());
+
+	for (UINT i = 0; i < THREAD_NUMBER_BY_FRAME; i++) 
 	{
-		__debugbreak();
+		if (FAILED(m_pD3DDevice->CreateCommittedResource(
+			&defaultHeapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&textureDesc,
+			D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+			nullptr,
+			IID_PPV_ARGS(m_pDefaultTexture[i].GetAddressOf())
+		)))
+		{
+			__debugbreak();
+		}
+
+		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pDefaultTexture[i].Get(), 0, 1);
+		CD3DX12_RESOURCE_DESC buffDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+
+		if (FAILED(m_pD3DDevice->CreateCommittedResource(
+			&uploadHeapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&buffDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(m_pUploadTexture[i].GetAddressOf())
+		)))
+		{
+			__debugbreak();
+		}
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Format = textureDesc.Format;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+
+		m_pD3DDevice->CreateShaderResourceView(m_pDefaultTexture[i].Get(), &srvDesc, cpuDescriptorHandle);
+
+		cpuDescriptorHandle.Offset(1);
 	}
 
-	// #12 SRV Heap 위 에 default texture SRV 만들기
-	D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-	srvHeapDesc.NumDescriptors = 1;
-	srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	m_pD3DDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(m_pSRVHeap.GetAddressOf()));
-
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.Format = textureDesc.Format;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = 1;
-
-	m_pD3DDevice->CreateShaderResourceView(m_pDefaultTexture.Get(), &srvDesc, m_pSRVHeap->GetCPUDescriptorHandleForHeapStart());
 
 	return true;
 }
@@ -293,18 +302,36 @@ void D3D12Renderer_Client::BeginRender()
 {
 }
 
-void D3D12Renderer_Client::DrawStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes)
+/*
+
+0. 일단 UDP로 넘어온 텍스쳐를 완성해서 메모리에 가지고 있는다.
+1. draw가 끝나면, 텍스쳐 업로드를 command list에 건다.
+2. 텍스쳐 업로드가 끝나면 srv로 묶어서 draw를 건다.
+---
+하나의 fence 값을 기억하는 것을 2개로 구분한다.
+upload fence와 draw fence
+---
+(일단 새로운 아이디어는 내지 않겠다. 너무 복잡하다.)
+*/
+
+void D3D12Renderer_Client::UploadStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes)
 {
+	WaitForFenceValue(m_pui64DrawFenceValue[textureIndexByThread]);
+
 	D3D12_SUBRESOURCE_DATA textureData = {};
 	textureData.pData = _pPixels;
 	textureData.RowPitch = m_dwWidth * 4;
 	textureData.SlicePitch = _ui64TotalBytes;
 
-	CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture.Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+	CD3DX12_RESOURCE_BARRIER barrier_SRV_DEST = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture[textureIndexByThread].Get(), D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+	m_pCommandList->ResourceBarrier(1, &barrier_SRV_DEST);
 
-	UpdateSubresources(m_pCommandList.Get(), m_pDefaultTexture.Get(), m_pUploadTexture.Get(), 0, 0, 1, &textureData);
+	UpdateSubresources(m_pCommandList.Get(), m_pDefaultTexture[textureIndexByThread].Get(), m_pUploadTexture[textureIndexByThread].Get(), 0, 0, 1, &textureData);
 
-	CD3DX12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	CD3DX12_RESOURCE_BARRIER barrier_DEST_SRV = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture[textureIndexByThread].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	m_pCommandList->ResourceBarrier(1, &barrier_DEST_SRV);
+
+	DoUploadFence();
 }
 
 void D3D12Renderer_Client::EndRender()
@@ -312,5 +339,49 @@ void D3D12Renderer_Client::EndRender()
 }
 
 void D3D12Renderer_Client::Present()
+{
+}
+
+UINT64 D3D12Renderer_Client::DoUploadFence()
+{
+	m_ui64FenceValue++;
+	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
+	m_pui64UploadFenceValue[textureIndexByThread] = m_ui64FenceValue;
+
+	return m_ui64FenceValue;
+}
+
+UINT64 D3D12Renderer_Client::DoDrawFence()
+{
+	m_ui64FenceValue++;
+	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
+	m_pui64DrawFenceValue[textureIndexByThread] = m_ui64FenceValue;
+
+	return m_ui64FenceValue;
+}
+
+void D3D12Renderer_Client::WaitForFenceValue(UINT64 _expectedFenceValue)
+{
+	if (m_pFence->GetCompletedValue() < _expectedFenceValue)
+	{
+		m_pFence->SetEventOnCompletion(_expectedFenceValue, m_hFenceEvent);
+		WaitForSingleObject(m_hFenceEvent, INFINITE);
+	}
+}
+
+D3D12Renderer_Client::D3D12Renderer_Client()
+	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),m_pCommandList(nullptr),
+	m_ui64FenceValue(0), m_pui64UploadFenceValue{}, m_pui64DrawFenceValue{},
+	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
+	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
+	m_pRTVHeap(nullptr), m_pSRVHeap(nullptr), textureIndexByThread(0),
+	m_rtvDescriptorSize(0), m_srvDescriptorSize(0),
+	m_dwSwapChainFlags(0), m_uiRenderTargetIndex(0),
+	m_hFenceEvent(nullptr), m_pFence(nullptr),
+	m_Viewport{}, m_ScissorRect{}, m_dwWidth(0), m_dwHeight(0)
+{
+}
+
+D3D12Renderer_Client::~D3D12Renderer_Client()
 {
 }
