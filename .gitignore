@@ -31,3 +31,9 @@ Debug
 /DirectXTex
 /SoloPractice/packages/boost.1.85.0
 /SoloPractice/packages/directxtex_desktop_win10.2024.6.5.1
+/SoloPractice/packages/Microsoft.Direct3D.D3D12.1.614.1
+/SoloPractice/PixelStreamingClient/D3D12
+/SoloPractice/PixelStreamingClient/PixelStreamingClient.exe
+/SoloPractice/PixelStreamingClient/PixelStreamingClient.exp
+/SoloPractice/PixelStreamingClient/PixelStreamingClient.lib
+/SoloPractice/PixelStreamingClient/PixelStreamingClient.pdb
