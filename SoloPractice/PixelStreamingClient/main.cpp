@@ -2,10 +2,12 @@
 //
 
 #include "pch.h"
+#include "D3D12Renderer_Client.h"
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#pragma comment(lib, "dxguid.lib");
 
 #define MAX_LOADSTRING 100
 
@@ -21,10 +23,14 @@ extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12
 HINSTANCE g_hInst;    
 HWND g_hWnd;
 WCHAR g_szTitle[] = L"PixelStreamingClient";
-WCHAR g_szWindowClass[] = L"Main Window";                
+WCHAR g_szWindowClass[] = L"Main Window";             
+D3D12Renderer_Client* g_pRenderer;
 
-int g_ClientWidth = 1280;
-int g_ClientHeight = 720;
+const int g_ClientWidth = 1280;
+const int g_ClientHeight = 720;
+
+// 테스트용 텍스쳐
+UINT8 texturePixels[g_ClientWidth * g_ClientHeight * 4];
 
 // 전역 함수
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -40,9 +46,26 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_hInst = hInstance;
     if (!InitWindow(hInstance))
     {
-        // 문제 생기면 무조건 크래쉬 시키는 코드이다.
         __debugbreak();
         return FALSE;
+    }
+
+    // 렌더러 초기화
+    g_pRenderer = new D3D12Renderer_Client;
+    if (!g_pRenderer->Initialize(g_hWnd))
+    {
+        __debugbreak();
+        return FALSE;
+    }
+
+    // 테스트용 텍스쳐
+    for (UINT y = 0; y < g_ClientHeight; y++) {
+        for (UINT x = 0; x < g_ClientWidth; x++) {
+            texturePixels[(y * g_ClientWidth + x) * 4 + 0] = x % 256;
+            texturePixels[(y * g_ClientWidth + x) * 4 + 1] = y % 256;
+            texturePixels[(y * g_ClientWidth + x) * 4 + 2] = 0;
+            texturePixels[(y * g_ClientWidth + x) * 4 + 3] = 255;
+        }
     }
 
     MSG msg = {0};
@@ -55,8 +78,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else {
             // Rendering
-            
+            g_pRenderer->DrawStreamPixels(texturePixels, sizeof(texturePixels));
         }
+    }
+
+    if (g_pRenderer) {
+        delete g_pRenderer;
+        g_pRenderer = nullptr;
     }
 
     return (int) msg.wParam;
