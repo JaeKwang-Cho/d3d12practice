@@ -96,7 +96,7 @@ void ScreenStreamer::SendPixelsFromTexture(DWORD _dwTexIndex)
 {
 	if (m_winsockProps)
 	{
-		m_winsockProps->SendData(_dwTexIndex, m_pMappedData[_dwTexIndex], m_Image.slicePitch);
+		m_winsockProps->SendData(m_pMappedData[_dwTexIndex], m_Image.slicePitch);
 	}
 }
 
@@ -117,5 +117,5 @@ ScreenStreamer::~ScreenStreamer()
 
 bool ScreenStreamer::CheckSendingThread(UINT _uiRenderTargetIndex)
 {
-	return m_winsockProps->CanSendData(_uiRenderTargetIndex);
+	return m_winsockProps->CanSendData();
 }

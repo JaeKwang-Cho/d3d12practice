@@ -24,7 +24,7 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 	SOCKADDR_IN serverAddr;
 	int sizeAddr = sizeof(serverAddr);
 	// 1200바이트로 넘어오는 패킷을 받아서 쌓는다.
-	while(true)
+	while (true)
 	{
 		UINT8 buffer[MAX_PACKET_SIZE];
 		int bytesReceived = recvfrom(hSocket, (char*)buffer, MAX_PACKET_SIZE, 0, (sockaddr*)&serverAddr, &sizeAddr);
@@ -37,16 +37,14 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 		memcpy(&header, buffer, HEADER_SIZE);
 
 		int dataOffset = DATA_SIZE * header.currPacketNumber;
-		char* pDataToWrite = (char*)buffer;;
+		char* pDataToWrite = (char*)buffer;
 		memcpy(pTexturePointer + dataOffset, pDataToWrite + HEADER_SIZE, bytesReceived - HEADER_SIZE);
-
 		numPackets++;
 		if (numPackets >= header.totalPacketsNumber - 1)
 		{
 			break;
 		}
 	}
-
 	return 0;
 }
 
@@ -77,49 +75,51 @@ void WinSock_Props::InitializeWinSock()
 	}
 }
 
-void WinSock_Props::ReceiveData(UINT _uiThreadIndex, void* _pData)
+void WinSock_Props::ReceiveData(void* _pData)
 {
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
 
-	if (hThread[_uiThreadIndex] == 0)
+	if (hThread == 0)
 	{
-		threadParam[_uiThreadIndex].pData = _pData;
-		threadParam[_uiThreadIndex].socket = hSocket;
-		threadParam[_uiThreadIndex].addr = addr;
+		threadParam.pData = _pData;
+		threadParam.socket = hSocket;
+		threadParam.addr = addr;
 		// 지금은 LoopBack으로 테스트 한다.
 		// threadParam[_uiThreadIndex].addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
-		::InetPton(AF_INET, _T("127.0.0.1"), &threadParam[_uiThreadIndex].addr.sin_addr);
+		::InetPton(AF_INET, _T("127.0.0.1"), &threadParam.addr.sin_addr);
 
-		hThread[_uiThreadIndex] = ::CreateThread(
+		hThread= ::CreateThread(
 			NULL,
 			0,
 			ThreadReceiveFromServer,
-			(LPVOID)(threadParam + _uiThreadIndex),
+			(LPVOID)(&threadParam),
 			0,
 			&dwThreadID
 		);
 	}
 	else // 혹시나 해서 스킵 시키는 로직
 	{
-		DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
+		DWORD result = WaitForSingleObject(hThread, 0);
 		if (result == WAIT_OBJECT_0)
 		{
-			CloseHandle(hThread[_uiThreadIndex]);
-			hThread[_uiThreadIndex] = 0;
+			CloseHandle(hThread);
+			hThread = 0;
 		}
 	}
 }
 
-bool WinSock_Props::CanReceiveData(UINT _uiThreadIndex)
+bool WinSock_Props::CanReceiveData()
 {
-	if(hThread[_uiThreadIndex] == 0)
+	if(hThread == 0)
 	{
 		return true;
 	}
-	DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
+	DWORD result = WaitForSingleObject(hThread, 0);
 	if (result == WAIT_OBJECT_0)
 	{
+		CloseHandle(hThread);
+		hThread = 0;
 		return true;
 	}
 	else if (result == WAIT_TIMEOUT)
@@ -134,15 +134,13 @@ bool WinSock_Props::CanReceiveData(UINT _uiThreadIndex)
 }
 
 WinSock_Props::WinSock_Props()
-	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread{ 0, 0, 0 }, threadParam{ {0}, {0}, {0} }
+	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }
 {
 }
 
 WinSock_Props::~WinSock_Props()
 {
-	for (UINT i = 0; i < THREAD_NUMBER_BY_FRAME; i++) {
-		CloseHandle(hThread[i]);
-	}
+	CloseHandle(hThread);
 	::closesocket(hSocket);
 	::WSACleanup();
 }

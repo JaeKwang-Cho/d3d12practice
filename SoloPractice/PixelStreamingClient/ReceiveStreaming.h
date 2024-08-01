@@ -36,15 +36,15 @@ struct WinSock_Props
 {
 public:
 	void InitializeWinSock();
-	void ReceiveData(UINT _uiThreadIndex, void* _pData);
-	bool CanReceiveData(UINT _uiThreadIndex);
+	void ReceiveData(void* _pData);
+	bool CanReceiveData();
 private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
 
 	SOCKET hSocket; // 송신 소켓
-	HANDLE hThread[THREAD_NUMBER_BY_FRAME];
-	ThreadParam_Client threadParam[THREAD_NUMBER_BY_FRAME];
+	HANDLE hThread;
+	ThreadParam_Client threadParam;
 public:
 	WinSock_Props();
 	virtual ~WinSock_Props();

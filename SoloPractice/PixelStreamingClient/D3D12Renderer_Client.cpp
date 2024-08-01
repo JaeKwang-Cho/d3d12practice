@@ -345,9 +345,8 @@ void D3D12Renderer_Client::DrawStreamPixels()
 bool D3D12Renderer_Client::CheckPixelReady()
 {
 	// 대충 두 프레임 이전 것을 받는 느낌으로 간다.
-	UINT doubleFromalIndex = (m_uiTextureIndexByThread - 2 + THREAD_NUMBER_BY_FRAME) % THREAD_NUMBER_BY_FRAME;
-	m_WinSock_Props->ReceiveData(doubleFromalIndex, m_ppMappedData[m_uiTextureIndexByThread]);
-	return m_WinSock_Props->CanReceiveData(doubleFromalIndex);
+	m_WinSock_Props->ReceiveData(m_ppMappedData[m_uiTextureIndexByThread]);
+	return m_WinSock_Props->CanReceiveData();
 }
 
 void D3D12Renderer_Client::BeginRender()
@@ -374,20 +373,7 @@ void D3D12Renderer_Client::UploadStreamPixels()
 	textureData.RowPitch = m_dwWidth * 4;
 	textureData.SlicePitch = m_TextureSize;
 
-	//UpdateSubresources(m_pCommandList.Get(), m_pDefaultTexture[m_uiTextureIndexByThread].Get(), m_pUploadTexture[m_uiTextureIndexByThread].Get(), 0, 0, 1, &textureData);
 	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiTextureIndexByThread].Get(), m_pUploadTexture[m_uiTextureIndexByThread].Get(), 0, 0, 1, &textureData);
-	//memcpy(m_ppMappedData[m_uiTextureIndexByThread], _pPixels, _ui64TotalBytes);
-	/*
-	CD3DX12_RESOURCE_BARRIER barrier_READ_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture[m_uiTextureIndexByThread].Get(), D3D12_RESOURCE_STATE_COPY_DEST,
-		D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_pCommandList->ResourceBarrier(1, &barrier_READ_SRC);
-
-	m_pCommandList->CopyResource(m_pRenderTargets[m_uiTextureIndexByThread].Get(), m_pDefaultTexture[m_uiTextureIndexByThread].Get());
-
-	CD3DX12_RESOURCE_BARRIER barrier_SRC_READ = CD3DX12_RESOURCE_BARRIER::Transition(m_pDefaultTexture[m_uiTextureIndexByThread].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
-		D3D12_RESOURCE_STATE_COPY_DEST);
-	m_pCommandList->ResourceBarrier(1, &barrier_SRC_READ);
-	*/
 }
 
 void D3D12Renderer_Client::SkipCurrentFrame()
