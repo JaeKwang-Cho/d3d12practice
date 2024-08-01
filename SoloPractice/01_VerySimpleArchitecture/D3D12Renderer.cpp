@@ -17,7 +17,7 @@
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
 
-#define PIXEL_STREAMING (0)
+#define PIXEL_STREAMING (1)
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -409,7 +409,7 @@ void D3D12Renderer::Present()
 	// 여기서도 Thread가 작업 중이였으면 스킵하는거로 한다.
 	if (m_pScreenStreamer->CheckSendingThread(dwNextContextIndex) == true)
 	{
-		m_pScreenStreamer->SendFileFromTexture(uiRTIndexToCopy);
+		m_pScreenStreamer->SendPixelsFromTexture(uiRTIndexToCopy);
 	}
 	// m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy ); // 임시 코드
 #endif

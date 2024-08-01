@@ -22,7 +22,7 @@
       <Filter>pch</Filter>
     </ClInclude>
     <ClInclude Include="targetver.h" />
-    <ClInclude Include="StreamingHeader.h">
+    <ClInclude Include="ReceiveStreaming.h">
       <Filter>Streamer</Filter>
     </ClInclude>
     <ClInclude Include="D3D12Renderer_Client.h">
@@ -37,11 +37,11 @@
     <ClCompile Include="D3D12Renderer_Client.cpp">
       <Filter>Renderer\D3D12Renderer_Client</Filter>
     </ClCompile>
+    <ClCompile Include="ReceiveStreaming.cpp">
+      <Filter>Streamer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="Screen.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="packages.config" />
   </ItemGroup>
 </Project>

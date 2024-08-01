@@ -92,7 +92,7 @@ void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
 	}
 }
 
-void ScreenStreamer::SendFileFromTexture(DWORD _dwTexIndex)
+void ScreenStreamer::SendPixelsFromTexture(DWORD _dwTexIndex)
 {
 	if (m_winsockProps)
 	{

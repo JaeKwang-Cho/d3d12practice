@@ -16,7 +16,7 @@
 extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
 
 #if defined(_M_AMD64)
-extern "C" { __declspec(dllexport) extern const char* D3D12SDKPath = u8".\\D3D12\\x64\\"; } // c++20 이므로 이렇게 해줘야 한다.
+extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3D12\\x64\\"; } // c++20 이므로 이렇게 해줘야 한다.
 #endif
 
 // 전역 변수
@@ -78,7 +78,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else {
             // Rendering
-            g_pRenderer->DrawStreamPixels(texturePixels, sizeof(texturePixels));
+            g_pRenderer->DrawStreamPixels();
         }
     }
 

@@ -1,16 +1,18 @@
 #pragma once
-#include "StreamingHeader.h"
+#include "ReceiveStreaming.h"
 
 class D3D12Renderer_Client
 {
 public:
 	bool Initialize(HWND _hWnd);
 
-	void DrawStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes);
+	void DrawStreamPixels();
 protected:
 private:
+	bool CheckPixelReady();
 	void BeginRender();
-	void UploadStreamPixels(UINT8* _pPixels, UINT64 _ui64TotalBytes);
+	void UploadStreamPixels();
+	void SkipCurrentFrame();
 	void EndRender();
 	void Present();
 
@@ -43,7 +45,7 @@ private:
 	//Microsoft::WRL::ComPtr<ID3D12RootSignature> m_pRootSignature;
 	//Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture[THREAD_NUMBER_BY_FRAME];
+	//Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture[THREAD_NUMBER_BY_FRAME];
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[THREAD_NUMBER_BY_FRAME];
 	UINT8* m_ppMappedData[THREAD_NUMBER_BY_FRAME];
 
@@ -64,6 +66,9 @@ private:
 	DWORD m_dwHeight;
 
 	SRWLOCK m_srwLock;
+
+	WinSock_Props* m_WinSock_Props;
+	UINT64 m_TextureSize;
 public:
 	D3D12Renderer_Client();
 	virtual~D3D12Renderer_Client();

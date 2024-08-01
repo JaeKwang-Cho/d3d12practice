@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "StreamingHeader.h"
+#include "ReceiveStreaming.h"
 #include <format>
 #include <WS2tcpip.h>
 
@@ -11,47 +11,46 @@ void ErrorHandler(const wchar_t* _pszMessage)
 	exit(1);
 }
 
-DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
+DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 {
-	ThreadParam* pThreadParam = (ThreadParam*)_pParam;
+	ThreadParam_Client* pThreadParam = (ThreadParam_Client*)_pParam;
 
-	//송신을 위한 UDP 소켓을 하나 더 개방한다.
-	SOCKET hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
-	{
-		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
-	}
-	SOCKADDR_IN addr = { 0 };
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(CLIENT_PORT);
-	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
+	SOCKET hSocket = pThreadParam->socket;
+	char* pTexturePointer = (char*)pThreadParam->pData;
+	SOCKADDR_IN addr = pThreadParam->addr;
+	uint32_t numPackets = 0;
 
-	void* pData = pThreadParam->data;
-	size_t ulByteSize = pThreadParam->ulByteSize;
-
-	size_t uiSendCount = (ulByteSize + DATA_SIZE - 1) / DATA_SIZE;
-
-	// 1200바이트 이하로 보낼꺼여서, 스레드 스택에서 다 해결할거다.
-	for (UINT i = 0; i < uiSendCount; i++) 
+	// 송신측 정보
+	SOCKADDR_IN serverAddr;
+	int sizeAddr = sizeof(serverAddr);
+	// 1200바이트로 넘어오는 패킷을 받아서 쌓는다.
+	while(true)
 	{
 		UINT8 buffer[MAX_PACKET_SIZE];
-		ScreenImageHeader header = { i, uiSendCount };
-		memcpy(buffer, &header, HEADER_SIZE);
+		int bytesReceived = recvfrom(hSocket, (char*)buffer, MAX_PACKET_SIZE, 0, (sockaddr*)&serverAddr, &sizeAddr);
+		if (bytesReceived == SOCKET_ERROR)
+		{
+			break;
+		}
 
-		int startOffset = i * DATA_SIZE;
-		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
-		memcpy(buffer + HEADER_SIZE, pData, endOffset - startOffset);
+		ScreenImageHeader header;
+		memcpy(&header, buffer, HEADER_SIZE);
 
-		::sendto(hSocket, (char*)buffer,
-			endOffset - startOffset + HEADER_SIZE, 0,
-			(sockaddr*)&addr, sizeof(addr)
-		);
+		int dataOffset = DATA_SIZE * header.currPacketNumber;
+		char* pDataToWrite = (char*)buffer;;
+		memcpy(pTexturePointer + dataOffset, pDataToWrite + HEADER_SIZE, bytesReceived - HEADER_SIZE);
+
+		numPackets++;
+		if (numPackets >= header.totalPacketsNumber - 1)
+		{
+			break;
+		}
 	}
 
 	return 0;
 }
 
-void WinSock_Properties::InitializeWinsock()
+void WinSock_Props::InitializeWinSock()
 {
 	// winsock 초기화
 	wsa = { 0 };
@@ -70,7 +69,7 @@ void WinSock_Properties::InitializeWinsock()
 	// 포트 바인딩
 	addr = { 0 };
 	addr.sin_family = AF_INET;
-	addr.sin_port = htons(SERVER_PORT);
+	addr.sin_port = htons(CLIENT_PORT);
 	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	if (::bind(hSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
 	{
@@ -78,17 +77,15 @@ void WinSock_Properties::InitializeWinsock()
 	}
 }
 
-void WinSock_Properties::SendData(UINT _uiThreadIndex, void* _data, size_t _ulByteSize)
+void WinSock_Props::ReceiveData(UINT _uiThreadIndex, void* _pData)
 {
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
 
 	if (hThread[_uiThreadIndex] == 0)
 	{
-		threadParam[_uiThreadIndex].data = _data;
+		threadParam[_uiThreadIndex].pData = _pData;
 		threadParam[_uiThreadIndex].socket = hSocket;
-		threadParam[_uiThreadIndex].ulByteSize = _ulByteSize;
-
 		threadParam[_uiThreadIndex].addr = addr;
 		// 지금은 LoopBack으로 테스트 한다.
 		// threadParam[_uiThreadIndex].addr.sin_addr.S_un.S_addr = inet_addr("127.0.0.1");
@@ -97,7 +94,7 @@ void WinSock_Properties::SendData(UINT _uiThreadIndex, void* _data, size_t _ulBy
 		hThread[_uiThreadIndex] = ::CreateThread(
 			NULL,
 			0,
-			ThreadSendToClient,
+			ThreadReceiveFromServer,
 			(LPVOID)(threadParam + _uiThreadIndex),
 			0,
 			&dwThreadID
@@ -114,9 +111,9 @@ void WinSock_Properties::SendData(UINT _uiThreadIndex, void* _data, size_t _ulBy
 	}
 }
 
-bool WinSock_Properties::CanSendData(UINT _uiThreadIndex)
+bool WinSock_Props::CanReceiveData(UINT _uiThreadIndex)
 {
-	if (hThread[_uiThreadIndex] == 0)
+	if(hThread[_uiThreadIndex] == 0)
 	{
 		return true;
 	}
@@ -136,12 +133,12 @@ bool WinSock_Properties::CanSendData(UINT _uiThreadIndex)
 	}
 }
 
-WinSock_Properties::WinSock_Properties()
+WinSock_Props::WinSock_Props()
 	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread{ 0, 0, 0 }, threadParam{ {0}, {0}, {0} }
 {
 }
 
-WinSock_Properties::~WinSock_Properties()
+WinSock_Props::~WinSock_Props()
 {
 	for (UINT i = 0; i < THREAD_NUMBER_BY_FRAME; i++) {
 		CloseHandle(hThread[i]);

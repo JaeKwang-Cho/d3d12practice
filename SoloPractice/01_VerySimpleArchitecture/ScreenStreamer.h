@@ -10,7 +10,7 @@ public:
 	void Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _pResDescRT);
 
 	void CreatFileFromTexture(DWORD _dwTexIndex);
-	void SendFileFromTexture(DWORD _dwTexIndex);
+	void SendPixelsFromTexture(DWORD _dwTexIndex);
 protected:
 private:
 

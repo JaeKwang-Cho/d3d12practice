@@ -1,5 +1,6 @@
 #pragma once
 #include <WinSock2.h>
+#include <stdint.h>
 
 #pragma comment(lib, "ws2_32")
 
@@ -18,36 +19,33 @@ struct ScreenImageHeader
 #define THREAD_NUMBER_BY_FRAME (3)
 // =======================================
 
-// ScreenStreamer에서 사용하는 함수들.
+// D3D12Renderer_Client에서 사용하는 함수들.
 void ErrorHandler(const wchar_t* _pszMessage);
 
-// Client에게 이미지 데이터를 보내는 스레드 함수
-DWORD WINAPI ThreadSendToClient(LPVOID _pParam);
+// Server에서 이미지 데이터를 받는 스레드 함수
+DWORD WINAPI ThreadReceiveFromServer(LPVOID _pParam);
 
-struct ThreadParam
+struct ThreadParam_Client
 {
-	void* data;
+	void* pData;
 	SOCKET socket;
-	size_t ulByteSize;
 	SOCKADDR_IN addr;
 };
 
-struct WinSock_Properties
+struct WinSock_Props
 {
 public:
-	void InitializeWinsock();
-	void SendData(UINT _uiThreadIndex, void* _data, size_t _ulByteSize);
-	bool CanSendData(UINT _uiThreadIndex);
+	void InitializeWinSock();
+	void ReceiveData(UINT _uiThreadIndex, void* _pData);
+	bool CanReceiveData(UINT _uiThreadIndex);
 private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
 
 	SOCKET hSocket; // 송신 소켓
 	HANDLE hThread[THREAD_NUMBER_BY_FRAME];
-	ThreadParam threadParam[THREAD_NUMBER_BY_FRAME];
+	ThreadParam_Client threadParam[THREAD_NUMBER_BY_FRAME];
 public:
-	WinSock_Properties();
-	virtual ~WinSock_Properties();
+	WinSock_Props();
+	virtual ~WinSock_Props();
 };
-
-
