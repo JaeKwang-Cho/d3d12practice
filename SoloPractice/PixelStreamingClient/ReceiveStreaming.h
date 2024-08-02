@@ -9,6 +9,7 @@ struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
+	UINT64 sessionID;
 };
 
 #define SERVER_PORT (4567)
@@ -16,7 +17,7 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
-#define THREAD_NUMBER_BY_FRAME (3)
+#define THREAD_NUMBER_IOCP (3)
 // =======================================
 
 // D3D12Renderer_Client에서 사용하는 함수들.

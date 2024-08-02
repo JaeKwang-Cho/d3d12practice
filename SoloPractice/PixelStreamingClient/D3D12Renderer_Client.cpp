@@ -87,7 +87,7 @@ EXIT:
 
 	// #4 RTV 용 Descriptor Heap 생성
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
-	rtvHeapDesc.NumDescriptors = THREAD_NUMBER_BY_FRAME;
+	rtvHeapDesc.NumDescriptors = SWAP_CHAIN_FRAME_COUNT;
 	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; 
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_pRTVHeap.GetAddressOf())))) {
@@ -107,7 +107,7 @@ EXIT:
 	swapChainDesc.Height = uiWndHeight;
 	swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-	swapChainDesc.BufferCount = THREAD_NUMBER_BY_FRAME;
+	swapChainDesc.BufferCount = SWAP_CHAIN_FRAME_COUNT;
 	swapChainDesc.SampleDesc.Count = 1;
 	swapChainDesc.SampleDesc.Quality = 0;
 	swapChainDesc.Scaling = DXGI_SCALING_NONE;
@@ -151,7 +151,7 @@ EXIT:
 	// #6 각 Frame에 대해 Frame Resource를 만든다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart());
 
-	for (UINT i = 0; i < THREAD_NUMBER_BY_FRAME; i++) {
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
 		// Descriptor Heap에 Render Target 역할을 하는 SwapChain의 프론트 버퍼를
 		// ID3D12Resource으로 가져와서
 		m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pRenderTargets[i].GetAddressOf()));
@@ -281,7 +281,7 @@ EXIT:
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
 
-	for (UINT i = 0; i < THREAD_NUMBER_BY_FRAME; i++) 
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) 
 	{
 		/*
 		m_pD3DDevice->CreateCommittedResource(
@@ -315,16 +315,6 @@ EXIT:
 
 	return true;
 }
-
-/*
-
-0. 일단 UDP로 넘어온 텍스쳐를 완성해서 메모리에 가지고 있는다.
-1. draw가 끝나면, 텍스쳐 업로드를 command list에 건다.
-2. 텍스쳐 업로드가 끝나면 스왑체인에 복사를 건다.
----
-Command List를 여러개 두고, 멀티스레딩을 하는 것은 너무 복잡하니,
-기능 완성부터 시켜야겠다.
-*/
 
 void D3D12Renderer_Client::DrawStreamPixels()
 {
@@ -378,7 +368,7 @@ void D3D12Renderer_Client::UploadStreamPixels()
 
 void D3D12Renderer_Client::SkipCurrentFrame()
 {
-	UINT formalIndex = (m_uiTextureIndexByThread - 1 + THREAD_NUMBER_BY_FRAME) % THREAD_NUMBER_BY_FRAME;
+	UINT formalIndex = (m_uiTextureIndexByThread - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
 	CD3DX12_RESOURCE_BARRIER barrier_PRESENT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
 		D3D12_RESOURCE_STATE_COPY_SOURCE);
 	m_pCommandList->ResourceBarrier(1, &barrier_PRESENT_SRC);
@@ -458,7 +448,7 @@ void D3D12Renderer_Client::CleanUpRenderer()
 {
 	DoCopyFence();
 
-	for (DWORD i = 0; i < THREAD_NUMBER_BY_FRAME; i++) {
+	for (DWORD i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
 		WaitForCopyFenceValue(m_pui64CopyFenceValue[i]);
 	}
 

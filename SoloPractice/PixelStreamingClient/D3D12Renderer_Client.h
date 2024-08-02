@@ -3,6 +3,7 @@
 
 class D3D12Renderer_Client
 {
+	static const UINT SWAP_CHAIN_FRAME_COUNT = 3;
 public:
 	bool Initialize(HWND _hWnd);
 
@@ -36,7 +37,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> m_pCommandList;
 
 	Microsoft::WRL::ComPtr<IDXGISwapChain4> m_pSwapChain;
-	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pRenderTargets[THREAD_NUMBER_BY_FRAME];
+	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pRenderTargets[SWAP_CHAIN_FRAME_COUNT];
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pRTVHeap;
 
 	UINT m_rtvDescriptorSize;
@@ -46,8 +47,8 @@ private:
 	//Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
 	//Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture[THREAD_NUMBER_BY_FRAME];
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[THREAD_NUMBER_BY_FRAME];
-	UINT8* m_ppMappedData[THREAD_NUMBER_BY_FRAME];
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[SWAP_CHAIN_FRAME_COUNT];
+	UINT8* m_ppMappedData[SWAP_CHAIN_FRAME_COUNT];
 
 	//Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
 	UINT m_uiTextureIndexByThread;
@@ -56,7 +57,7 @@ private:
 	HANDLE m_hCopyFenceEvent;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;
 	UINT64 m_ui64FenceValue;
-	UINT64 m_pui64CopyFenceValue[THREAD_NUMBER_BY_FRAME];
+	UINT64 m_pui64CopyFenceValue[SWAP_CHAIN_FRAME_COUNT];
 
 	UINT m_dwSwapChainFlags;
 
