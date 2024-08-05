@@ -3,7 +3,7 @@
 
 #pragma comment(lib, "ws2_32")
 
-#define IOCP_VERSION (1)
+#define OVERLAPPED_IO_VERSION (1)
 
 // ============ Client 와 공유 ============ 
 struct ScreenImageHeader
@@ -18,7 +18,7 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
-#define THREAD_NUMBER_IOCP (3)
+#define THREAD_NUMBER (3)
 // =======================================
 
 // ScreenStreamer에서 사용하는 함수들.
@@ -26,12 +26,11 @@ void ErrorHandler(const wchar_t* _pszMessage);
 
 // Client에게 이미지 데이터를 보내는 스레드 함수
 DWORD WINAPI ThreadSendToClient(LPVOID _pParam);
-DWORD WINAPI ThreadSentToClient_Worker(LPVOID _pParam);
 
-#if IOCP_VERSION
-struct WorkerThreadParam
+#if OVERLAPPED_IO_VERSION
+struct Overlapped_IO_Data
 {
-	WSAOVERLAPPED emptyOL;
+	WSAOVERLAPPED wsaOL;
 	WSABUF wsabuf;
 	char pData[MAX_PACKET_SIZE];
 	SOCKADDR_IN addr;
@@ -43,7 +42,7 @@ struct ThreadParam
 {
 	void* data;
 	SOCKADDR_IN addr;
-	HANDLE hWorkerThreads[THREAD_NUMBER_IOCP];
+	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	size_t ulByteSize;
 	UINT64 sessionID;
 	SOCKET hSocket;
@@ -72,9 +71,8 @@ private:
 	HANDLE hThread;
 	ThreadParam threadParam;
 	
-#if IOCP_VERSION
-	HANDLE iocp;
-	HANDLE hWorkerThreads[THREAD_NUMBER_IOCP];
+#if OVERLAPPED_IO_VERSION
+	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	UINT64 sessionID;
 #endif
 public:

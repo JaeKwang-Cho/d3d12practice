@@ -13,7 +13,7 @@ void ErrorHandler(const wchar_t* _pszMessage)
 
 DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 {
-#if IOCP_VERSION
+#if OVERLAPPED_IO_VERSION
 	ThreadParam* pThreadParam = (ThreadParam*)_pParam;
 
 	char* pData = (char*)pThreadParam->data;
@@ -21,37 +21,61 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 	size_t uiSendCount = (ulByteSize + DATA_SIZE - 1) / DATA_SIZE;
 
+	// Overlapped I/O 요청
 	for (UINT i = 0; i < uiSendCount; i++)
 	{
-		WorkerThreadParam* workerThreadParam = new WorkerThreadParam;
+		UINT currOverlappedIOData_Index = i % MAXIMUM_WAIT_OBJECTS;
 
-		workerThreadParam->addr = pThreadParam->addr;
-		workerThreadParam->sessionID = pThreadParam->sessionID;
-		workerThreadParam->ulByteSize = pThreadParam->ulByteSize;
+		Overlapped_IO_Data* curOverlapped_Param = pThreadParam->overlapped_IO_Data[currOverlappedIOData_Index];
+
+		// (과도하게 잘랐거나) 파일이 너무 큰 경우를 대비한다.
+		if (curOverlapped_Param->wsaOL.hEvent != 0)
+		{
+			::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, INFINITE);
+		}
+
+		// 보낼 데이터를 준비하고
+		curOverlapped_Param->addr = pThreadParam->addr;
+		curOverlapped_Param->sessionID = pThreadParam->sessionID;
+		curOverlapped_Param->ulByteSize = pThreadParam->ulByteSize;
 
 		int startOffset = i * DATA_SIZE;
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
-		memcpy(workerThreadParam->pData + HEADER_SIZE, pThreadParam->data, endOffset - startOffset);
+		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pThreadParam->data, endOffset - startOffset);
 
-		ScreenImageHeader header = { i, uiSendCount, workerThreadParam->sessionID };
-		memcpy(workerThreadParam->pData, &header, HEADER_SIZE);
+		ScreenImageHeader header = { i, uiSendCount, curOverlapped_Param->sessionID };
+		memcpy(curOverlapped_Param->pData, &header, HEADER_SIZE);
 
-		workerThreadParam->wsabuf.buf = workerThreadParam->pData;
-		workerThreadParam->wsabuf.len = endOffset - startOffset + HEADER_SIZE;
+		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
+		curOverlapped_Param->wsabuf.len = endOffset - startOffset + HEADER_SIZE;
+		int addrLen = sizeof(curOverlapped_Param->addr);
+
+		// Overlapped I/O 요청을 건다.
+		curOverlapped_Param->wsaOL.hEvent = ::WSACreateEvent();
 	
 		int result = WSASendTo(
 			pThreadParam->hSocket,
-			&workerThreadParam->wsabuf, 1,
+			&curOverlapped_Param->wsabuf, 1,
 			nullptr, 0,
-			(sockaddr*)&workerThreadParam->addr, sizeof(sockaddr),
-			&workerThreadParam->emptyOL, NULL);
+			(sockaddr*)&curOverlapped_Param->addr, addrLen,
+			&curOverlapped_Param->wsaOL, NULL);
+
+		int lastError = WSAGetLastError();
 		if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
 		{
-			delete workerThreadParam;
-			workerThreadParam = nullptr;
 			ErrorHandler(L"WSASendTo Failed pending.\n");
 		}
 	}
+
+	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	{
+		if (pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent != 0)
+		{
+			::WaitForSingleObject(pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent, INFINITE);
+			pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+		}
+	}
+
 #else
 	ThreadParam* pThreadParam = (ThreadParam*)_pParam;
 
@@ -91,25 +115,6 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 	return 0;
 }
 
-DWORD __stdcall ThreadSentToClient_Worker(LPVOID _pParam)
-{
-	HANDLE iocp = (HANDLE)_pParam;
-	DWORD bytesTransferred;
-	ULONG_PTR completionKey;
-	ThreadParam* threadParam;
-
-	while (true) {
-		BOOL result = GetQueuedCompletionStatus(iocp, &bytesTransferred, &completionKey, (LPOVERLAPPED*)&threadParam, INFINITE);
-		if (!result) {
-			OutputDebugStringW(std::format(L"GQCS failed with error: {}\n", GetLastError()).c_str());
-			continue;
-		}
-		delete threadParam;
-	}
-
-	return 0;
-}
-
 void WinSock_Properties::InitializeWinsock()
 {
 	// winsock 초기화
@@ -119,7 +124,8 @@ void WinSock_Properties::InitializeWinsock()
 		ErrorHandler(L"WinSock을 초기화 할 수 없습니다.");
 	}
 
-#if IOCP_VERSION
+#if OVERLAPPED_IO_VERSION
+	/*
 	// IOCP 생성
 	iocp = ::CreateIoCompletionPort(
 		INVALID_HANDLE_VALUE,
@@ -130,40 +136,15 @@ void WinSock_Properties::InitializeWinsock()
 	{
 		ErrorHandler(L"IOCP를 생성할 수 없습니다.");
 	}
-
+	*/
 	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
-	hSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP,
-		NULL, 0, WSA_FLAG_OVERLAPPED);
+	hSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP,	NULL, 0, WSA_FLAG_OVERLAPPED);
+	//hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (hSocket == INVALID_SOCKET)
 	{
 		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
 	}
 
-	// IOCP와 UDP 소켓 연결
-	if (CreateIoCompletionPort(
-		(HANDLE)hSocket,
-		iocp,
-		(ULONG_PTR)hSocket,
-		0
-	) == NULL)
-	{
-		ErrorHandler(L"IOCP와 UDP를 연결할 수 없습니다.");
-	}
-
-	// 워커 스레드 생성
-	for (int i = 0; i < THREAD_NUMBER_IOCP; i++)
-	{
-		::CreateThread(NULL, 0,	ThreadSentToClient_Worker, (LPVOID)iocp, 0,	NULL);
-	}
-
-#else
-	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
-	hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
-	{
-		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
-	}
-#endif
 	// 포트 바인딩
 	addr = { 0 };
 	addr.sin_family = AF_INET;
@@ -173,40 +154,40 @@ void WinSock_Properties::InitializeWinsock()
 	{
 		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
 	}
+	// Overlapped 구조체 미리 할당해놓기
+	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	{
+		overlapped_IO_Data[i] = new Overlapped_IO_Data;
+		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+	}
+
+#else
+	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
+	hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hSocket == INVALID_SOCKET)
+	{
+		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
+	}
+
+	// 포트 바인딩
+	addr = { 0 };
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(SERVER_PORT);
+	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	if (::bind(hSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
+	{
+		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
+	}
+#endif
 }
 
 void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 {
-#if IOCP_VERSION
+#if OVERLAPPED_IO_VERSION
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
 
-	if (hThread == 0)
-	{
-		SOCKADDR_IN addr = { 0 };
-		addr.sin_family = AF_INET;
-		addr.sin_port = htons(CLIENT_PORT);
-		::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
-
-		threadParam.data = _data;
-		threadParam.ulByteSize = _ulByteSize;
-		threadParam.addr = addr;
-		threadParam.sessionID = sessionID;
-		threadParam.hSocket = hSocket;
-		memcpy(threadParam.hWorkerThreads, hWorkerThreads, sizeof(hWorkerThreads));
-
-		hThread = ::CreateThread(
-			NULL,
-			0,
-			ThreadSendToClient,
-			(LPVOID)(&threadParam),
-			0,
-			&dwThreadID
-		);
-
-		sessionID++;
-	}
-	else // 혹시나 해서 스킵 시키는 로직
+	if (hThread != 0) // 혹시나 해서 스킵 시키는 로직
 	{
 		DWORD result = WaitForSingleObject(hThread, 0);
 		if (result == WAIT_OBJECT_0)
@@ -214,7 +195,35 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 			CloseHandle(hThread);
 			hThread = 0;
 		}
+		else
+		{
+			return;
+		}
 	}
+	// 클라이언트 정보
+	SOCKADDR_IN addr = { 0 };
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(CLIENT_PORT);
+	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
+
+	threadParam.data = _data;
+	threadParam.ulByteSize = _ulByteSize;
+	threadParam.addr = addr;
+	threadParam.sessionID = sessionID;
+	threadParam.hSocket = hSocket;
+	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data, sizeof(overlapped_IO_Data));
+
+	//ThreadSendToClient((LPVOID)(&threadParam));
+	hThread = ::CreateThread(
+		NULL,
+		0,
+		ThreadSendToClient,
+		(LPVOID)(&threadParam),
+		0,
+		&dwThreadID
+	);
+	sessionID++;
+
 #else
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
@@ -277,18 +286,25 @@ bool WinSock_Properties::CanSendData()
 
 WinSock_Properties::WinSock_Properties()
 	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, sessionID(0)
-#if IOCP_VERSION
-	,iocp(0), hWorkerThreads{}
+#if OVERLAPPED_IO_VERSION
+	/*, iocp(0)*/, overlapped_IO_Data{}
 #endif
 {
 }
 
 WinSock_Properties::~WinSock_Properties()
 {
+#if OVERLAPPED_IO_VERSION
+	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	{
+		if (overlapped_IO_Data[i])
+		{
+			delete overlapped_IO_Data[i];
+			overlapped_IO_Data[i] = nullptr;
+		}
+	}
+#endif
 	CloseHandle(hThread);
 	::closesocket(hSocket);
-#if IOCP_VERSION
-	CloseHandle(iocp);
-#endif
 	::WSACleanup();
 }
