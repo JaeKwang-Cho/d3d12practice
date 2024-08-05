@@ -319,24 +319,25 @@ EXIT:
 void D3D12Renderer_Client::DrawStreamPixels()
 {
 	bool bReadyPixels = CheckPixelReady();
-	BeginRender();
 	if (bReadyPixels)
 	{
+		BeginRender();
 		UploadStreamPixels();
+		EndRender();
+		Present();
 	}
-	else
-	{
-		SkipCurrentFrame();
-	}
-	EndRender();
-	Present();
+	//SkipCurrentFrame();
 }
 
 bool D3D12Renderer_Client::CheckPixelReady()
 {
 	// 대충 두 프레임 이전 것을 받는 느낌으로 간다.
-	m_WinSock_Props->ReceiveData(m_ppMappedData[m_uiTextureIndexByThread]);
-	return m_WinSock_Props->CanReceiveData();
+	bool bCanReceiveData = m_WinSock_Props->CanReceiveData();
+	if (bCanReceiveData)
+	{
+		m_WinSock_Props->ReceiveData(m_ppMappedData[m_uiTextureIndexByThread]);
+	}
+	return bCanReceiveData;
 }
 
 void D3D12Renderer_Client::BeginRender()

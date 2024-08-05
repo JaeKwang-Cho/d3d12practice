@@ -41,7 +41,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 		int startOffset = i * DATA_SIZE;
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
-		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pThreadParam->data, endOffset - startOffset);
+		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
 
 		ScreenImageHeader header = { i, uiSendCount, curOverlapped_Param->sessionID };
 		memcpy(curOverlapped_Param->pData, &header, HEADER_SIZE);
@@ -51,7 +51,15 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		int addrLen = sizeof(curOverlapped_Param->addr);
 
 		// Overlapped I/O 요청을 건다.
-		curOverlapped_Param->wsaOL.hEvent = ::WSACreateEvent();
+		if (curOverlapped_Param->wsaOL.hEvent == 0)
+		{
+			curOverlapped_Param->wsaOL.hEvent = ::WSACreateEvent();
+		}
+		else
+		{
+			WSAResetEvent(curOverlapped_Param->wsaOL.hEvent);
+		}
+		
 	
 		int result = WSASendTo(
 			pThreadParam->hSocket,
@@ -299,6 +307,11 @@ WinSock_Properties::~WinSock_Properties()
 	{
 		if (overlapped_IO_Data[i])
 		{
+			if (overlapped_IO_Data[i]->wsaOL.hEvent != 0)
+			{
+				::WaitForSingleObject(overlapped_IO_Data[i]->wsaOL.hEvent, INFINITE);
+				overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+			}
 			delete overlapped_IO_Data[i];
 			overlapped_IO_Data[i] = nullptr;
 		}

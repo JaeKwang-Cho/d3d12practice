@@ -18,7 +18,6 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
-#define THREAD_NUMBER (3)
 // =======================================
 
 // ScreenStreamer에서 사용하는 함수들.

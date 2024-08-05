@@ -20,6 +20,7 @@ public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
 
 	void Update(const GameTimer& _gameTimer);
+	void TryPixelStreaming() { bTryPixelStreaming = true; };
 
 	void BeginRender();
 	void CopyRenderTarget();
@@ -155,6 +156,7 @@ private:
 
 	// ScreenStreamer
 	ScreenStreamer* m_pScreenStreamer;
+	bool bTryPixelStreaming;
 
 public:
 	D3D12Renderer();

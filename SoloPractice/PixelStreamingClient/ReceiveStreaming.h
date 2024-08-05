@@ -4,6 +4,8 @@
 
 #pragma comment(lib, "ws2_32")
 
+#define OVERLAPPED_IO_VERSION (1)
+
 // ============ Client 와 공유 ============ 
 struct ScreenImageHeader
 {
@@ -17,7 +19,6 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
-#define THREAD_NUMBER_IOCP (3)
 // =======================================
 
 // D3D12Renderer_Client에서 사용하는 함수들.
@@ -26,13 +27,33 @@ void ErrorHandler(const wchar_t* _pszMessage);
 // Server에서 이미지 데이터를 받는 스레드 함수
 DWORD WINAPI ThreadReceiveFromServer(LPVOID _pParam);
 
+#if OVERLAPPED_IO_VERSION
+struct Overlapped_IO_Data
+{
+	WSAOVERLAPPED wsaOL;
+	WSABUF wsabuf;
+	char pData[MAX_PACKET_SIZE];
+	SOCKADDR_IN addr;
+	DWORD ulByteSize;
+	UINT64 sessionID;
+};
+
+struct ThreadParam_Client
+{
+	void* pData;
+	SOCKET socket;
+	SOCKADDR_IN addr;
+	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
+	UINT64 sessionID;
+};
+#else
 struct ThreadParam_Client
 {
 	void* pData;
 	SOCKET socket;
 	SOCKADDR_IN addr;
 };
-
+#endif
 struct WinSock_Props
 {
 public:
@@ -46,6 +67,11 @@ private:
 	SOCKET hSocket; // 송신 소켓
 	HANDLE hThread;
 	ThreadParam_Client threadParam;
+
+#if OVERLAPPED_IO_VERSION
+	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
+	UINT64 sessionID;
+#endif
 public:
 	WinSock_Props();
 	virtual ~WinSock_Props();

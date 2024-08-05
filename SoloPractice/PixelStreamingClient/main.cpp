@@ -28,6 +28,7 @@ D3D12Renderer_Client* g_pRenderer;
 
 const int g_ClientWidth = 1280;
 const int g_ClientHeight = 720;
+ULONGLONG g_PixelStreamingTime = 0;
 
 // 테스트용 텍스쳐
 UINT8 texturePixels[g_ClientWidth * g_ClientHeight * 4];
@@ -78,7 +79,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
         else {
             // Rendering
-            g_pRenderer->DrawStreamPixels();
+            ULONGLONG CurrTickTime = GetTickCount64();
+            if (CurrTickTime - g_PixelStreamingTime > 16)
+            {
+                g_PixelStreamingTime = CurrTickTime;
+                g_pRenderer->DrawStreamPixels();
+            }
         }
     }
 

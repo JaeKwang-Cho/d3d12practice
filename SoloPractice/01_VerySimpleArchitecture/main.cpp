@@ -203,6 +203,7 @@ void RunGame()
     {
         // Update Scene with 60FPS
         Update();
+        g_pRenderer->TryPixelStreaming();
         g_PrevUpdateTime = CurrTickTime;
     }
    

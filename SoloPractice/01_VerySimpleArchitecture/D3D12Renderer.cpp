@@ -335,7 +335,7 @@ void D3D12Renderer::BeginRender()
 void D3D12Renderer::CopyRenderTarget()
 {
 #if PIXEL_STREAMING
-	if (m_pScreenStreamer->CheckSendingThread(m_uiRenderTargetIndex) == false) 
+	if (bTryPixelStreaming == false && m_pScreenStreamer->CheckSendingThread(m_uiRenderTargetIndex) == false)
 	{
 		return;
 	}
@@ -411,6 +411,7 @@ void D3D12Renderer::Present()
 	{
 		m_pScreenStreamer->SendPixelsFromTexture(uiRTIndexToCopy);
 	}
+	bTryPixelStreaming = false;
 	// m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy ); // 임시 코드
 #endif
 
@@ -1082,6 +1083,11 @@ void D3D12Renderer::CleanUpRenderer()
 		m_flyCamera = nullptr;
 	}
 
+	if (m_pScreenStreamer)
+	{
+		delete m_pScreenStreamer;
+		m_pScreenStreamer = nullptr; 
+	}
 
 	CleanupFence();
 }
@@ -1100,7 +1106,7 @@ D3D12Renderer::D3D12Renderer()
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
 	m_flyCamera(nullptr), m_LastMousePos{},
-	m_pScreenStreamer(nullptr)
+	m_pScreenStreamer(nullptr), bTryPixelStreaming(false)
 {
 }
 
