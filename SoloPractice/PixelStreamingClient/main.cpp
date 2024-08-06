@@ -3,12 +3,12 @@
 
 #include "pch.h"
 #include "D3D12Renderer_Client.h"
+#include "lz4.h"
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
-#pragma comment(lib, "dxguid.lib");
-
+#pragma comment(lib, "dxguid.lib")
 #define MAX_LOADSTRING 100
 
 // D3D12 Agility 설정
@@ -43,6 +43,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_ LPWSTR    lpCmdLine,
                      _In_ int       nCmdShow)
 {
+    
+    const char* input = "1234567890abcdefghijklmnopqrstuvwxyz\n";
+    int inputSize = strlen(input) + 1;
+    char compressed[100];
+    char decompressed[100];
+
+    OutputDebugStringA(input);
+    int compressSize = LZ4_compress_fast(input, compressed, inputSize, LZ4_compressBound(inputSize), 100);
+    int decompressSize = LZ4_decompress_safe_partial(compressed, decompressed, compressSize, inputSize, 100);
+    OutputDebugStringA(decompressed);
+    
+    
     // 윈도우 초기화
     g_hInst = hInstance;
     if (!InitWindow(hInstance))

@@ -16,6 +16,9 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{cf749246-46c9-4d8c-80c9-df507c89afa6}</UniqueIdentifier>
     </Filter>
+    <Filter Include="lz4">
+      <UniqueIdentifier>{11ad73d6-be21-47e2-a8a7-c194bfd768ab}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -43,5 +46,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="vcpkg.json" />
+    <None Include="vcpkg-configuration.json" />
   </ItemGroup>
 </Project>
