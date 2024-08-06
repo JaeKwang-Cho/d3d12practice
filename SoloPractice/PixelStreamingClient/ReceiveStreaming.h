@@ -5,6 +5,8 @@
 #pragma comment(lib, "ws2_32")
 
 #define OVERLAPPED_IO_VERSION (1)
+#define LZ4_COMPRESSION (1)
+#define SINGLE_THREAD (1)
 
 // ============ Client 와 공유 ============ 
 struct ScreenImageHeader
@@ -19,6 +21,10 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
+
+#if LZ4_COMPRESSION
+static const size_t OriginalTextureSize = (1280 * 720 * 4);
+#endif
 // =======================================
 
 // D3D12Renderer_Client에서 사용하는 함수들.
@@ -41,6 +47,9 @@ struct Overlapped_IO_Data
 struct ThreadParam_Client
 {
 	void* pData;
+#if LZ4_COMPRESSION
+	char* pCompressed;
+#endif
 	SOCKET socket;
 	SOCKADDR_IN addr;
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
@@ -65,12 +74,16 @@ private:
 	SOCKADDR_IN addr;
 
 	SOCKET hSocket; // 송신 소켓
+	bool bDrawing;
 	HANDLE hThread;
 	ThreadParam_Client threadParam;
 
 #if OVERLAPPED_IO_VERSION
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	UINT64 sessionID;
+#endif
+#if LZ4_COMPRESSION
+	char* compressedTexture;
 #endif
 public:
 	WinSock_Props();

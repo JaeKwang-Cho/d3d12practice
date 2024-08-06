@@ -17,7 +17,7 @@
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
 
-#define PIXEL_STREAMING (1)
+#define PIXEL_STREAMING (0)
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {

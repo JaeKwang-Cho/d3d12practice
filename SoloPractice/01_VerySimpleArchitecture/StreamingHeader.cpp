@@ -2,6 +2,7 @@
 #include "StreamingHeader.h"
 #include <format>
 #include <WS2tcpip.h>
+#include <lz4.h>
 
 void ErrorHandler(const wchar_t* _pszMessage)
 {
@@ -214,8 +215,19 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 	addr.sin_port = htons(CLIENT_PORT);
 	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 
+#if LZ4_COMPRESSION
+	int inputSize = _ulByteSize;
+	int compressSize = LZ4_compress_fast((char*)_data, compressedTexture, inputSize, LZ4_compressBound(inputSize), 1);
+
+	threadParam.data = compressedTexture;
+	threadParam.ulByteSize = compressSize;
+#else
 	threadParam.data = _data;
 	threadParam.ulByteSize = _ulByteSize;
+#endif
+
+	threadParam.data = compressedTexture;
+	threadParam.ulByteSize = compressSize;
 	threadParam.addr = addr;
 	threadParam.sessionID = sessionID;
 	threadParam.hSocket = hSocket;
@@ -297,7 +309,11 @@ WinSock_Properties::WinSock_Properties()
 #if OVERLAPPED_IO_VERSION
 	/*, iocp(0)*/, overlapped_IO_Data{}
 #endif
+#if LZ4_COMPRESSION
+	,compressedTexture(nullptr)
+#endif
 {
+	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
 
 WinSock_Properties::~WinSock_Properties()
@@ -315,6 +331,13 @@ WinSock_Properties::~WinSock_Properties()
 			delete overlapped_IO_Data[i];
 			overlapped_IO_Data[i] = nullptr;
 		}
+	}
+#endif
+#if LZ4_COMPRESSION
+	if (compressedTexture)
+	{
+		delete[] compressedTexture;
+		compressedTexture = nullptr;
 	}
 #endif
 	CloseHandle(hThread);

@@ -3,6 +3,8 @@
 #include <format>
 #include <WS2tcpip.h>
 
+#include <lz4.h>
+
 void ErrorHandler(const wchar_t* _pszMessage)
 {
 	OutputDebugStringW(std::format(L"ERROR: {}\n", _pszMessage).c_str());
@@ -17,12 +19,19 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 	ThreadParam_Client* pThreadParam = (ThreadParam_Client*)_pParam;
 
 	SOCKET hSocket = pThreadParam->socket;
+#if LZ4_COMPRESSION
+	char* pTexturePointer = pThreadParam->pCompressed;
+#else
 	char* pTexturePointer = (char*)pThreadParam->pData;
+#endif
+	
 	SOCKADDR_IN addr = pThreadParam->addr;
 	uint32_t numPackets = 0;
 
 	UINT64 curSessionID = pThreadParam->sessionID;
-	bool bGetFirstSessionFlags = false;
+	bool bGetFirstOfSessionFlags = false;
+	uint32_t totalPacketNumber = 0;
+	size_t totalByteSize = 0;
 
 	// 송신측 정보
 	SOCKADDR_IN serverAddr;
@@ -42,19 +51,14 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 				ScreenImageHeader header;
 				memcpy(&header, curOverlapped_Param->pData, HEADER_SIZE);
 
-				if (bGetFirstSessionFlags == false)
-				{
-					curSessionID = header.sessionID;
-					bGetFirstSessionFlags = true;
-				}
-
 				if (MAX_PACKET_SIZE >= curOverlapped_Param->ulByteSize)
 				{
 					int dataOffset = DATA_SIZE * header.currPacketNumber;
 					char* pDataToWrite = (char*)curOverlapped_Param->wsabuf.buf;
+					totalByteSize += curOverlapped_Param->ulByteSize;
 					memcpy(pTexturePointer + dataOffset, pDataToWrite + HEADER_SIZE, curOverlapped_Param->ulByteSize);
 
-					if (numPackets >= header.totalPacketsNumber - 1)
+					if (numPackets >= header.totalPacketsNumber - 1 || curSessionID >= header.sessionID)
 					{
 						break;
 					}
@@ -80,7 +84,23 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 		{
 			break;
 		}
+
+		if (bGetFirstOfSessionFlags == false)
+		{
+			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, INFINITE);
+
+			ScreenImageHeader header;
+			memcpy(&header, curOverlapped_Param->pData, HEADER_SIZE);
+
+			curSessionID = header.sessionID;
+			totalPacketNumber = header.totalPacketsNumber;
+			bGetFirstOfSessionFlags = true;
+		}
 		numPackets++;
+		if (numPackets >= totalPacketNumber - 1)
+		{
+			break;
+		}
 	}
 
 	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
@@ -95,11 +115,13 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 			{
 				int dataOffset = DATA_SIZE * header.currPacketNumber;
 				char* pDataToWrite = (char*)pThreadParam->overlapped_IO_Data[i]->pData;
+				totalByteSize += pThreadParam->overlapped_IO_Data[i]->ulByteSize;
 				memcpy(pTexturePointer + dataOffset, pDataToWrite + HEADER_SIZE, pThreadParam->overlapped_IO_Data[i]->ulByteSize - HEADER_SIZE);
 			}
 			pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent = 0;
 		}
 	}
+	int decompressSize = LZ4_decompress_safe_partial(pTexturePointer, (char*)pThreadParam->pData, totalByteSize, OriginalTextureSize, OriginalTextureSize);
 #else
 	ThreadParam_Client* pThreadParam = (ThreadParam_Client*)_pParam;
 
@@ -192,6 +214,8 @@ void WinSock_Props::InitializeWinSock()
 
 void WinSock_Props::ReceiveData(void* _pData)
 {
+	bDrawing = false;
+
 #if OVERLAPPED_IO_VERSION
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
@@ -210,6 +234,7 @@ void WinSock_Props::ReceiveData(void* _pData)
 		}
 	}
 	threadParam.pData = _pData;
+	threadParam.pCompressed = compressedTexture;
 	threadParam.socket = hSocket;
 	threadParam.addr = addr;
 	threadParam.sessionID = sessionID;
@@ -217,8 +242,9 @@ void WinSock_Props::ReceiveData(void* _pData)
 	// 지금은 LoopBack으로 테스트 한다.
 	::InetPton(AF_INET, _T("127.0.0.1"), &threadParam.addr.sin_addr);
 
-	//ThreadReceiveFromServer((LPVOID)(&threadParam));
+	ThreadReceiveFromServer((LPVOID)(&threadParam));
 
+	/*
 	hThread = ::CreateThread(
 		NULL,
 		0,
@@ -227,7 +253,7 @@ void WinSock_Props::ReceiveData(void* _pData)
 		0,
 		&dwThreadID
 	);
-	
+	*/
 	sessionID++;
 #else
 	// 메시지 송신 스레드 생성
@@ -261,10 +287,14 @@ void WinSock_Props::ReceiveData(void* _pData)
 		}
 	}
 #endif
+	bDrawing = false;
 }
 
 bool WinSock_Props::CanReceiveData()
 {
+#if SINGLE_THREAD
+	return !bDrawing;
+#else
 	if(hThread == 0)
 	{
 		return true;
@@ -285,14 +315,19 @@ bool WinSock_Props::CanReceiveData()
 		__debugbreak();
 		return false;
 	}
+#endif
 }
 
 WinSock_Props::WinSock_Props()
 	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }
 #if OVERLAPPED_IO_VERSION
-	, overlapped_IO_Data{}, sessionID(0)
+	, overlapped_IO_Data{}, sessionID(0), bDrawing(false)
+#endif
+#if LZ4_COMPRESSION
+	, compressedTexture(nullptr)
 #endif
 {
+	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
 
 WinSock_Props::~WinSock_Props()
@@ -305,6 +340,13 @@ WinSock_Props::~WinSock_Props()
 			delete overlapped_IO_Data[i];
 			overlapped_IO_Data[i] = nullptr;
 		}
+	}
+#endif
+#if LZ4_COMPRESSION
+	if (compressedTexture)
+	{
+		delete[] compressedTexture;
+		compressedTexture = nullptr;
 	}
 #endif
 	CloseHandle(hThread);

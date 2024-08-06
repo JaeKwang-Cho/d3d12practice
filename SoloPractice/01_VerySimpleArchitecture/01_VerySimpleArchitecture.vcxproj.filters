@@ -190,6 +190,8 @@
     <None Include="Shaders\Outline.hlsl">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="vcpkg.json" />
+    <None Include="vcpkg-configuration.json" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />

@@ -4,6 +4,7 @@
 #pragma comment(lib, "ws2_32")
 
 #define OVERLAPPED_IO_VERSION (1)
+#define LZ4_COMPRESSION (1)
 
 // ============ Client 와 공유 ============ 
 struct ScreenImageHeader
@@ -18,6 +19,10 @@ struct ScreenImageHeader
 #define MAX_PACKET_SIZE (1200)
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
+
+#if LZ4_COMPRESSION
+static const size_t OriginalTextureSize = (1280 * 720 * 4);
+#endif
 // =======================================
 
 // ScreenStreamer에서 사용하는 함수들.
@@ -74,6 +79,11 @@ private:
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	UINT64 sessionID;
 #endif
+
+#if LZ4_COMPRESSION
+	char* compressedTexture;
+#endif
+
 public:
 	WinSock_Properties();
 	virtual ~WinSock_Properties();
