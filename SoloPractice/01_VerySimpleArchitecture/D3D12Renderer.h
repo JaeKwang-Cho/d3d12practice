@@ -157,6 +157,7 @@ private:
 	// ScreenStreamer
 	ScreenStreamer* m_pScreenStreamer;
 	bool bTryPixelStreaming;
+	bool bCheckUpdateTexture;
 
 public:
 	D3D12Renderer();

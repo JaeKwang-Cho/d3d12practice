@@ -87,7 +87,11 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 
 		if (bGetFirstOfSessionFlags == false)
 		{
-			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, INFINITE);
+			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, 1000);
+			if (result == WAIT_TIMEOUT)
+			{
+				return 1;
+			}
 
 			ScreenImageHeader header;
 			memcpy(&header, curOverlapped_Param->pData, HEADER_SIZE);
@@ -107,7 +111,7 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 	{
 		if (pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent != 0)
 		{
-			::WaitForSingleObject(pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent, INFINITE);
+			::WaitForSingleObject(pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent, 10);
 
 			ScreenImageHeader header;
 			memcpy(&header, pThreadParam->overlapped_IO_Data[i]->pData, HEADER_SIZE);
@@ -121,7 +125,7 @@ DWORD __stdcall ThreadReceiveFromServer(LPVOID _pParam)
 			pThreadParam->overlapped_IO_Data[i]->wsaOL.hEvent = 0;
 		}
 	}
-	int decompressSize = LZ4_decompress_safe_partial(pTexturePointer, (char*)pThreadParam->pData, totalByteSize, OriginalTextureSize, OriginalTextureSize);
+	int decompressSize = LZ4_decompress_safe(pTexturePointer, (char*)pThreadParam->pData, totalByteSize, OriginalTextureSize);
 #else
 	ThreadParam_Client* pThreadParam = (ThreadParam_Client*)_pParam;
 
@@ -192,6 +196,9 @@ void WinSock_Props::InitializeWinSock()
 		overlapped_IO_Data[i] = new Overlapped_IO_Data;
 		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
 	}
+	overlapped_IO_State = new Overlapped_IO_State;
+	// 압축 텍스쳐 버퍼 미리 생성
+	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 #else
 	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
 	hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -321,13 +328,12 @@ bool WinSock_Props::CanReceiveData()
 WinSock_Props::WinSock_Props()
 	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }
 #if OVERLAPPED_IO_VERSION
-	, overlapped_IO_Data{}, sessionID(0), bDrawing(false)
+	, overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0), bDrawing(false)
 #endif
 #if LZ4_COMPRESSION
 	, compressedTexture(nullptr)
 #endif
 {
-	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
 
 WinSock_Props::~WinSock_Props()
@@ -340,6 +346,11 @@ WinSock_Props::~WinSock_Props()
 			delete overlapped_IO_Data[i];
 			overlapped_IO_Data[i] = nullptr;
 		}
+	}
+	if (overlapped_IO_State)
+	{
+		delete overlapped_IO_State;
+		overlapped_IO_State = nullptr;
 	}
 #endif
 #if LZ4_COMPRESSION

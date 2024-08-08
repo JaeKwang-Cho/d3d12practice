@@ -19,8 +19,56 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 	char* pData = (char*)pThreadParam->data;
 	size_t ulByteSize = pThreadParam->ulByteSize;
-
 	size_t uiSendCount = (ulByteSize + DATA_SIZE - 1) / DATA_SIZE;
+
+	// State Exchage
+	{
+		Overlapped_IO_State* overlapped_IO_State = pThreadParam->overlapped_IO_State;
+		memset(overlapped_IO_State, 0, sizeof(StateExchange));
+
+		overlapped_IO_State->addr = pThreadParam->addr;
+		overlapped_IO_State->sessionID = pThreadParam->sessionID;
+		overlapped_IO_State->ulByteSize = pThreadParam->ulByteSize;
+		overlapped_IO_State->state.compressedSize = ulByteSize;
+		overlapped_IO_State->state.totalPacketsNumber = uiSendCount;
+		overlapped_IO_State->wsabuf.buf = (char*)&overlapped_IO_State->state;
+		overlapped_IO_State->wsabuf.len = sizeof(StateExchange);
+		int addrLen = sizeof(overlapped_IO_State->addr);
+		overlapped_IO_State->wsaOL.hEvent = ::WSACreateEvent();
+
+		// 메타 데이터 보내고
+		int result = WSASendTo(
+			pThreadParam->hSendSocket,
+			&overlapped_IO_State->wsabuf, 1,
+			nullptr, 0,
+			(sockaddr*)&overlapped_IO_State->addr, addrLen,
+			&overlapped_IO_State->wsaOL, NULL);
+		int lastError = WSAGetLastError();
+		if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+		{
+			ErrorHandler(L"WSASendTo Failed pending.\n");
+		}
+
+		DWORD waitResult = ::WaitForSingleObject(overlapped_IO_State->wsaOL.hEvent, INFINITE);
+		WSAResetEvent(overlapped_IO_State->wsaOL.hEvent);
+		DWORD flags = 0;
+		// 클라이언트 상태 확인
+		result = WSARecv(pThreadParam->hRecvSocket, &overlapped_IO_State->wsabuf, 1, &overlapped_IO_State->ulByteSize, &flags, &overlapped_IO_State->wsaOL, nullptr);
+		lastError = WSAGetLastError();
+		if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+		{
+			ErrorHandler(L"WSARecv Failed pending.\n");
+		}
+		waitResult = ::WaitForSingleObject(overlapped_IO_State->wsaOL.hEvent, 17); // 서버 기준 1프레임 기다리기
+		if (waitResult != WAIT_OBJECT_0)
+		{
+			return 1; // 클라이언트 오류
+		}
+		if (overlapped_IO_State->state.eClientState == E_ClientState::FULL)
+		{
+			return 1; // 클라이언트 꽉참 (스킵 할지말지 고민중)
+		}
+	}
 
 	// Overlapped I/O 요청
 	for (UINT i = 0; i < uiSendCount; i++)
@@ -60,10 +108,9 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		{
 			WSAResetEvent(curOverlapped_Param->wsaOL.hEvent);
 		}
-		
-	
+
 		int result = WSASendTo(
-			pThreadParam->hSocket,
+			pThreadParam->hSendSocket,
 			&curOverlapped_Param->wsabuf, 1,
 			nullptr, 0,
 			(sockaddr*)&curOverlapped_Param->addr, addrLen,
@@ -89,8 +136,8 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 	ThreadParam* pThreadParam = (ThreadParam*)_pParam;
 
 	//송신을 위한 UDP 소켓을 하나 더 개방한다.
-	SOCKET hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
+	SOCKET hSendSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hSendSocket == INVALID_SOCKET)
 	{
 		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
 	}
@@ -115,7 +162,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
 		memcpy(buffer + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
 
-		::sendto(hSocket, (char*)buffer,
+		::sendto(hSendSocket, (char*)buffer,
 			endOffset - startOffset + HEADER_SIZE, 0,
 			(sockaddr*)&addr, sizeof(addr)
 		);
@@ -134,22 +181,16 @@ void WinSock_Properties::InitializeWinsock()
 	}
 
 #if OVERLAPPED_IO_VERSION
-	/*
-	// IOCP 생성
-	iocp = ::CreateIoCompletionPort(
-		INVALID_HANDLE_VALUE,
-		NULL,
-		0,
-		0);
-	if (iocp == NULL) 
+	// 송신 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
+	hSendSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP,	NULL, 0, WSA_FLAG_OVERLAPPED);
+	if (hSendSocket == INVALID_SOCKET)
 	{
-		ErrorHandler(L"IOCP를 생성할 수 없습니다.");
+		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
 	}
-	*/
-	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
-	hSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP,	NULL, 0, WSA_FLAG_OVERLAPPED);
-	//hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
+
+	// 수신 소켓 생성
+	hRecvSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	if (hRecvSocket == INVALID_SOCKET)
 	{
 		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
 	}
@@ -159,21 +200,24 @@ void WinSock_Properties::InitializeWinsock()
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(SERVER_PORT);
 	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	if (::bind(hSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
+	if (::bind(hRecvSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
 	{
 		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
 	}
+
 	// Overlapped 구조체 미리 할당해놓기
 	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
 	{
 		overlapped_IO_Data[i] = new Overlapped_IO_Data;
 		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
 	}
-
+	overlapped_IO_State = new Overlapped_IO_State;
+	// 압축 텍스쳐 버퍼 미리 할당
+	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 #else
 	// 소켓 생성. SOCK_DGRAM, IPPROTO_UDP 으로 설정
-	hSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
+	hSendSocket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hSendSocket == INVALID_SOCKET)
 	{
 		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
 	}
@@ -183,7 +227,7 @@ void WinSock_Properties::InitializeWinsock()
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(SERVER_PORT);
 	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-	if (::bind(hSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
+	if (::bind(hSendSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
 	{
 		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
 	}
@@ -201,6 +245,12 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 		DWORD result = WaitForSingleObject(hThread, 0);
 		if (result == WAIT_OBJECT_0)
 		{
+			DWORD dwExitCode = -1;
+			GetExitCodeThread(hThread, &dwExitCode);
+			if (dwExitCode == 0)
+			{
+				sessionID++;
+			}
 			CloseHandle(hThread);
 			hThread = 0;
 		}
@@ -230,8 +280,10 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 	threadParam.ulByteSize = compressSize;
 	threadParam.addr = addr;
 	threadParam.sessionID = sessionID;
-	threadParam.hSocket = hSocket;
+	threadParam.hSendSocket = hSendSocket;
+	threadParam.hRecvSocket = hRecvSocket;
 	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data, sizeof(overlapped_IO_Data));
+	threadParam.overlapped_IO_State = overlapped_IO_State;
 
 	//ThreadSendToClient((LPVOID)(&threadParam));
 	hThread = ::CreateThread(
@@ -242,8 +294,6 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 		0,
 		&dwThreadID
 	);
-	sessionID++;
-
 #else
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
@@ -305,15 +355,14 @@ bool WinSock_Properties::CanSendData()
 }
 
 WinSock_Properties::WinSock_Properties()
-	:wsa{ 0 }, addr{ 0 }, hSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, sessionID(0)
+	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }
 #if OVERLAPPED_IO_VERSION
-	/*, iocp(0)*/, overlapped_IO_Data{}
+	/*, iocp(0)*/, overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0)
 #endif
 #if LZ4_COMPRESSION
 	,compressedTexture(nullptr)
 #endif
 {
-	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
 
 WinSock_Properties::~WinSock_Properties()
@@ -332,6 +381,11 @@ WinSock_Properties::~WinSock_Properties()
 			overlapped_IO_Data[i] = nullptr;
 		}
 	}
+	if (overlapped_IO_State)
+	{
+		delete overlapped_IO_State;
+		overlapped_IO_State = nullptr;
+	}
 #endif
 #if LZ4_COMPRESSION
 	if (compressedTexture)
@@ -341,6 +395,7 @@ WinSock_Properties::~WinSock_Properties()
 	}
 #endif
 	CloseHandle(hThread);
-	::closesocket(hSocket);
+	::closesocket(hSendSocket);
+	::closesocket(hRecvSocket);
 	::WSACleanup();
 }

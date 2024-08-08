@@ -17,7 +17,7 @@
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
 
-#define PIXEL_STREAMING (0)
+#define PIXEL_STREAMING (1)
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -337,6 +337,7 @@ void D3D12Renderer::CopyRenderTarget()
 #if PIXEL_STREAMING
 	if (bTryPixelStreaming == false && m_pScreenStreamer->CheckSendingThread(m_uiRenderTargetIndex) == false)
 	{
+		bCheckUpdateTexture = true;
 		return;
 	}
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
@@ -351,6 +352,7 @@ void D3D12Renderer::CopyRenderTarget()
 
 	D3D12_RESOURCE_BARRIER trans_SRC_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	pCommandList->ResourceBarrier(1, &trans_SRC_RT);
+	bCheckUpdateTexture = true;
 #endif
 }
 
@@ -407,10 +409,11 @@ void D3D12Renderer::Present()
 #if PIXEL_STREAMING
 	// fence 값이 만족했으면, copy도 완료된 것이니 send를 건다.
 	// 여기서도 Thread가 작업 중이였으면 스킵하는거로 한다.
-	if (m_pScreenStreamer->CheckSendingThread(dwNextContextIndex) == true)
+	if (bCheckUpdateTexture == true && m_pScreenStreamer->CheckSendingThread(dwNextContextIndex) == true)
 	{
 		m_pScreenStreamer->SendPixelsFromTexture(uiRTIndexToCopy);
 	}
+	bCheckUpdateTexture = false;
 	bTryPixelStreaming = false;
 	// m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy ); // 임시 코드
 #endif
@@ -1106,7 +1109,7 @@ D3D12Renderer::D3D12Renderer()
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
 	m_flyCamera(nullptr), m_LastMousePos{},
-	m_pScreenStreamer(nullptr), bTryPixelStreaming(false)
+	m_pScreenStreamer(nullptr), bTryPixelStreaming(false), bCheckUpdateTexture(false)
 {
 }
 

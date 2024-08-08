@@ -7,6 +7,30 @@
 #define LZ4_COMPRESSION (1)
 
 // ============ Client 客 傍蜡 ============ 
+enum class E_ClientState : UINT8
+{
+	FULL = 0,
+	READY = 1,
+	END
+};
+
+struct StateExchange
+{
+	uint32_t totalPacketsNumber;
+	size_t compressedSize;
+	E_ClientState eClientState;
+};
+
+struct Overlapped_IO_State
+{
+	WSAOVERLAPPED wsaOL;
+	WSABUF wsabuf;
+	StateExchange state;
+	SOCKADDR_IN addr;
+	DWORD ulByteSize;
+	UINT64 sessionID;
+};
+
 struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
@@ -38,7 +62,7 @@ struct Overlapped_IO_Data
 	WSABUF wsabuf;
 	char pData[MAX_PACKET_SIZE];
 	SOCKADDR_IN addr;
-	size_t ulByteSize;
+	DWORD ulByteSize;
 	UINT64 sessionID;
 };
 
@@ -47,9 +71,11 @@ struct ThreadParam
 	void* data;
 	SOCKADDR_IN addr;
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
-	size_t ulByteSize;
+	Overlapped_IO_State* overlapped_IO_State;
+	DWORD ulByteSize;
 	UINT64 sessionID;
-	SOCKET hSocket;
+	SOCKET hSendSocket;
+	SOCKET hRecvSocket;
 };
 
 #else
@@ -71,12 +97,14 @@ private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
 
-	SOCKET hSocket; // 价脚 家南
+	SOCKET hSendSocket; // 价脚 家南
+	SOCKET hRecvSocket; // 荐脚 家南
 	HANDLE hThread;
 	ThreadParam threadParam;
 	
 #if OVERLAPPED_IO_VERSION
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
+	Overlapped_IO_State* overlapped_IO_State;
 	UINT64 sessionID;
 #endif
 
