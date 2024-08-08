@@ -68,7 +68,7 @@ private:
 
 	SRWLOCK m_srwLock;
 
-	WinSock_Props* m_WinSock_Props;
+	ImageReceiveManager* m_WinSock_Props;
 	UINT64 m_TextureSize;
 public:
 	D3D12Renderer_Client();

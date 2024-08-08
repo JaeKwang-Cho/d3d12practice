@@ -62,7 +62,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		waitResult = ::WaitForSingleObject(overlapped_IO_State->wsaOL.hEvent, 17); // 서버 기준 1프레임 기다리기
 		if (waitResult != WAIT_OBJECT_0)
 		{
-			return 1; // 클라이언트 오류
+			return 1;
 		}
 		if (overlapped_IO_State->state.eClientState == E_ClientState::FULL)
 		{
@@ -171,7 +171,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 	return 0;
 }
 
-void WinSock_Properties::InitializeWinsock()
+void ImageSendManager::InitializeWinsock()
 {
 	// winsock 초기화
 	wsa = { 0 };
@@ -234,7 +234,7 @@ void WinSock_Properties::InitializeWinsock()
 #endif
 }
 
-void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
+void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 {
 #if OVERLAPPED_IO_VERSION
 	// 메시지 송신 스레드 생성
@@ -330,7 +330,7 @@ void WinSock_Properties::SendData(void* _data, size_t _ulByteSize)
 #endif
 }
 
-bool WinSock_Properties::CanSendData()
+bool ImageSendManager::CanSendData()
 {
 	if (hThread == 0)
 	{
@@ -354,7 +354,7 @@ bool WinSock_Properties::CanSendData()
 	}
 }
 
-WinSock_Properties::WinSock_Properties()
+ImageSendManager::ImageSendManager()
 	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }
 #if OVERLAPPED_IO_VERSION
 	/*, iocp(0)*/, overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0)
@@ -365,7 +365,7 @@ WinSock_Properties::WinSock_Properties()
 {
 }
 
-WinSock_Properties::~WinSock_Properties()
+ImageSendManager::~ImageSendManager()
 {
 #if OVERLAPPED_IO_VERSION
 	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)

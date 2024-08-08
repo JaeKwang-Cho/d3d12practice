@@ -2,7 +2,7 @@
 #include "DirectXTex.h"
 
 class D3D12Renderer;
-struct WinSock_Properties;
+struct ImageSendManager;
 
 class ScreenStreamer
 {
@@ -26,7 +26,7 @@ private:
 	HANDLE m_hThread;
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_footPrint;
 
-	WinSock_Properties* m_winsockProps;
+	ImageSendManager* m_winsockProps;
 
 public:
 	ScreenStreamer();

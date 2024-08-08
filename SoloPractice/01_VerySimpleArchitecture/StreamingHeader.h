@@ -87,7 +87,7 @@ struct ThreadParam
 	SOCKADDR_IN addr;
 };
 #endif
-struct WinSock_Properties
+struct ImageSendManager
 {
 public:
 	void InitializeWinsock();
@@ -113,8 +113,8 @@ private:
 #endif
 
 public:
-	WinSock_Properties();
-	virtual ~WinSock_Properties();
+	ImageSendManager();
+	virtual ~ImageSendManager();
 };
 
 

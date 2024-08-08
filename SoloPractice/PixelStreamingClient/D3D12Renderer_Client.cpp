@@ -11,7 +11,7 @@ bool D3D12Renderer_Client::Initialize(HWND _hWnd)
 	InitializeSRWLock(&m_srwLock);
 
 	// Winsock 초기화
-	m_WinSock_Props = new WinSock_Props;
+	m_WinSock_Props = new ImageReceiveManager;
 	m_WinSock_Props->InitializeWinSock();
 
 	// debug layer를 켜는데 사용하는 interface
@@ -335,7 +335,7 @@ bool D3D12Renderer_Client::CheckPixelReady()
 	bool bCanReceiveData = m_WinSock_Props->CanReceiveData();
 	if (bCanReceiveData)
 	{
-		m_WinSock_Props->ReceiveData(m_ppMappedData[m_uiTextureIndexByThread]);
+		m_WinSock_Props->GetImageData(m_ppMappedData[m_uiTextureIndexByThread]);
 	}
 	return bCanReceiveData;
 }

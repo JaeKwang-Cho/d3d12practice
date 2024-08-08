@@ -62,7 +62,7 @@ void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _
 	}
 
 	// winsock 작업을 할 구조체를 초기화.
-	m_winsockProps = new WinSock_Properties;
+	m_winsockProps = new ImageSendManager;
 	m_winsockProps->InitializeWinsock();
 }
 
