@@ -22,6 +22,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 	size_t uiSendCount = (ulByteSize + DATA_SIZE - 1) / DATA_SIZE;
 
 	// State Exchage
+	/*
 	{
 		Overlapped_IO_State* overlapped_IO_State = pThreadParam->overlapped_IO_State;
 		memset(overlapped_IO_State, 0, sizeof(StateExchange));
@@ -69,8 +70,9 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 			return 1; // 클라이언트 꽉참 (스킵 할지말지 고민중)
 		}
 	}
-
+	*/
 	// Overlapped I/O 요청
+
 	for (UINT i = 0; i < uiSendCount; i++)
 	{
 		UINT currOverlappedIOData_Index = i % MAXIMUM_WAIT_OBJECTS;

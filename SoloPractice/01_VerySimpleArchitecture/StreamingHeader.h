@@ -7,25 +7,18 @@
 #define LZ4_COMPRESSION (1)
 
 // ============ Client ¿Í °øÀ¯ ============ 
-enum class E_ClientState : UINT8
-{
-	FULL = 0,
-	READY = 1,
-	END
-};
 
-struct StateExchange
-{
-	uint32_t totalPacketsNumber;
-	size_t compressedSize;
-	E_ClientState eClientState;
-};
+#define IMAGE_NUM_FOR_BUFFERING (16)
+
+static const UINT s_Receiver_Ports[IMAGE_NUM_FOR_BUFFERING] =
+{ 7601, 7602, 7603, 7604, 7605,
+7606, 7607, 7608, 7609, 7610,
+7611, 7612, 7613, 7614, 7615, };
 
 struct Overlapped_IO_State
 {
 	WSAOVERLAPPED wsaOL;
 	WSABUF wsabuf;
-	StateExchange state;
 	SOCKADDR_IN addr;
 	DWORD ulByteSize;
 	UINT64 sessionID;

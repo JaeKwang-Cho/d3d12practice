@@ -10,10 +10,6 @@ bool D3D12Renderer_Client::Initialize(HWND _hWnd)
 	// SRWLock 초기화
 	InitializeSRWLock(&m_srwLock);
 
-	// Winsock 초기화
-	m_WinSock_Props = new ImageReceiveManager;
-	m_WinSock_Props->InitializeWinSock();
-
 	// debug layer를 켜는데 사용하는 interface
 	Microsoft::WRL::ComPtr<ID3D12Debug6> pDebugController = nullptr;
 	DWORD dwCreateFlags = 0;
@@ -132,7 +128,8 @@ EXIT:
 		__debugbreak();
 	}
 	pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_pSwapChain));
-	m_uiTextureIndexByThread = m_pSwapChain->GetCurrentBackBufferIndex();
+	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+	m_uiTextureIndexByThread = m_uiSwapChainIndex;
 
 	// Window에 맞춰서 Viewport와 Scissor Rect를 정의한다.
 	m_Viewport.Width = static_cast<float>(uiWndWidth);
@@ -281,7 +278,7 @@ EXIT:
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
 
-	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) 
+	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
 	{
 		/*
 		m_pD3DDevice->CreateCommittedResource(
@@ -293,7 +290,7 @@ EXIT:
 			IID_PPV_ARGS(m_pDefaultTexture[i].GetAddressOf())
 		);
 		*/
-		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[i].Get(), 0, 1);
+		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[0].Get(), 0, 1);
 		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
 		if (FAILED(m_pD3DDevice->CreateCommittedResource(
@@ -313,6 +310,16 @@ EXIT:
 	}
 
 
+	// ImageReceiveManager 초기화.
+	m_ImageReceiveManager = new ImageReceiveManager;
+	m_ImageReceiveManager->InitializeWinSock();
+	char* ppMappedData[IMAGE_NUM_FOR_BUFFERING];
+	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
+	{
+		ppMappedData[i] = (char*)m_ppMappedData[i];
+	}
+	m_ImageReceiveManager->StartReceiveManager(this, ppMappedData);
+
 	return true;
 }
 
@@ -329,15 +336,20 @@ void D3D12Renderer_Client::DrawStreamPixels()
 	//SkipCurrentFrame();
 }
 
+bool D3D12Renderer_Client::CheckTextureDrawing(UINT _index)
+{
+	if (m_pFence->GetCompletedValue() < m_pui64CopyFenceValue[_index])
+	{
+		return false;
+	}
+	return true;
+}
+
 bool D3D12Renderer_Client::CheckPixelReady()
 {
-	// 대충 두 프레임 이전 것을 받는 느낌으로 간다.
-	bool bCanReceiveData = m_WinSock_Props->CanReceiveData();
-	if (bCanReceiveData)
-	{
-		m_WinSock_Props->GetImageData(m_ppMappedData[m_uiTextureIndexByThread]);
-	}
-	return bCanReceiveData;
+	UINT index;
+	bool result = m_ImageReceiveManager->CheckNextImageReady(index);
+	return result;
 }
 
 void D3D12Renderer_Client::BeginRender()
@@ -352,8 +364,8 @@ void D3D12Renderer_Client::BeginRender()
 		__debugbreak();
 	}
 
-	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiTextureIndexByThread, m_rtvDescriptorSize);
-	D3D12_RESOURCE_BARRIER trans_PRESENT_DEST = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiTextureIndexByThread].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiSwapChainIndex, m_rtvDescriptorSize);
+	D3D12_RESOURCE_BARRIER trans_PRESENT_DEST = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
 	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_DEST);
 }
 
@@ -364,17 +376,17 @@ void D3D12Renderer_Client::UploadStreamPixels()
 	textureData.RowPitch = m_dwWidth * 4;
 	textureData.SlicePitch = m_TextureSize;
 
-	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiTextureIndexByThread].Get(), m_pUploadTexture[m_uiTextureIndexByThread].Get(), 0, 0, 1, &textureData);
+	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pUploadTexture[m_uiTextureIndexByThread].Get(), 0, 0, 1, &textureData);
 }
 
 void D3D12Renderer_Client::SkipCurrentFrame()
 {
-	UINT formalIndex = (m_uiTextureIndexByThread - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
+	UINT formalIndex = (m_uiSwapChainIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
 	CD3DX12_RESOURCE_BARRIER barrier_PRESENT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
 		D3D12_RESOURCE_STATE_COPY_SOURCE);
 	m_pCommandList->ResourceBarrier(1, &barrier_PRESENT_SRC);
 
-	m_pCommandList->CopyResource(m_pRenderTargets[m_uiTextureIndexByThread].Get(), m_pRenderTargets[formalIndex].Get());
+	m_pCommandList->CopyResource(m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pRenderTargets[formalIndex].Get());
 
 	CD3DX12_RESOURCE_BARRIER barrier_SRC_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
 		D3D12_RESOURCE_STATE_PRESENT);
@@ -383,7 +395,7 @@ void D3D12Renderer_Client::SkipCurrentFrame()
 
 void D3D12Renderer_Client::EndRender()
 {
-	CD3DX12_RESOURCE_BARRIER barrier_DEST_SRV = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiTextureIndexByThread].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	CD3DX12_RESOURCE_BARRIER barrier_DEST_SRV = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
 	m_pCommandList->ResourceBarrier(1, &barrier_DEST_SRV);
 
 	m_pCommandList->Close();
@@ -417,7 +429,8 @@ void D3D12Renderer_Client::Present()
 	{
 		__debugbreak();
 	}
-	m_uiTextureIndexByThread = m_pSwapChain->GetCurrentBackBufferIndex();
+	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+	m_uiTextureIndexByThread = (m_uiTextureIndexByThread + 1) % IMAGE_NUM_FOR_BUFFERING;
 }
 
 UINT64 D3D12Renderer_Client::DoCopyFence()
@@ -449,14 +462,14 @@ void D3D12Renderer_Client::CleanUpRenderer()
 {
 	DoCopyFence();
 
-	for (DWORD i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+	for (DWORD i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++) {
 		WaitForCopyFenceValue(m_pui64CopyFenceValue[i]);
 	}
 
-	if (m_WinSock_Props)
+	if (m_ImageReceiveManager)
 	{
-		delete m_WinSock_Props;
-		m_WinSock_Props = nullptr;
+		delete m_ImageReceiveManager;
+		m_ImageReceiveManager = nullptr;
 	}
 }
 
@@ -465,12 +478,12 @@ D3D12Renderer_Client::D3D12Renderer_Client()
 	m_ui64FenceValue(0), m_pui64CopyFenceValue{}, 
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
-	m_pRTVHeap(nullptr), m_uiTextureIndexByThread(0),
+	m_pRTVHeap(nullptr), m_uiTextureIndexByThread(0), m_uiSwapChainIndex(0),
 	m_rtvDescriptorSize(0), m_pUploadTexture{}, m_ppMappedData{},
 	m_dwSwapChainFlags(0),
 	m_hCopyFenceEvent(nullptr),	m_pFence(nullptr),	
 	m_Viewport{}, m_ScissorRect{}, m_dwWidth(0), m_dwHeight(0),
-	m_srwLock(), m_WinSock_Props(nullptr), m_TextureSize(0)
+	m_srwLock(), m_ImageReceiveManager(nullptr), m_TextureSize(0)
 	// m_pui64DrawFenceValue{}, m_pSRVHeap(nullptr), m_srvDescriptorSize(0), m_hDrawFenceEvent(nullptr)
 {
 }
