@@ -76,11 +76,11 @@ void ImageReceiveManager::InitializeWinSock()
 	// 작업용 클래스와, 이미지 버퍼 미리 생성.
 	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
 	{
-		imageReceivers[i] = new ImageReceiver;
-		imageReceivers[i]->Initialize(s_Receiver_Ports[i]);
-
 		decompressedTextures_circular[i] = new DecompressedTextures;
 		decompressedTextures_circular[i]->lock = SRWLOCK_INIT;
+
+		imageReceivers[i] = new ImageReceiver;
+		imageReceivers[i]->Initialize(s_Receiver_Ports[i], decompressedTextures_circular[i]);
 	}
 }
 
@@ -237,6 +237,8 @@ DWORD __stdcall ThreadReceiveImageFromServer(LPVOID _pParam)
 
 				if (MAX_PACKET_SIZE >= curOverlapped_Param->ulByteSize)
 				{
+					totalPacketNumber = header.totalPacketsNumber;
+
 					int dataOffset = DATA_SIZE * header.currPacketNumber;
 					char* pDataToWrite = (char*)curOverlapped_Param->wsabuf.buf;
 					totalByteSize += curOverlapped_Param->ulByteSize;
@@ -302,9 +304,10 @@ DWORD __stdcall ThreadReceiveImageFromServer(LPVOID _pParam)
 	return 0;
 }
 
-void ImageReceiver::Initialize(const UINT _portNum)
+void ImageReceiver::Initialize(const UINT _portNum, DecompressedTextures* _decompressedTexture)
 {
 	portNum = _portNum;
+	decompressedTexture = _decompressedTexture;
 
 	hRecvSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	if (hRecvSocket == INVALID_SOCKET)
@@ -316,7 +319,7 @@ void ImageReceiver::Initialize(const UINT _portNum)
 	addr = { 0 };
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(portNum);
-	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 	if (::bind(hRecvSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
 	{
 		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");

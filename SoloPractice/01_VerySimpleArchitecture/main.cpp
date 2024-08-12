@@ -71,6 +71,7 @@ XMMATRIX g_matWorldCube = {};
 // Tick Time
 ULONGLONG g_PrevFrameTime = 0;
 ULONGLONG g_PrevUpdateTime = 0;
+ULONGLONG g_PrevStreamingTime = 0;
 DWORD	g_FrameCount = 0;
 float g_DeltaTime = 0;
 
@@ -206,10 +207,14 @@ void RunGame()
     {
         // Update Scene with 60FPS
         Update();
-        g_pRenderer->TryPixelStreaming();
         g_PrevUpdateTime = CurrTickTime;
     }
-   
+
+    if (CurrTickTime - g_PrevStreamingTime > 66) // 15FPS
+    {
+        g_PrevStreamingTime = CurrTickTime;
+        g_pRenderer->TryPixelStreaming();
+    }
     // ===== draw object =====
     g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 

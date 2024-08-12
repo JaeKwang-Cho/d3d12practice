@@ -40,7 +40,6 @@ struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
-	UINT64 sessionID;
 };
 
 #define SERVER_PORT (4567)
@@ -58,7 +57,7 @@ static const size_t s_OriginalTextureSize = (1280 * 720 * 4);
 static const UINT s_Receiver_Ports[IMAGE_NUM_FOR_BUFFERING] = 
 {7601, 7602, 7603, 7604, 7605,
 7606, 7607, 7608, 7609, 7610, 
-7611, 7612, 7613, 7614, 7615, };
+7611, 7612, 7613, 7614, 7615, 7616 };
 // =======================================
 
 // D3D12Renderer_Client에서 사용하는 함수들.
@@ -86,7 +85,7 @@ struct DecompressedTextures
 struct ImageReceiver
 {
 public:
-	void Initialize(const UINT _portNum);
+	void Initialize(const UINT _portNum, DecompressedTextures* _decompressedTexture);
 	// true : Ready / false : Running
 	bool CheckReceiverState();
 	bool ReceiveImage_Threaded(DecompressedTextures* _decompTex);

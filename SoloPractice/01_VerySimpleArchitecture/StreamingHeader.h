@@ -3,9 +3,6 @@
 
 #pragma comment(lib, "ws2_32")
 
-#define OVERLAPPED_IO_VERSION (1)
-#define LZ4_COMPRESSION (1)
-
 // ============ Client 와 공유 ============ 
 
 #define IMAGE_NUM_FOR_BUFFERING (16)
@@ -13,7 +10,7 @@
 static const UINT s_Receiver_Ports[IMAGE_NUM_FOR_BUFFERING] =
 { 7601, 7602, 7603, 7604, 7605,
 7606, 7607, 7608, 7609, 7610,
-7611, 7612, 7613, 7614, 7615, };
+7611, 7612, 7613, 7614, 7615, 7616 };
 
 struct Overlapped_IO_State
 {
@@ -28,7 +25,6 @@ struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
-	UINT64 sessionID;
 };
 
 #define SERVER_PORT (4567)
@@ -37,9 +33,7 @@ struct ScreenImageHeader
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
 
-#if LZ4_COMPRESSION
 static const size_t OriginalTextureSize = (1280 * 720 * 4);
-#endif
 // =======================================
 
 // ScreenStreamer에서 사용하는 함수들.
@@ -48,7 +42,6 @@ void ErrorHandler(const wchar_t* _pszMessage);
 // Client에게 이미지 데이터를 보내는 스레드 함수
 DWORD WINAPI ThreadSendToClient(LPVOID _pParam);
 
-#if OVERLAPPED_IO_VERSION
 struct Overlapped_IO_Data
 {
 	WSAOVERLAPPED wsaOL;
@@ -64,22 +57,9 @@ struct ThreadParam
 	void* data;
 	SOCKADDR_IN addr;
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
-	Overlapped_IO_State* overlapped_IO_State;
 	DWORD ulByteSize;
-	UINT64 sessionID;
 	SOCKET hSendSocket;
-	SOCKET hRecvSocket;
 };
-
-#else
-struct ThreadParam
-{
-	void* data;
-	SOCKET socket;
-	size_t ulByteSize;
-	SOCKADDR_IN addr;
-};
-#endif
 struct ImageSendManager
 {
 public:
@@ -91,19 +71,15 @@ private:
 	SOCKADDR_IN addr;
 
 	SOCKET hSendSocket; // 송신 소켓
-	SOCKET hRecvSocket; // 수신 소켓
 	HANDLE hThread;
 	ThreadParam threadParam;
+	UINT textureIndexByThread;
 	
-#if OVERLAPPED_IO_VERSION
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	Overlapped_IO_State* overlapped_IO_State;
 	UINT64 sessionID;
-#endif
 
-#if LZ4_COMPRESSION
 	char* compressedTexture;
-#endif
 
 public:
 	ImageSendManager();
