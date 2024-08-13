@@ -43,7 +43,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_ LPWSTR    lpCmdLine,
                      _In_ int       nCmdShow)
 {
-    
+    /*
     const char* input = "1234567890abcdefghijklmnopqrstuvwxyz\n";
     int inputSize = strlen(input) + 1;
     char compressed[100];
@@ -53,7 +53,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     int compressSize = LZ4_compress_fast(input, compressed, inputSize, LZ4_compressBound(inputSize), 100);
     int decompressSize = LZ4_decompress_safe_partial(compressed, decompressed, compressSize, inputSize, 100);
     OutputDebugStringA(decompressed);
-    
+    */
     
     // 윈도우 초기화
     g_hInst = hInstance;

@@ -3,6 +3,8 @@
 #include <format>
 #include <WS2tcpip.h>
 #include "D3D12Renderer_Client.h"
+#include <iostream>
+#include <chrono>
 
 #include <lz4.h>
 
@@ -16,28 +18,145 @@ void ErrorHandler(const wchar_t* _pszMessage)
 
 static ULONGLONG g_PrevUpdateTime = 0;
 
+/*
+1. ImageReceiveManager에서
+- 압축 안 된텍스쳐 버퍼를 가지고 있고,
+- session 별로 받으면서 압축된 텍스쳐를 ImageDecompressor에게 copy해서 넘겨주면서 요청을 한다. (여기서 스레드는 분리된다.)
+- buffer마다 lock을 가지고 있는데, 이 lock은 uploadbuffer로 copy할 때나, 압축을 해제할 때 사용한다.
+
+2. ImageDecompressor에서
+- 압축을 해제한 다음 ImageReceiveManager에 있는 버퍼에 넣는다.
+- 이 과정에서 버퍼를 lock 한다.
+
+3. renderer
+ImageReceiveManager에서 버퍼를 upload buffer에 복사해서 올린다.
+ 이 과정에서 복사가 끝날 때 가지 lock을 한다.
+*/
+
 DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 {
 	ImageReceiveManager* imageReceiveMananger = (ImageReceiveManager*)_pParam;
 
+	// 송신측 정보
+	SOCKADDR_IN serverAddr;
+	int sizeAddr = sizeof(serverAddr);
+
+	UINT64 uiSessionID = 0;
+	UINT64 uiDroppedSessionID = 0;
+	UINT64 uiDroppedSessionNumber = 0;
+	UINT circularSessionIndex = 0;
+	uint32_t numTryToGetPackets = 0;
+
+	UINT64 lastSessionID[IMAGE_NUM_FOR_BUFFERING];
+	uint32_t totalPacketNums[IMAGE_NUM_FOR_BUFFERING];
+	uint32_t sumPacketNums[IMAGE_NUM_FOR_BUFFERING];
+	DWORD ulByteSizes[IMAGE_NUM_FOR_BUFFERING];
+	memset(lastSessionID, 0xff, sizeof(lastSessionID));
+	memset(totalPacketNums, 0, sizeof(totalPacketNums));
+	memset(sumPacketNums, 0, sizeof(sumPacketNums));
+	memset(ulByteSizes, 0, sizeof(ulByteSizes));
+
+	ULONGLONG CurrTickTime = GetTickCount64();
+
+	if (CurrTickTime - g_PrevUpdateTime > 66) // 15FPS
+	{
+		g_PrevUpdateTime = CurrTickTime;
+	}
+
 	while (::WaitForSingleObject(imageReceiveMananger->GetHaltEvent(), 0) != WAIT_OBJECT_0)
 	{
-		ULONGLONG CurrTickTime = GetTickCount64();
-		if (CurrTickTime - g_PrevUpdateTime > 66) // 15FPS
+		UINT currOverlappedIOData_Index = numTryToGetPackets % MAXIMUM_WAIT_OBJECTS;
+		Overlapped_IO_Data* curOverlapped_Param = imageReceiveMananger->overlapped_IO_Data[currOverlappedIOData_Index];
+
+		if (curOverlapped_Param->wsaOL.hEvent != 0)
 		{
-			g_PrevUpdateTime = CurrTickTime;
-			UINT64 index;
-			UINT64 nums;
-			imageReceiveMananger->GetIndexAndNums(index, nums);
-
-			bool result = imageReceiveMananger->TryGetImageData_Threaded(index);
-
-			if (result)
+			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, 0);
+			if (result != WAIT_TIMEOUT)
 			{
-				imageReceiveMananger->IncreaseImageNums();
+				ScreenImageHeader header;
+				memcpy(&header, curOverlapped_Param->pData, HEADER_SIZE);
+
+				if (MAX_PACKET_SIZE >= curOverlapped_Param->ulByteSize)
+				{
+					uiSessionID = header.uiSessionID;
+					circularSessionIndex = (uiSessionID - uiDroppedSessionNumber + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
+					if (uiSessionID <= uiDroppedSessionID) 
+					{
+						// 드롭하는 것.
+						goto DROP_PACKET;
+					}
+
+					bool bResult = lastSessionID[circularSessionIndex] < uiSessionID;
+					if (bResult) // 현재 버퍼에 새로운 session이 들어올 차례인 경우
+					{
+						// 버퍼에서 현재 세션에 대해 받는 것을 멈추고, 압축 해제 스레드로 옮긴다.
+						if (imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->bRendered == false)
+						{
+							// 렌더링 된 적이 없다면, 더 이상 버퍼링을 해서는 안된다. 일단 멈춰야 한다.
+							// 서버와 화면에 갭이 생기겠지만, 어쩔 수 없다. 동영상이 아니기 때문에 그냥 버리는 수 밖에 없다.
+							uiDroppedSessionID = uiSessionID;
+							uiDroppedSessionNumber++;
+							goto DROP_PACKET;
+						}
+						else 
+						{
+							// 새로 받을 준비를 한다.
+							lastSessionID[circularSessionIndex] = uiSessionID;
+							totalPacketNums[circularSessionIndex] = header.totalPacketsNumber;
+							sumPacketNums[circularSessionIndex] = 0;
+							ulByteSizes[circularSessionIndex] = 0;
+						}
+					}
+
+					lastSessionID[circularSessionIndex] = uiSessionID;
+					int dataOffset = DATA_SIZE * header.currPacketNumber;
+					char* pDataToWrite = (char*)curOverlapped_Param->wsabuf.buf;
+
+					ulByteSizes[circularSessionIndex] += curOverlapped_Param->ulByteSize - HEADER_SIZE;
+					sumPacketNums[circularSessionIndex]++;
+
+					// 혹시 rederer에서 drawing 중이면 기다린다.
+					AcquireSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
+					memcpy(imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->pCompressedData + dataOffset, pDataToWrite + HEADER_SIZE, curOverlapped_Param->ulByteSize - HEADER_SIZE);
+					ReleaseSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
+					if (sumPacketNums[circularSessionIndex] >= header.totalPacketsNumber || header.currPacketNumber >= header.totalPacketsNumber - 1)
+					{
+						imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->compressedSize = ulByteSizes[circularSessionIndex];
+						imageReceiveMananger->IncreaseImageNums();
+					}
+				}
+			}
+			else
+			{
+				// recv가 오지 않았거나, 그 어떤 Read도 OS가 끝마치지 않은 경우를 말한다.
+				CancelIoEx((HANDLE)imageReceiveMananger->hRecvSocket, &curOverlapped_Param->wsaOL);
 			}
 		}
+
+DROP_PACKET:
+		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
+		curOverlapped_Param->wsabuf.len = MAX_PACKET_SIZE;
+
+		// Overlapped I/O 요청을 건다.
+		if (curOverlapped_Param->wsaOL.hEvent == 0)
+		{
+			curOverlapped_Param->wsaOL.hEvent = ::WSACreateEvent();
+		}
+		else
+		{
+			WSAResetEvent(curOverlapped_Param->wsaOL.hEvent);
+		}
+		DWORD flags = 0;
+		int result = WSARecv(imageReceiveMananger->hRecvSocket, &curOverlapped_Param->wsabuf, 1, &curOverlapped_Param->ulByteSize, &flags, &curOverlapped_Param->wsaOL, nullptr);
+		int lastError = WSAGetLastError();
+		if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+		{
+			__debugbreak();
+			break;
+		}
+		numTryToGetPackets++;
 	}
+
 	return 0;
 }
 
@@ -61,39 +180,35 @@ void ImageReceiveManager::InitializeWinSock()
 	addr = { 0 };
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(CLIENT_PORT);
-	addr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
+	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 	if (::bind(hRecvSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
 	{
 		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
 	}
 
-	hSendSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-	if (hSendSocket == INVALID_SOCKET)
+	// overlapped_IO_Data 미리 생성
+	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
 	{
-		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
+		overlapped_IO_Data[i] = new Overlapped_IO_Data;
+		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+		memset(overlapped_IO_Data[i]->pData, 0, sizeof(MAX_PACKET_SIZE));
 	}
 
 	// 작업용 클래스와, 이미지 버퍼 미리 생성.
 	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
 	{
-		decompressedTextures_circular[i] = new DecompressedTextures;
-		decompressedTextures_circular[i]->lock = SRWLOCK_INIT;
+		compressedTextureBuffer[i] = new CompressedTextures;
 
-		imageReceivers[i] = new ImageReceiver;
-		imageReceivers[i]->Initialize(s_Receiver_Ports[i], decompressedTextures_circular[i]);
+		compressedTextureBuffer[i]->lock = SRWLOCK_INIT;
+		compressedTextureBuffer[i]->pCompressedData = new char[LZ4_compressBound(s_OriginalTextureSize)];
+		compressedTextureBuffer[i]->bRendered = false;
+		compressedTextureBuffer[i]->compressedSize = 0;
 	}
 }
 
-bool ImageReceiveManager::StartReceiveManager(D3D12Renderer_Client* _renderer, char* _ppData[IMAGE_NUM_FOR_BUFFERING])
+bool ImageReceiveManager::StartReceiveManager(D3D12Renderer_Client* _renderer)
 {
 	renderer = _renderer;
-
-	// mappedData 를 변수에 넣어놓고
-	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
-	{
-		decompressedTextures_circular[i]->pData = _ppData[i];
-	}
-
 	DWORD dwThreadID = 0;
 
 	if (hThread != 0)
@@ -124,31 +239,6 @@ bool ImageReceiveManager::StartReceiveManager(D3D12Renderer_Client* _renderer, c
 	return hThread != NULL;
 } 
 
-bool ImageReceiveManager::CheckNextImageReady(UINT& _outIndex)
-{
-	if (numImages <= 15)
-	{
-		return false;
-	}
-	UINT curIndex = (lastUpdatedCircularIndex - 15 + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
-	bool result = imageReceivers[curIndex]->CheckReceiverState();
-	if (result = true)
-	{
-		_outIndex = curIndex;
-	}
-	return result;
-}
-
-bool ImageReceiveManager::TryGetImageData_Threaded(UINT64 _indexReceiver)
-{
-	bool result = imageReceivers[_indexReceiver]->CheckReceiverState() && renderer->CheckTextureDrawing(_indexReceiver);
-	if (!result)
-	{
-		return false;
-	}
-	return imageReceivers[_indexReceiver]->ReceiveImage_Threaded(decompressedTextures_circular[_indexReceiver]);
-}
-
 void ImageReceiveManager::IncreaseImageNums()
 {
 	AcquireSRWLockExclusive(&countLock);
@@ -157,10 +247,21 @@ void ImageReceiveManager::IncreaseImageNums()
 	ReleaseSRWLockExclusive(&countLock);
 }
 
-void ImageReceiveManager::GetIndexAndNums(UINT64& _index, UINT64& _nums)
+bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
 {
-	_index = lastUpdatedCircularIndex;
-	_nums = numImages;
+	if (numImages < 5)
+	{
+		return false;
+	}
+	AcquireSRWLockExclusive(&compressedTextureBuffer[lastRenderedCircularIndex]->lock);
+
+	LZ4_decompress_safe(compressedTextureBuffer[lastRenderedCircularIndex]->pCompressedData, (char*)_pUploadData,
+		compressedTextureBuffer[lastRenderedCircularIndex]->compressedSize, s_OriginalTextureSize);
+	compressedTextureBuffer[lastRenderedCircularIndex]->bRendered = true;
+
+	ReleaseSRWLockExclusive(&compressedTextureBuffer[lastRenderedCircularIndex]->lock);
+	lastRenderedCircularIndex = (lastRenderedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
+	return true;
 }
 
 void ImageReceiveManager::CleanUpManager()
@@ -169,29 +270,38 @@ void ImageReceiveManager::CleanUpManager()
 	::WaitForSingleObject(hThread, INFINITE);
 	::CloseHandle(hHaltEvent);
 
+	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	{
+		if (overlapped_IO_Data[i])
+		{
+			delete overlapped_IO_Data[i];
+			overlapped_IO_Data[i] = nullptr;
+		}
+	}
+
 	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
 	{
-		if (imageReceivers[i])
+		if (compressedTextureBuffer[i])
 		{
-			delete imageReceivers[i];
-			imageReceivers[i] = nullptr;
-		}
-		if (decompressedTextures_circular[i])
-		{
-			delete decompressedTextures_circular[i];
-			decompressedTextures_circular[i] = nullptr;
+			if (compressedTextureBuffer[i]->pCompressedData)
+			{
+				delete[] compressedTextureBuffer[i]->pCompressedData;
+				compressedTextureBuffer[i]->pCompressedData = nullptr;
+			}
+			delete compressedTextureBuffer[i];
+			compressedTextureBuffer[i] = nullptr;
 		}
 	}
 
 	CloseHandle(hThread);
 	::closesocket(hRecvSocket);
-	::closesocket(hSendSocket);
 	::WSACleanup();
 }
 
 ImageReceiveManager::ImageReceiveManager()
-	:wsa{ 0 }, addr{ 0 }, hRecvSocket(0), hSendSocket(0), hThread(0), hHaltEvent(0),
-	imageReceivers{}, numImages(0), lastUpdatedCircularIndex(0), decompressedTextures_circular{},
+	:wsa{ 0 }, addr{ 0 }, hRecvSocket(0),  hThread(0), hHaltEvent(0),
+	numImages(0), lastRenderedCircularIndex(0), lastUpdatedCircularIndex(0), 
+	overlapped_IO_Data{}, compressedTextureBuffer {},
 	renderer(nullptr)
 {
 	countLock = SRWLOCK_INIT;
@@ -201,230 +311,3 @@ ImageReceiveManager::~ImageReceiveManager()
 {
 	CleanUpManager();
 }
-
-// ================= ImageReceiver ================= 
-
-DWORD __stdcall ThreadReceiveImageFromServer(LPVOID _pParam)
-{
-	ImageReceiver* pImageReceiver = (ImageReceiver*)_pParam;
-
-	uint32_t numTryToGetPackets = 0;
-	uint32_t totalPacketNumber = 0;
-	size_t totalByteSize = 0;
-
-	// 송신측 정보
-	SOCKADDR_IN serverAddr;
-	int sizeAddr = sizeof(serverAddr);
-	// 1200바이트로 넘어오는 패킷을 받아서 쌓는다.
-	while (true)
-	{
-		if (::WaitForSingleObject(pImageReceiver->hHaltEvent, 0) == WAIT_OBJECT_0)
-		{
-			return 1;
-		}
-
-		UINT currOverlappedIOData_Index = numTryToGetPackets % MAXIMUM_WAIT_OBJECTS;
-		Overlapped_IO_Data* curOverlapped_Param = pImageReceiver->overlapped_IO_Data[currOverlappedIOData_Index];
-
-		// (과도하게 잘랐거나) 파일이 너무 큰 경우를 대비한다.
-		if (curOverlapped_Param->wsaOL.hEvent != 0)
-		{
-			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, 1);
-			if (result != WAIT_TIMEOUT)
-			{
-				ScreenImageHeader header;
-				memcpy(&header, curOverlapped_Param->pData, HEADER_SIZE);
-
-				if (MAX_PACKET_SIZE >= curOverlapped_Param->ulByteSize)
-				{
-					totalPacketNumber = header.totalPacketsNumber;
-
-					int dataOffset = DATA_SIZE * header.currPacketNumber;
-					char* pDataToWrite = (char*)curOverlapped_Param->wsabuf.buf;
-					totalByteSize += curOverlapped_Param->ulByteSize;
-					memcpy(pImageReceiver->compressedTexture + dataOffset, pDataToWrite + HEADER_SIZE, curOverlapped_Param->ulByteSize);
-
-					if (header.currPacketNumber >= totalPacketNumber - 1)
-					{
-						break;
-					}
-				}
-			}
-		}
-
-		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
-		curOverlapped_Param->wsabuf.len = MAX_PACKET_SIZE;
-
-		// Overlapped I/O 요청을 건다.
-		if (curOverlapped_Param->wsaOL.hEvent == 0)
-		{
-			curOverlapped_Param->wsaOL.hEvent = ::WSACreateEvent();
-		}
-		else
-		{
-			WSAResetEvent(curOverlapped_Param->wsaOL.hEvent);
-		}
-		DWORD flags = 0;
-		int result = WSARecv(pImageReceiver->hRecvSocket, &curOverlapped_Param->wsabuf, 1, &curOverlapped_Param->ulByteSize, &flags, &curOverlapped_Param->wsaOL, nullptr);
-		if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-		{
-			break;
-		}
-		numTryToGetPackets++;
-		if (numTryToGetPackets >= totalPacketNumber - 1)
-		{
-			break;
-		}
-	}
-
-	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
-	{
-		if (::WaitForSingleObject(pImageReceiver->hHaltEvent, 0) == WAIT_OBJECT_0)
-		{
-			return 1;
-		}
-
-		if (pImageReceiver->overlapped_IO_Data[i]->wsaOL.hEvent != 0)
-		{
-			::WaitForSingleObject(pImageReceiver->overlapped_IO_Data[i]->wsaOL.hEvent, 10);
-
-			ScreenImageHeader header;
-			memcpy(&header, pImageReceiver->overlapped_IO_Data[i]->pData, HEADER_SIZE);
-			if (MAX_PACKET_SIZE >= pImageReceiver->overlapped_IO_Data[i]->ulByteSize)
-			{
-				int dataOffset = DATA_SIZE * header.currPacketNumber;
-				char* pDataToWrite = (char*)pImageReceiver->overlapped_IO_Data[i]->pData;
-				totalByteSize += pImageReceiver->overlapped_IO_Data[i]->ulByteSize;
-				memcpy(pImageReceiver->compressedTexture + dataOffset, pDataToWrite + HEADER_SIZE, pImageReceiver->overlapped_IO_Data[i]->ulByteSize - HEADER_SIZE);
-			}
-			pImageReceiver->overlapped_IO_Data[i]->wsaOL.hEvent = 0;
-		}
-	}
-	int decompressSize = LZ4_decompress_safe(pImageReceiver->compressedTexture, pImageReceiver->decompressedTexture->pData, totalByteSize, s_OriginalTextureSize);
-	return 0;
-}
-
-void ImageReceiver::Initialize(const UINT _portNum, DecompressedTextures* _decompressedTexture)
-{
-	portNum = _portNum;
-	decompressedTexture = _decompressedTexture;
-
-	hRecvSocket = ::WSASocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-	if (hRecvSocket == INVALID_SOCKET)
-	{
-		ErrorHandler(L"UDP 소켓을 생성할 수 없습니다.");
-	}
-
-	// 포트 바인딩
-	addr = { 0 };
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(portNum);
-	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
-	if (::bind(hRecvSocket, (SOCKADDR*)&addr, sizeof(addr)) == SOCKET_ERROR)
-	{
-		ErrorHandler(L"소켓에 IP주소와 포트를 바인드 할 수 없습니다.");
-	}
-
-	// Overlapped 구조체 미리 할당해놓기
-	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
-	{
-		overlapped_IO_Data[i] = new Overlapped_IO_Data;
-		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
-	}
-
-	// 압축 텍스쳐 버퍼 미리 생성
-	compressedTexture = new char[LZ4_compressBound(s_OriginalTextureSize)];
-}
-
-bool ImageReceiver::CheckReceiverState()
-{
-	if (hThread == 0)
-	{
-		return true;
-	}
-	DWORD result = WaitForSingleObject(hThread, 0);
-	if (result == WAIT_OBJECT_0)
-	{
-		CloseHandle(hThread);
-		hThread = 0;
-		return true;
-	}
-	else if (result == WAIT_TIMEOUT)
-	{
-		return false;
-	}
-	__debugbreak();
-	return false;
-}
-
-bool ImageReceiver::ReceiveImage_Threaded(DecompressedTextures* _decompTex)
-{
-	DWORD dwThreadID = 0;
-
-	if (hThread != 0)
-	{
-		DWORD result = WaitForSingleObject(hThread, 0);
-		if (result == WAIT_OBJECT_0)
-		{
-			CloseHandle(hThread);
-			hThread = 0;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	if (hHaltEvent != 0)
-	{
-		::CloseHandle(hHaltEvent);
-		hHaltEvent = 0;
-	}
-	hHaltEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
-	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
-
-	hThread = ::CreateThread(
-		NULL,
-		0,
-		ThreadReceiveImageFromServer,
-		(LPVOID)(this),
-		0,
-		&dwThreadID
-	);
-
-	return hThread != NULL;
-}
-
-void ImageReceiver::HaltThread()
-{
-	::SetEvent(hHaltEvent);
-	::WaitForSingleObject(hThread, INFINITE);
-
-	::CloseHandle(hThread);
-	::CloseHandle(hHaltEvent);
-}
-
-ImageReceiver::ImageReceiver()
-	:addr{}, hRecvSocket(0), portNum(0), hThread(0), hHaltEvent(0), overlapped_IO_Data{}, compressedTexture(nullptr), decompressedTexture(nullptr)
-{
-}
-
-ImageReceiver::~ImageReceiver()
-{
-	HaltThread();
-	::closesocket(hRecvSocket);
-	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
-	{
-		if (overlapped_IO_Data[i])
-		{
-			delete overlapped_IO_Data[i];
-			overlapped_IO_Data[i] = nullptr;
-		}
-	}
-	if (compressedTexture)
-	{
-		delete compressedTexture;
-		compressedTexture = nullptr;
-	}
-}
-
-// =================================================== 

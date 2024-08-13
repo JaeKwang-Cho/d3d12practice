@@ -40,6 +40,7 @@ struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
+	UINT64 uiSessionID;
 };
 
 #define SERVER_PORT (4567)
@@ -48,16 +49,11 @@ struct ScreenImageHeader
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
 
-#define IMAGE_NUM_FOR_BUFFERING (16)
+#define IMAGE_NUM_FOR_BUFFERING (30)
 
 #if LZ4_COMPRESSION
 static const size_t s_OriginalTextureSize = (1280 * 720 * 4);
 #endif
-
-static const UINT s_Receiver_Ports[IMAGE_NUM_FOR_BUFFERING] = 
-{7601, 7602, 7603, 7604, 7605,
-7606, 7607, 7608, 7609, 7610, 
-7611, 7612, 7613, 7614, 7615, 7616 };
 // =======================================
 
 // D3D12Renderer_Client에서 사용하는 함수들.
@@ -76,63 +72,43 @@ struct Overlapped_IO_Data
 	UINT64 sessionID;
 };
 
-struct DecompressedTextures
+struct CompressedTextures
 {
-	char* pData = nullptr;
+	char* pCompressedData = nullptr;
+	DWORD compressedSize;
 	SRWLOCK lock;
-};
-
-struct ImageReceiver
-{
-public:
-	void Initialize(const UINT _portNum, DecompressedTextures* _decompressedTexture);
-	// true : Ready / false : Running
-	bool CheckReceiverState();
-	bool ReceiveImage_Threaded(DecompressedTextures* _decompTex);
-	void HaltThread();
-public: 
-	SOCKADDR_IN addr;
-	SOCKET hRecvSocket;
-	UINT portNum;
-	HANDLE hThread;
-	HANDLE hHaltEvent;
-	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
-	char* compressedTexture;
-	DecompressedTextures* decompressedTexture;
-public:
-	ImageReceiver();
-	virtual~ImageReceiver();
+	bool bRendered = false;
 };
 
 struct ImageReceiveManager
 {
 public:
 	void InitializeWinSock();
-	bool StartReceiveManager(D3D12Renderer_Client* _renderer, char* _ppData[IMAGE_NUM_FOR_BUFFERING]);
+	bool StartReceiveManager(D3D12Renderer_Client* _renderer);
 
-	bool CheckNextImageReady(UINT& _outIndex);
-	bool TryGetImageData_Threaded(UINT64 _indexReceiver);
 	void IncreaseImageNums();
-	void GetIndexAndNums(UINT64& _index, UINT64& _nums);
+	bool DecompressNCopyNextBuffer(void* _pUploadData);
+
 	HANDLE GetHaltEvent() { return hHaltEvent; }
 private:
 	void CleanUpManager();
+public:
+	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
+	CompressedTextures* compressedTextureBuffer[IMAGE_NUM_FOR_BUFFERING];
+
+	SOCKET hRecvSocket; // 수신 소켓
 private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
-
-	SOCKET hRecvSocket; // 수신 소켓
-	SOCKET hSendSocket; // 송신 소켓
 
 	HANDLE hThread;
 	HANDLE hHaltEvent;
 
 	SRWLOCK countLock;
 
-	ImageReceiver* imageReceivers[IMAGE_NUM_FOR_BUFFERING];
+	UINT64 lastRenderedCircularIndex;
 	UINT64 lastUpdatedCircularIndex;
 	UINT64 numImages;
-	DecompressedTextures* decompressedTextures_circular[IMAGE_NUM_FOR_BUFFERING];
 
 	D3D12Renderer_Client* renderer;
 public:

@@ -2,6 +2,175 @@
 #include "D3D12Renderer_Client.h"
 #include <DirectXColors.h>
 
+void D3D12Renderer_Client::DrawStreamPixels()
+{
+	bool bReadyPixels = CheckPixelReady();
+	if (bReadyPixels)
+	{
+		BeginRender();
+		UploadStreamPixels();
+		EndRender();
+		Present();
+	}
+	//SkipCurrentFrame();
+}
+
+bool D3D12Renderer_Client::CheckTextureDrawing(UINT _index)
+{
+	if (m_pFence->GetCompletedValue() < m_pui64CopyFenceValue[_index])
+	{
+		return false;
+	}
+	return true;
+}
+
+bool D3D12Renderer_Client::CheckPixelReady()
+{
+	bool result = m_ImageReceiveManager->DecompressNCopyNextBuffer(m_ppMappedData[m_uiTextureIndexCircular]);
+	return result;
+}
+
+void D3D12Renderer_Client::BeginRender()
+{
+	if (FAILED(m_pCommandAllocator->Reset())) {
+		__debugbreak();
+	}
+
+	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+		__debugbreak();
+	}
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiSwapChainIndex, m_rtvDescriptorSize);
+	D3D12_RESOURCE_BARRIER trans_PRESENT_DEST = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
+	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_DEST);
+}
+
+void D3D12Renderer_Client::UploadStreamPixels()
+{
+	D3D12_SUBRESOURCE_DATA textureData = {};
+	textureData.pData = m_ppMappedData[m_uiTextureIndexCircular];
+	textureData.RowPitch = m_dwWidth * 4;
+	textureData.SlicePitch = m_TextureSize;
+
+	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pUploadTexture[m_uiTextureIndexCircular].Get(), 0, 0, 1, &textureData);
+}
+
+void D3D12Renderer_Client::SkipCurrentFrame()
+{
+	UINT formalIndex = (m_uiSwapChainIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
+	CD3DX12_RESOURCE_BARRIER barrier_PRESENT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
+		D3D12_RESOURCE_STATE_COPY_SOURCE);
+	m_pCommandList->ResourceBarrier(1, &barrier_PRESENT_SRC);
+
+	m_pCommandList->CopyResource(m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pRenderTargets[formalIndex].Get());
+
+	CD3DX12_RESOURCE_BARRIER barrier_SRC_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
+		D3D12_RESOURCE_STATE_PRESENT);
+	m_pCommandList->ResourceBarrier(1, &barrier_SRC_PRESENT);
+}
+
+void D3D12Renderer_Client::EndRender()
+{
+	CD3DX12_RESOURCE_BARRIER barrier_DEST_SRV = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	m_pCommandList->ResourceBarrier(1, &barrier_DEST_SRV);
+
+	m_pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+}
+
+void D3D12Renderer_Client::Present()
+{
+	DoCopyFence();
+
+	UINT SyncInterval = 0; // Vsync on , 0이면 Vsync를 off 하는 것이다.
+	// 이걸 키면 프레임이 느려진다.
+
+	UINT uiSyncInterval = SyncInterval;
+	UINT uiPresentFlags = 0;
+
+	// 모니터의 주사율과 GPU Rendering 주기와의 차이에서 생기는 화면이 찢어지는 현상이다.
+	if (!uiSyncInterval) {
+		// 이렇게 해야 Tearing(화면 찢어짐)을 무시하고
+		// Vsync를 꺼준다.
+		uiPresentFlags = DXGI_PRESENT_ALLOW_TEARING;
+	}
+
+	// 가장 마지막으로 command를 텍스쳐에 해당하는 fence값이 완료되면, 백버퍼를 바꾼다.
+	UINT formalTextureIndex = (m_uiTextureIndexCircular - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
+	WaitForCopyFenceValue(m_pui64CopyFenceValue[formalTextureIndex]);
+	HRESULT hr = m_pSwapChain->Present(uiSyncInterval, uiPresentFlags);
+
+	if (DXGI_ERROR_DEVICE_REMOVED == hr)
+	{
+		__debugbreak();
+	}
+	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+	m_uiTextureIndexCircular = (m_uiTextureIndexCircular + 1) % SWAP_CHAIN_FRAME_COUNT;
+}
+
+UINT64 D3D12Renderer_Client::DoCopyFence()
+{
+	IncreaseFenceValue_Wait();
+	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
+	m_pui64CopyFenceValue[m_uiTextureIndexCircular] = m_ui64FenceValue;
+
+	return m_ui64FenceValue;
+}
+
+void D3D12Renderer_Client::WaitForCopyFenceValue(UINT64 _expectedFenceValue)
+{
+	if (m_pFence->GetCompletedValue() < _expectedFenceValue)
+	{
+		m_pFence->SetEventOnCompletion(_expectedFenceValue, m_hCopyFenceEvent);
+		WaitForSingleObject(m_hCopyFenceEvent, INFINITE);
+	}
+}
+
+void D3D12Renderer_Client::IncreaseFenceValue_Wait()
+{
+	AcquireSRWLockExclusive(&m_srwLock);
+	m_ui64FenceValue++;
+	ReleaseSRWLockExclusive(&m_srwLock);
+}
+
+void D3D12Renderer_Client::CleanUpRenderer()
+{
+	DoCopyFence();
+
+	for (DWORD i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+		WaitForCopyFenceValue(m_pui64CopyFenceValue[i]);
+	}
+
+	if (m_ImageReceiveManager)
+	{
+		delete m_ImageReceiveManager;
+		m_ImageReceiveManager = nullptr;
+	}
+}
+
+D3D12Renderer_Client::D3D12Renderer_Client()
+	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),m_pCommandList(nullptr),
+	m_ui64FenceValue(0), m_pui64CopyFenceValue{}, 
+	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
+	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
+	m_pRTVHeap(nullptr), m_uiTextureIndexCircular(0), m_uiSwapChainIndex(0),
+	m_rtvDescriptorSize(0), m_pUploadTexture{}, m_ppMappedData{},
+	m_dwSwapChainFlags(0),
+	m_hCopyFenceEvent(nullptr),	m_pFence(nullptr),	
+	m_Viewport{}, m_ScissorRect{}, m_dwWidth(0), m_dwHeight(0),
+	m_srwLock(), m_ImageReceiveManager(nullptr), m_TextureSize(0)
+	// m_pui64DrawFenceValue{}, m_pSRVHeap(nullptr), m_srvDescriptorSize(0), m_hDrawFenceEvent(nullptr)
+{
+}
+
+D3D12Renderer_Client::~D3D12Renderer_Client()
+{
+	CleanUpRenderer();
+}
+
+
 bool D3D12Renderer_Client::Initialize(HWND _hWnd)
 {
 	// 윈도우 저장
@@ -84,7 +253,7 @@ EXIT:
 	// #4 RTV 용 Descriptor Heap 생성
 	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
 	rtvHeapDesc.NumDescriptors = SWAP_CHAIN_FRAME_COUNT;
-	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV; 
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
 	if (FAILED(m_pD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_pRTVHeap.GetAddressOf())))) {
 		__debugbreak();
@@ -129,7 +298,7 @@ EXIT:
 	}
 	pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_pSwapChain));
 	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
-	m_uiTextureIndexByThread = m_uiSwapChainIndex;
+	m_uiTextureIndexCircular = m_uiSwapChainIndex;
 
 	// Window에 맞춰서 Viewport와 Scissor Rect를 정의한다.
 	m_Viewport.Width = static_cast<float>(uiWndWidth);
@@ -171,7 +340,7 @@ EXIT:
 	}
 	m_pCommandList->SetName(L"Command List");
 	m_pCommandList->Close();
-	
+
 	// #8 Fence 생성
 	if (FAILED(m_pD3DDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pFence.GetAddressOf())))) {
 		__debugbreak();
@@ -183,7 +352,7 @@ EXIT:
 	// #9 Root Signature 생성
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
 	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
-	
+
 	CD3DX12_DESCRIPTOR_RANGE rangeSrv[1] = {};
 	rangeSrv[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0);
 
@@ -278,7 +447,7 @@ EXIT:
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
 
-	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
 	{
 		/*
 		m_pD3DDevice->CreateCommittedResource(
@@ -290,7 +459,7 @@ EXIT:
 			IID_PPV_ARGS(m_pDefaultTexture[i].GetAddressOf())
 		);
 		*/
-		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[0].Get(), 0, 1);
+		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[i].Get(), 0, 1);
 		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
 		if (FAILED(m_pD3DDevice->CreateCommittedResource(
@@ -309,186 +478,11 @@ EXIT:
 		m_pUploadTexture[i]->Map(0, &readRange, reinterpret_cast<void**>(m_ppMappedData + i));
 	}
 
-
 	// ImageReceiveManager 초기화.
 	m_ImageReceiveManager = new ImageReceiveManager;
 	m_ImageReceiveManager->InitializeWinSock();
-	char* ppMappedData[IMAGE_NUM_FOR_BUFFERING];
-	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
-	{
-		ppMappedData[i] = (char*)m_ppMappedData[i];
-	}
-	m_ImageReceiveManager->StartReceiveManager(this, ppMappedData);
+	m_ImageReceiveManager->StartReceiveManager(this);
 
 	return true;
 }
 
-void D3D12Renderer_Client::DrawStreamPixels()
-{
-	bool bReadyPixels = CheckPixelReady();
-	if (bReadyPixels)
-	{
-		BeginRender();
-		UploadStreamPixels();
-		EndRender();
-		Present();
-	}
-	//SkipCurrentFrame();
-}
-
-bool D3D12Renderer_Client::CheckTextureDrawing(UINT _index)
-{
-	if (m_pFence->GetCompletedValue() < m_pui64CopyFenceValue[_index])
-	{
-		return false;
-	}
-	return true;
-}
-
-bool D3D12Renderer_Client::CheckPixelReady()
-{
-	UINT index;
-	bool result = m_ImageReceiveManager->CheckNextImageReady(index);
-	return result;
-}
-
-void D3D12Renderer_Client::BeginRender()
-{
-	WaitForCopyFenceValue(m_pui64CopyFenceValue[m_uiTextureIndexByThread]);
-
-	if (FAILED(m_pCommandAllocator->Reset())) {
-		__debugbreak();
-	}
-
-	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
-		__debugbreak();
-	}
-
-	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiSwapChainIndex, m_rtvDescriptorSize);
-	D3D12_RESOURCE_BARRIER trans_PRESENT_DEST = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST);
-	m_pCommandList->ResourceBarrier(1, &trans_PRESENT_DEST);
-}
-
-void D3D12Renderer_Client::UploadStreamPixels()
-{
-	D3D12_SUBRESOURCE_DATA textureData = {};
-	textureData.pData = m_ppMappedData[m_uiTextureIndexByThread];
-	textureData.RowPitch = m_dwWidth * 4;
-	textureData.SlicePitch = m_TextureSize;
-
-	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pUploadTexture[m_uiTextureIndexByThread].Get(), 0, 0, 1, &textureData);
-}
-
-void D3D12Renderer_Client::SkipCurrentFrame()
-{
-	UINT formalIndex = (m_uiSwapChainIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
-	CD3DX12_RESOURCE_BARRIER barrier_PRESENT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
-		D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_pCommandList->ResourceBarrier(1, &barrier_PRESENT_SRC);
-
-	m_pCommandList->CopyResource(m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pRenderTargets[formalIndex].Get());
-
-	CD3DX12_RESOURCE_BARRIER barrier_SRC_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
-		D3D12_RESOURCE_STATE_PRESENT);
-	m_pCommandList->ResourceBarrier(1, &barrier_SRC_PRESENT);
-}
-
-void D3D12Renderer_Client::EndRender()
-{
-	CD3DX12_RESOURCE_BARRIER barrier_DEST_SRV = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiSwapChainIndex].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-	m_pCommandList->ResourceBarrier(1, &barrier_DEST_SRV);
-
-	m_pCommandList->Close();
-
-	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
-	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
-}
-
-void D3D12Renderer_Client::Present()
-{
-	DoCopyFence();
-
-	UINT SyncInterval = 0; // Vsync on , 0이면 Vsync를 off 하는 것이다.
-	// 이걸 키면 프레임이 느려진다.
-
-	UINT uiSyncInterval = SyncInterval;
-	UINT uiPresentFlags = 0;
-
-	// 모니터의 주사율과 GPU Rendering 주기와의 차이에서 생기는 화면이 찢어지는 현상이다.
-	if (!uiSyncInterval) {
-		// 이렇게 해야 Tearing(화면 찢어짐)을 무시하고
-		// Vsync를 꺼준다.
-		uiPresentFlags = DXGI_PRESENT_ALLOW_TEARING;
-	}
-
-	// 복사가 완료되면 백버퍼를 바꾼다.
-	WaitForCopyFenceValue(m_pui64CopyFenceValue[m_uiTextureIndexByThread]);
-	HRESULT hr = m_pSwapChain->Present(uiSyncInterval, uiPresentFlags);
-
-	if (DXGI_ERROR_DEVICE_REMOVED == hr)
-	{
-		__debugbreak();
-	}
-	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
-	m_uiTextureIndexByThread = (m_uiTextureIndexByThread + 1) % IMAGE_NUM_FOR_BUFFERING;
-}
-
-UINT64 D3D12Renderer_Client::DoCopyFence()
-{
-	IncreaseFenceValue_Wait();
-	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
-	m_pui64CopyFenceValue[m_uiTextureIndexByThread] = m_ui64FenceValue;
-
-	return m_ui64FenceValue;
-}
-
-void D3D12Renderer_Client::WaitForCopyFenceValue(UINT64 _expectedFenceValue)
-{
-	if (m_pFence->GetCompletedValue() < _expectedFenceValue)
-	{
-		m_pFence->SetEventOnCompletion(_expectedFenceValue, m_hCopyFenceEvent);
-		WaitForSingleObject(m_hCopyFenceEvent, INFINITE);
-	}
-}
-
-void D3D12Renderer_Client::IncreaseFenceValue_Wait()
-{
-	AcquireSRWLockExclusive(&m_srwLock);
-	m_ui64FenceValue++;
-	ReleaseSRWLockExclusive(&m_srwLock);
-}
-
-void D3D12Renderer_Client::CleanUpRenderer()
-{
-	DoCopyFence();
-
-	for (DWORD i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++) {
-		WaitForCopyFenceValue(m_pui64CopyFenceValue[i]);
-	}
-
-	if (m_ImageReceiveManager)
-	{
-		delete m_ImageReceiveManager;
-		m_ImageReceiveManager = nullptr;
-	}
-}
-
-D3D12Renderer_Client::D3D12Renderer_Client()
-	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_pCommandAllocator(nullptr),m_pCommandList(nullptr),
-	m_ui64FenceValue(0), m_pui64CopyFenceValue{}, 
-	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
-	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
-	m_pRTVHeap(nullptr), m_uiTextureIndexByThread(0), m_uiSwapChainIndex(0),
-	m_rtvDescriptorSize(0), m_pUploadTexture{}, m_ppMappedData{},
-	m_dwSwapChainFlags(0),
-	m_hCopyFenceEvent(nullptr),	m_pFence(nullptr),	
-	m_Viewport{}, m_ScissorRect{}, m_dwWidth(0), m_dwHeight(0),
-	m_srwLock(), m_ImageReceiveManager(nullptr), m_TextureSize(0)
-	// m_pui64DrawFenceValue{}, m_pSRVHeap(nullptr), m_srvDescriptorSize(0), m_hDrawFenceEvent(nullptr)
-{
-}
-
-D3D12Renderer_Client::~D3D12Renderer_Client()
-{
-	CleanUpRenderer();
-}

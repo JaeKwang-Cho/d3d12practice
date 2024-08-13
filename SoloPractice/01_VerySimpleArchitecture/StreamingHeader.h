@@ -7,11 +7,6 @@
 
 #define IMAGE_NUM_FOR_BUFFERING (16)
 
-static const UINT s_Receiver_Ports[IMAGE_NUM_FOR_BUFFERING] =
-{ 7601, 7602, 7603, 7604, 7605,
-7606, 7607, 7608, 7609, 7610,
-7611, 7612, 7613, 7614, 7615, 7616 };
-
 struct Overlapped_IO_State
 {
 	WSAOVERLAPPED wsaOL;
@@ -25,6 +20,7 @@ struct ScreenImageHeader
 {
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
+	UINT64 uiSessionID;
 };
 
 #define SERVER_PORT (4567)
@@ -59,6 +55,7 @@ struct ThreadParam
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	DWORD ulByteSize;
 	SOCKET hSendSocket;
+	UINT64 uiSessionID;
 };
 struct ImageSendManager
 {
@@ -74,6 +71,7 @@ private:
 	HANDLE hThread;
 	ThreadParam threadParam;
 	UINT textureIndexByThread;
+	UINT64 uiSessionID;
 	
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	Overlapped_IO_State* overlapped_IO_State;

@@ -18,6 +18,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 	char* pData = (char*)pThreadParam->data;
 	size_t ulByteSize = pThreadParam->ulByteSize;
+	UINT64 uiSessionID = pThreadParam->uiSessionID;
 	size_t uiSendCount = (ulByteSize + DATA_SIZE - 1) / DATA_SIZE;
 
 	// Overlapped I/O ¿äÃ»
@@ -41,7 +42,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
 		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
 
-		ScreenImageHeader header = { i, uiSendCount};
+		ScreenImageHeader header = { i, uiSendCount, uiSessionID };
 		memcpy(curOverlapped_Param->pData, &header, HEADER_SIZE);
 
 		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
@@ -139,7 +140,7 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 	addr.sin_family = AF_INET;
 
 	textureIndexByThread = (textureIndexByThread + 1) % IMAGE_NUM_FOR_BUFFERING;
-	addr.sin_port = htons(s_Receiver_Ports[textureIndexByThread]);
+	addr.sin_port = htons(CLIENT_PORT);
 	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 
 	int inputSize = _ulByteSize;
@@ -147,10 +148,11 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 
 	threadParam.data = compressedTexture;
 	threadParam.ulByteSize = compressSize;
-	threadParam.data = compressedTexture;
-	threadParam.ulByteSize = compressSize;
+	//threadParam.data = _data;
+	//threadParam.ulByteSize = _ulByteSize;
 	threadParam.addr = addr;
 	threadParam.hSendSocket = hSendSocket;
+	threadParam.uiSessionID = uiSessionID++;
 	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data, sizeof(overlapped_IO_Data));
 
 	//ThreadSendToClient((LPVOID)(&threadParam));
@@ -189,7 +191,7 @@ bool ImageSendManager::CanSendData()
 }
 
 ImageSendManager::ImageSendManager()
-	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, textureIndexByThread(0),
+	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, textureIndexByThread(0), uiSessionID(0),
 	overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0),compressedTexture(nullptr)
 {
 }
