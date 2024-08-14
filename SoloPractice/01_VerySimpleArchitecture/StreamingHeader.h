@@ -4,9 +4,6 @@
 #pragma comment(lib, "ws2_32")
 
 // ============ Client 客 傍蜡 ============ 
-
-#define IMAGE_NUM_FOR_BUFFERING (16)
-
 struct Overlapped_IO_State
 {
 	WSAOVERLAPPED wsaOL;
@@ -61,16 +58,15 @@ struct ImageSendManager
 {
 public:
 	void InitializeWinsock();
-	void SendData(void* _data, size_t _ulByteSize);
-	bool CanSendData();
+	void SendData(void* _data, size_t _ulByteSize, UINT _uiThreadIndex);
+	bool CanSendData(UINT _uiThreadIndex);
 private:
 	WSADATA wsa;
 	SOCKADDR_IN addr;
 
 	SOCKET hSendSocket; // 价脚 家南
-	HANDLE hThread;
+	HANDLE hThread[SWAP_CHAIN_FRAME_COUNT];
 	ThreadParam threadParam;
-	UINT textureIndexByThread;
 	UINT64 uiSessionID;
 	
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];

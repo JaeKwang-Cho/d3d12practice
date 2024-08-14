@@ -70,7 +70,7 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 
 		if (curOverlapped_Param->wsaOL.hEvent != 0)
 		{
-			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, 0);
+			DWORD result = ::WaitForSingleObject(curOverlapped_Param->wsaOL.hEvent, 1);
 			if (result != WAIT_TIMEOUT)
 			{
 				ScreenImageHeader header;
@@ -119,7 +119,7 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 					AcquireSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
 					memcpy(imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->pCompressedData + dataOffset, pDataToWrite + HEADER_SIZE, curOverlapped_Param->ulByteSize - HEADER_SIZE);
 					ReleaseSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
-					if (sumPacketNums[circularSessionIndex] >= header.totalPacketsNumber || header.currPacketNumber >= header.totalPacketsNumber - 1)
+					if (sumPacketNums[circularSessionIndex] >= header.totalPacketsNumber /* || header.currPacketNumber >= header.totalPacketsNumber - 1*/)
 					{
 						imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->compressedSize = ulByteSizes[circularSessionIndex];
 						imageReceiveMananger->IncreaseImageNums();
@@ -249,7 +249,7 @@ void ImageReceiveManager::IncreaseImageNums()
 
 bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
 {
-	if (numImages < 5)
+	if (numImages < 5 || numImages <= lastRenderedImageCount)
 	{
 		return false;
 	}
@@ -260,7 +260,9 @@ bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
 	compressedTextureBuffer[lastRenderedCircularIndex]->bRendered = true;
 
 	ReleaseSRWLockExclusive(&compressedTextureBuffer[lastRenderedCircularIndex]->lock);
+
 	lastRenderedCircularIndex = (lastRenderedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
+	lastRenderedImageCount++;
 	return true;
 }
 
@@ -300,7 +302,8 @@ void ImageReceiveManager::CleanUpManager()
 
 ImageReceiveManager::ImageReceiveManager()
 	:wsa{ 0 }, addr{ 0 }, hRecvSocket(0),  hThread(0), hHaltEvent(0),
-	numImages(0), lastRenderedCircularIndex(0), lastUpdatedCircularIndex(0), 
+	lastRenderedImageCount(0), lastRenderedCircularIndex(0), 
+	lastUpdatedCircularIndex(0), numImages(0),
 	overlapped_IO_Data{}, compressedTextureBuffer {},
 	renderer(nullptr)
 {

@@ -335,9 +335,9 @@ void D3D12Renderer::BeginRender()
 void D3D12Renderer::CopyRenderTarget()
 {
 #if PIXEL_STREAMING
-	if (bTryPixelStreaming == false && m_pScreenStreamer->CheckSendingThread(m_uiRenderTargetIndex) == false)
+	if (bTryPixelStreaming == false && m_pScreenStreamer->CheckSendable() == false)
 	{
-		bCheckUpdateTexture = true;
+		bCheckUpdateTexture = false;
 		return;
 	}
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
@@ -345,7 +345,7 @@ void D3D12Renderer::CopyRenderTarget()
 	D3D12_RESOURCE_BARRIER trans_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	pCommandList->ResourceBarrier(1, &trans_RT_SRC);
 
-	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste(m_uiRenderTargetIndex).Get(), m_pScreenStreamer->GetFootPrint());
+	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste().Get(), m_pScreenStreamer->GetFootPrint());
 	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
 
 	pCommandList->CopyTextureRegion(&copyDest, 0, 0, 0, &copySrc, nullptr);
@@ -409,9 +409,9 @@ void D3D12Renderer::Present()
 #if PIXEL_STREAMING
 	// fence 값이 만족했으면, copy도 완료된 것이니 send를 건다.
 	// 여기서도 Thread가 작업 중이였으면 스킵하는거로 한다.
-	if (bCheckUpdateTexture == true && m_pScreenStreamer->CheckSendingThread(dwNextContextIndex) == true)
+	if (bCheckUpdateTexture == true && m_pScreenStreamer->CheckSendable() == true)
 	{
-		m_pScreenStreamer->SendPixelsFromTexture(uiRTIndexToCopy);
+		m_pScreenStreamer->SendPixelsFromTexture();
 	}
 	bCheckUpdateTexture = false;
 	bTryPixelStreaming = false;

@@ -111,24 +111,24 @@ void ImageSendManager::InitializeWinsock()
 	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
 
-void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
+void ImageSendManager::SendData(void* _data, size_t _ulByteSize, UINT _uiThreadIndex)
 {
 	// 메시지 송신 스레드 생성
 	DWORD dwThreadID = 0;
 
-	if (hThread != 0) // 혹시나 해서 스킵 시키는 로직
+	if (hThread[_uiThreadIndex] != 0) // 혹시나 해서 스킵 시키는 로직
 	{
-		DWORD result = WaitForSingleObject(hThread, 0);
+		DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
 		if (result == WAIT_OBJECT_0)
 		{
 			DWORD dwExitCode = -1;
-			GetExitCodeThread(hThread, &dwExitCode);
+			GetExitCodeThread(hThread[_uiThreadIndex], &dwExitCode);
 			if (dwExitCode == 0)
 			{
 				sessionID++;
 			}
-			CloseHandle(hThread);
-			hThread = 0;
+			CloseHandle(hThread[_uiThreadIndex]);
+			hThread[_uiThreadIndex] = 0;
 		}
 		else
 		{
@@ -139,7 +139,6 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 	SOCKADDR_IN addr = { 0 };
 	addr.sin_family = AF_INET;
 
-	textureIndexByThread = (textureIndexByThread + 1) % IMAGE_NUM_FOR_BUFFERING;
 	addr.sin_port = htons(CLIENT_PORT);
 	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 
@@ -156,7 +155,7 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data, sizeof(overlapped_IO_Data));
 
 	//ThreadSendToClient((LPVOID)(&threadParam));
-	hThread = ::CreateThread(
+	hThread[_uiThreadIndex] = ::CreateThread(
 		NULL,
 		0,
 		ThreadSendToClient,
@@ -166,17 +165,17 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize)
 	);
 }
 
-bool ImageSendManager::CanSendData()
+bool ImageSendManager::CanSendData(UINT _uiThreadIndex)
 {
-	if (hThread == 0)
+	if (hThread[_uiThreadIndex] == 0)
 	{
 		return true;
 	}
-	DWORD result = WaitForSingleObject(hThread, 0);
+	DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
 	if (result == WAIT_OBJECT_0)
 	{
-		CloseHandle(hThread);
-		hThread = 0;
+		CloseHandle(hThread[_uiThreadIndex]);
+		hThread[_uiThreadIndex] = 0;
 		return true;
 	}
 	else if (result == WAIT_TIMEOUT)
@@ -191,7 +190,7 @@ bool ImageSendManager::CanSendData()
 }
 
 ImageSendManager::ImageSendManager()
-	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, textureIndexByThread(0), uiSessionID(0),
+	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, uiSessionID(0),
 	overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0),compressedTexture(nullptr)
 {
 }
@@ -221,7 +220,10 @@ ImageSendManager::~ImageSendManager()
 		delete[] compressedTexture;
 		compressedTexture = nullptr;
 	}
-	CloseHandle(hThread);
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
+	{
+		CloseHandle(hThread[i]);
+	}
 	::closesocket(hSendSocket);
 	::WSACleanup();
 }

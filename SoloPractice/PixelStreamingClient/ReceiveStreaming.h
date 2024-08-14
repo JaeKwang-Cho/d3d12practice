@@ -106,6 +106,7 @@ private:
 
 	SRWLOCK countLock;
 
+	UINT64 lastRenderedImageCount;
 	UINT64 lastRenderedCircularIndex;
 	UINT64 lastUpdatedCircularIndex;
 	UINT64 numImages;

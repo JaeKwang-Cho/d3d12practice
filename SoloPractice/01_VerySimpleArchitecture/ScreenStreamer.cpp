@@ -62,8 +62,8 @@ void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _
 	}
 
 	// winsock 작업을 할 구조체를 초기화.
-	m_winsockProps = new ImageSendManager;
-	m_winsockProps->InitializeWinsock();
+	m_imageSendManager = new ImageSendManager;
+	m_imageSendManager->InitializeWinsock();
 }
 
 void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
@@ -92,30 +92,30 @@ void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
 	}
 }
 
-void ScreenStreamer::SendPixelsFromTexture(DWORD _dwTexIndex)
+void ScreenStreamer::SendPixelsFromTexture()
 {
-	if (m_winsockProps)
+	if (m_imageSendManager)
 	{
-		m_winsockProps->SendData(m_pMappedData[_dwTexIndex], m_Image.slicePitch);
+		m_imageSendManager->SendData(m_pMappedData[m_indexToCopyDest_Circular], m_Image.slicePitch, m_indexToCopyDest_Circular);
 	}
 }
 
 ScreenStreamer::ScreenStreamer()
 	:m_pScreenTexture{}, m_pMappedData{}, 
 	m_uiCurTextureIndex(0), m_TextureDesc{}, m_Image{},
-	m_hThread(0), m_footPrint{}, m_winsockProps(nullptr)
+	m_hThread(0), m_footPrint{}, m_imageSendManager(nullptr), m_indexToCopyDest_Circular(0)
 {
 }
 
 ScreenStreamer::~ScreenStreamer()
 {
-	if (m_winsockProps) 
+	if (m_imageSendManager) 
 	{
-		delete m_winsockProps;
+		delete m_imageSendManager;
 	}
 }
 
-bool ScreenStreamer::CheckSendingThread(UINT _uiRenderTargetIndex)
+bool ScreenStreamer::CheckSendable()
 {
-	return m_winsockProps->CanSendData();
+	return m_imageSendManager->CanSendData(m_indexToCopyDest_Circular);
 }

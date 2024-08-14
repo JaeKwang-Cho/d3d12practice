@@ -10,7 +10,7 @@ public:
 	void Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _pResDescRT);
 
 	void CreatFileFromTexture(DWORD _dwTexIndex);
-	void SendPixelsFromTexture(DWORD _dwTexIndex);
+	void SendPixelsFromTexture();
 protected:
 private:
 
@@ -26,19 +26,22 @@ private:
 	HANDLE m_hThread;
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_footPrint;
 
-	ImageSendManager* m_winsockProps;
+	ImageSendManager* m_imageSendManager;
+	UINT m_indexToCopyDest_Circular;
 
 public:
 	ScreenStreamer();
 	virtual ~ScreenStreamer();
 
 	// Mapped 된 데이터를 Sending Thread가 작업 중인지 확인하는 것
-	bool CheckSendingThread(UINT _uiRenderTargetIndex);
+	bool CheckSendable();
 
 	// 렌더링이 완료된 렌더타켓을 카피할 수 있도록, D3D12Renderer에서 호출을 잘 해야 한다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> GetTextureToPaste(UINT _uiRenderTargetIndex)
+	Microsoft::WRL::ComPtr<ID3D12Resource> GetTextureToPaste()
 	{
-		return m_pScreenTexture[_uiRenderTargetIndex];
+		Microsoft::WRL::ComPtr<ID3D12Resource> copyDestTexture = m_pScreenTexture[m_indexToCopyDest_Circular];
+		m_indexToCopyDest_Circular = (m_indexToCopyDest_Circular + 1) % SWAP_CHAIN_FRAME_COUNT;
+		return copyDestTexture;
 	}
 
 	const D3D12_PLACED_SUBRESOURCE_FOOTPRINT& GetFootPrint() {

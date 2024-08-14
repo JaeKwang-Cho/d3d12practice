@@ -12,16 +12,6 @@ void D3D12Renderer_Client::DrawStreamPixels()
 		EndRender();
 		Present();
 	}
-	//SkipCurrentFrame();
-}
-
-bool D3D12Renderer_Client::CheckTextureDrawing(UINT _index)
-{
-	if (m_pFence->GetCompletedValue() < m_pui64CopyFenceValue[_index])
-	{
-		return false;
-	}
-	return true;
 }
 
 bool D3D12Renderer_Client::CheckPixelReady()
@@ -53,20 +43,6 @@ void D3D12Renderer_Client::UploadStreamPixels()
 	textureData.SlicePitch = m_TextureSize;
 
 	UpdateSubresources(m_pCommandList.Get(), m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pUploadTexture[m_uiTextureIndexCircular].Get(), 0, 0, 1, &textureData);
-}
-
-void D3D12Renderer_Client::SkipCurrentFrame()
-{
-	UINT formalIndex = (m_uiSwapChainIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
-	CD3DX12_RESOURCE_BARRIER barrier_PRESENT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_PRESENT,
-		D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_pCommandList->ResourceBarrier(1, &barrier_PRESENT_SRC);
-
-	m_pCommandList->CopyResource(m_pRenderTargets[m_uiSwapChainIndex].Get(), m_pRenderTargets[formalIndex].Get());
-
-	CD3DX12_RESOURCE_BARRIER barrier_SRC_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[formalIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE,
-		D3D12_RESOURCE_STATE_PRESENT);
-	m_pCommandList->ResourceBarrier(1, &barrier_SRC_PRESENT);
 }
 
 void D3D12Renderer_Client::EndRender()

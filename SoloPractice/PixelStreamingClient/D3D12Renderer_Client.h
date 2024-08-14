@@ -8,13 +8,11 @@ public:
 	bool Initialize(HWND _hWnd);
 
 	void DrawStreamPixels();
-	bool CheckTextureDrawing(UINT _index);
 protected:
 private:
 	bool CheckPixelReady();
 	void BeginRender();
 	void UploadStreamPixels();
-	void SkipCurrentFrame();
 	void EndRender();
 	void Present();
 
