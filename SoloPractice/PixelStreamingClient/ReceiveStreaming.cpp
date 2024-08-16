@@ -7,6 +7,7 @@
 #include <chrono>
 
 #include <lz4.h>
+#include <unordered_set>
 
 void ErrorHandler(const wchar_t* _pszMessage)
 {
@@ -18,21 +19,6 @@ void ErrorHandler(const wchar_t* _pszMessage)
 
 static ULONGLONG g_PrevUpdateTime = 0;
 
-/*
-1. ImageReceiveManager에서
-- 압축 안 된텍스쳐 버퍼를 가지고 있고,
-- session 별로 받으면서 압축된 텍스쳐를 ImageDecompressor에게 copy해서 넘겨주면서 요청을 한다. (여기서 스레드는 분리된다.)
-- buffer마다 lock을 가지고 있는데, 이 lock은 uploadbuffer로 copy할 때나, 압축을 해제할 때 사용한다.
-
-2. ImageDecompressor에서
-- 압축을 해제한 다음 ImageReceiveManager에 있는 버퍼에 넣는다.
-- 이 과정에서 버퍼를 lock 한다.
-
-3. renderer
-ImageReceiveManager에서 버퍼를 upload buffer에 복사해서 올린다.
- 이 과정에서 복사가 끝날 때 가지 lock을 한다.
-*/
-
 DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 {
 	ImageReceiveManager* imageReceiveMananger = (ImageReceiveManager*)_pParam;
@@ -42,26 +28,27 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 	int sizeAddr = sizeof(serverAddr);
 
 	UINT64 uiSessionID = 0;
-	UINT64 uiDroppedSessionID = 0;
 	UINT64 uiDroppedSessionNumber = 0;
 	UINT circularSessionIndex = 0;
 	uint32_t numTryToGetPackets = 0;
 
 	UINT64 lastSessionID[IMAGE_NUM_FOR_BUFFERING];
 	uint32_t totalPacketNums[IMAGE_NUM_FOR_BUFFERING];
+	DWORD ulTotalByteSizes[IMAGE_NUM_FOR_BUFFERING];
 	uint32_t sumPacketNums[IMAGE_NUM_FOR_BUFFERING];
-	DWORD ulByteSizes[IMAGE_NUM_FOR_BUFFERING];
+	DWORD ulSumByteSizes[IMAGE_NUM_FOR_BUFFERING];
 	memset(lastSessionID, 0xff, sizeof(lastSessionID));
 	memset(totalPacketNums, 0, sizeof(totalPacketNums));
+	memset(ulTotalByteSizes, 0, sizeof(ulTotalByteSizes));
 	memset(sumPacketNums, 0, sizeof(sumPacketNums));
-	memset(ulByteSizes, 0, sizeof(ulByteSizes));
+	memset(ulSumByteSizes, 0, sizeof(ulSumByteSizes));
+	
+	std::unordered_set<UINT64> droppedSessions;
 
-	ULONGLONG CurrTickTime = GetTickCount64();
-
-	if (CurrTickTime - g_PrevUpdateTime > 66) // 15FPS
-	{
-		g_PrevUpdateTime = CurrTickTime;
-	}
+	/*
+	그냥 냅다 버퍼링을 시도하는 버퍼와
+	무결성을 체크해서 완성된 버퍼를 구분해서 시도해보자.	
+	*/
 
 	while (::WaitForSingleObject(imageReceiveMananger->GetHaltEvent(), 0) != WAIT_OBJECT_0)
 	{
@@ -80,7 +67,7 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 				{
 					uiSessionID = header.uiSessionID;
 					circularSessionIndex = (uiSessionID - uiDroppedSessionNumber + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
-					if (uiSessionID <= uiDroppedSessionID) 
+					if (droppedSessions.find(uiSessionID) != droppedSessions.end())
 					{
 						// 드롭하는 것.
 						goto DROP_PACKET;
@@ -90,12 +77,14 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 					if (bResult) // 현재 버퍼에 새로운 session이 들어올 차례인 경우
 					{
 						// 버퍼에서 현재 세션에 대해 받는 것을 멈추고, 압축 해제 스레드로 옮긴다.
-						if (imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->bRendered == false)
+						if (imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->bRendered == false
+							&& imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->bBuffered == true)
 						{
 							// 렌더링 된 적이 없다면, 더 이상 버퍼링을 해서는 안된다. 일단 멈춰야 한다.
 							// 서버와 화면에 갭이 생기겠지만, 어쩔 수 없다. 동영상이 아니기 때문에 그냥 버리는 수 밖에 없다.
-							uiDroppedSessionID = uiSessionID;
+							droppedSessions.emplace(uiSessionID);
 							uiDroppedSessionNumber++;
+							OutputDebugStringW(std::format(L"DropSession : {}\n", uiSessionID).c_str());
 							goto DROP_PACKET;
 						}
 						else 
@@ -103,8 +92,9 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 							// 새로 받을 준비를 한다.
 							lastSessionID[circularSessionIndex] = uiSessionID;
 							totalPacketNums[circularSessionIndex] = header.totalPacketsNumber;
+							ulTotalByteSizes[circularSessionIndex] = header.totalCompressedSize;
 							sumPacketNums[circularSessionIndex] = 0;
-							ulByteSizes[circularSessionIndex] = 0;
+							ulSumByteSizes[circularSessionIndex] = 0;
 						}
 					}
 
@@ -112,18 +102,28 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 					int dataOffset = DATA_SIZE * header.currPacketNumber;
 					char* pDataToWrite = (char*)curOverlapped_Param->wsabuf.buf;
 
-					ulByteSizes[circularSessionIndex] += curOverlapped_Param->ulByteSize - HEADER_SIZE;
+					ulSumByteSizes[circularSessionIndex] += curOverlapped_Param->ulByteSize - HEADER_SIZE;
 					sumPacketNums[circularSessionIndex]++;
 
 					// 혹시 rederer에서 drawing 중이면 기다린다.
 					AcquireSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
 					memcpy(imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->pCompressedData + dataOffset, pDataToWrite + HEADER_SIZE, curOverlapped_Param->ulByteSize - HEADER_SIZE);
-					ReleaseSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
 					if (sumPacketNums[circularSessionIndex] >= header.totalPacketsNumber /* || header.currPacketNumber >= header.totalPacketsNumber - 1*/)
 					{
-						imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->compressedSize = ulByteSizes[circularSessionIndex];
-						imageReceiveMananger->IncreaseImageNums();
+						if (ulTotalByteSizes[circularSessionIndex] == ulSumByteSizes[circularSessionIndex])
+						{
+							imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->compressedSize = header.totalCompressedSize;
+							imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->bBuffered = true;
+							imageReceiveMananger->IncreaseImageNums();
+
+							OutputDebugStringW(std::format(L"CompleteSession : {}\n", uiSessionID).c_str());
+						}
+						else 
+						{
+							// loss가 일어났을때
+						}
 					}
+					ReleaseSRWLockExclusive(&imageReceiveMananger->compressedTextureBuffer[circularSessionIndex]->lock);
 				}
 			}
 			else
@@ -201,6 +201,7 @@ void ImageReceiveManager::InitializeWinSock()
 
 		compressedTextureBuffer[i]->lock = SRWLOCK_INIT;
 		compressedTextureBuffer[i]->pCompressedData = new char[LZ4_compressBound(s_OriginalTextureSize)];
+		compressedTextureBuffer[i]->bBuffered = false;
 		compressedTextureBuffer[i]->bRendered = false;
 		compressedTextureBuffer[i]->compressedSize = 0;
 	}
@@ -249,7 +250,7 @@ void ImageReceiveManager::IncreaseImageNums()
 
 bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
 {
-	if (numImages < 5 || numImages <= lastRenderedImageCount)
+	if (numImages < 5 || numImages <= lastRenderedImageCount || compressedTextureBuffer[lastRenderedCircularIndex]->bBuffered == false)
 	{
 		return false;
 	}
@@ -258,6 +259,7 @@ bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
 	LZ4_decompress_safe(compressedTextureBuffer[lastRenderedCircularIndex]->pCompressedData, (char*)_pUploadData,
 		compressedTextureBuffer[lastRenderedCircularIndex]->compressedSize, s_OriginalTextureSize);
 	compressedTextureBuffer[lastRenderedCircularIndex]->bRendered = true;
+	compressedTextureBuffer[lastRenderedCircularIndex]->bBuffered = false;
 
 	ReleaseSRWLockExclusive(&compressedTextureBuffer[lastRenderedCircularIndex]->lock);
 

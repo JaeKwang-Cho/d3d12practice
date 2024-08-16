@@ -42,7 +42,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
 		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
 
-		ScreenImageHeader header = { i, uiSendCount, uiSessionID };
+		ScreenImageHeader header = { i, uiSendCount, uiSessionID, ulByteSize };
 		memcpy(curOverlapped_Param->pData, &header, HEADER_SIZE);
 
 		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
@@ -125,7 +125,7 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize, UINT _uiThreadI
 			GetExitCodeThread(hThread[_uiThreadIndex], &dwExitCode);
 			if (dwExitCode == 0)
 			{
-				sessionID++;
+				//
 			}
 			CloseHandle(hThread[_uiThreadIndex]);
 			hThread[_uiThreadIndex] = 0;
@@ -190,8 +190,8 @@ bool ImageSendManager::CanSendData(UINT _uiThreadIndex)
 }
 
 ImageSendManager::ImageSendManager()
-	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread(0), threadParam{ {0}, {0}, {0} }, uiSessionID(0),
-	overlapped_IO_Data{}, overlapped_IO_State(nullptr), sessionID(0),compressedTexture(nullptr)
+	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread{}, threadParam{ {0}, {0}, {0} }, uiSessionID(0),
+	overlapped_IO_Data{}, overlapped_IO_State(nullptr), compressedTexture(nullptr)
 {
 }
 

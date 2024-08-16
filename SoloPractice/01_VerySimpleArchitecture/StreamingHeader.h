@@ -18,6 +18,7 @@ struct ScreenImageHeader
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
 	UINT64 uiSessionID;
+	DWORD totalCompressedSize;
 };
 
 #define SERVER_PORT (4567)
@@ -71,7 +72,6 @@ private:
 	
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
 	Overlapped_IO_State* overlapped_IO_State;
-	UINT64 sessionID;
 
 	char* compressedTexture;
 

@@ -2,15 +2,19 @@
 #include "ScreenStreamer.h"
 #include "D3D12Renderer.h"
 #include "StreamingHeader.h"
+#include <lz4.h>
 
 DWORD WINAPI CreateFileFromTexture_Thread(LPVOID _pParam) 
 {
-	Image* pImage = (Image*)_pParam;
+	ImageFile* pImage = (ImageFile*)_pParam;
+
+	LZ4_decompress_safe(pImage->compressedTexture, pImage->decompressedTexture, pImage->compressSize, pImage->image.slicePitch);
+	pImage->image.pixels = (UINT8*)pImage->decompressedTexture;
 	HRESULT hr = SaveToWICFile(
-		*pImage,
+		pImage->image,
 		WIC_FLAGS_NONE,
 		GetWICCodec(WIC_CODEC_JPEG),
-		L"Screen_Copy.png"
+		pImage->fileName
 	);
 
 	if (FAILED(hr)) {
@@ -64,19 +68,40 @@ void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _
 	// winsock 작업을 할 구조체를 초기화.
 	m_imageSendManager = new ImageSendManager;
 	m_imageSendManager->InitializeWinsock();
+
+	// test용
+	m_imageFile = new ImageFile;
+	m_compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
+	m_decompressedTexture = new char[OriginalTextureSize];
 }
 
 void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
 {
-	m_Image.pixels = m_pMappedData[_dwTexIndex];
+	//m_Image.pixels = m_pMappedData[_dwTexIndex];
+	
 	DWORD dwThreadID = 0;
 	if (m_hThread == 0)
 	{
+		m_decompressedTexture = (char*)m_pMappedData[_dwTexIndex];
+
+		m_imageFile->image = m_Image;
+		m_imageFile->compressedTexture = m_compressedTexture;
+		m_imageFile->decompressedTexture = m_decompressedTexture;
+
+		int compressSize = LZ4_compress_fast((char*)m_pMappedData[_dwTexIndex], m_compressedTexture, m_Image.slicePitch, LZ4_compressBound(m_Image.slicePitch), 1);
+		m_imageFile->compressSize = compressSize;
+		m_testIndex++;
+		swprintf_s(m_imageFile->fileName, L"testcapturescreen\\screen_copy_%04d.png", m_testIndex);
+
+		if (m_testIndex >= 300)
+		{
+			return;
+		}
 		m_hThread = ::CreateThread(
 			NULL,
 			0,
 			CreateFileFromTexture_Thread,
-			(void*)(&m_Image),
+			(void*)(m_imageFile),
 			0,
 			&dwThreadID
 		);
@@ -103,15 +128,28 @@ void ScreenStreamer::SendPixelsFromTexture()
 ScreenStreamer::ScreenStreamer()
 	:m_pScreenTexture{}, m_pMappedData{}, 
 	m_uiCurTextureIndex(0), m_TextureDesc{}, m_Image{},
-	m_hThread(0), m_footPrint{}, m_imageSendManager(nullptr), m_indexToCopyDest_Circular(0)
+	m_hThread(0), m_footPrint{}, m_imageSendManager(nullptr), m_indexToCopyDest_Circular(0), m_testIndex(0), 
+	m_imageFile(nullptr), m_compressedTexture(nullptr), m_decompressedTexture(nullptr)
 {
 }
 
 ScreenStreamer::~ScreenStreamer()
 {
+	if (m_hThread != 0)
+	{
+		WaitForSingleObject(m_hThread, INFINITE);
+	}
 	if (m_imageSendManager) 
 	{
 		delete m_imageSendManager;
+	}
+	if (m_compressedTexture)
+	{
+		delete[] m_compressedTexture;
+	}
+	if (m_imageFile)
+	{
+		delete m_imageFile;
 	}
 }
 

@@ -4,6 +4,15 @@
 class D3D12Renderer;
 struct ImageSendManager;
 
+struct ImageFile
+{
+	Image image;
+	wchar_t fileName[64];
+	char* compressedTexture;
+	char* decompressedTexture;
+	int compressSize;
+};
+
 class ScreenStreamer
 {
 public:
@@ -29,6 +38,11 @@ private:
 	ImageSendManager* m_imageSendManager;
 	UINT m_indexToCopyDest_Circular;
 
+	// test
+	UINT64 m_testIndex;
+	ImageFile* m_imageFile;
+	char* m_compressedTexture;
+	char* m_decompressedTexture;
 public:
 	ScreenStreamer();
 	virtual ~ScreenStreamer();

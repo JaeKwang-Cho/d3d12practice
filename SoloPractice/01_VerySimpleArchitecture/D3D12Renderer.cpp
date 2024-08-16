@@ -340,13 +340,21 @@ void D3D12Renderer::CopyRenderTarget()
 		bCheckUpdateTexture = false;
 		return;
 	}
+
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	// 전전 프레임을 작업한 command list는 현재 세팅된 commandlist이다.
+	// (프레임이 3개고, 커맨드리스트가 2개이기 때문)
+	WaitForFenceValue(m_pui64LastFenceValue[m_dwCurContextIndex]);
 
 	D3D12_RESOURCE_BARRIER trans_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	pCommandList->ResourceBarrier(1, &trans_RT_SRC);
 
 	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste().Get(), m_pScreenStreamer->GetFootPrint());
-	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
+	// 요거를 
+	//const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
+	// 이렇게 intermediate buffer에 대해 readback을 시도해보자.
+	UINT uiIntermediateTextureIndex = (m_uiRenderTargetIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
+	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[uiIntermediateTextureIndex].Get(), 0);
 
 	pCommandList->CopyTextureRegion(&copyDest, 0, 0, 0, &copySrc, nullptr);
 
@@ -415,7 +423,7 @@ void D3D12Renderer::Present()
 	}
 	bCheckUpdateTexture = false;
 	bTryPixelStreaming = false;
-	// m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy ); // 임시 코드
+	//m_pScreenStreamer->CreatFileFromTexture(uiRTIndexToCopy); // 임시 코드
 #endif
 
 	// 한 프레임이 끝났으니 0으로 초기화 한다.

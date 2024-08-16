@@ -41,6 +41,7 @@ struct ScreenImageHeader
 	uint32_t currPacketNumber;
 	uint32_t totalPacketsNumber;
 	UINT64 uiSessionID;
+	DWORD totalCompressedSize;
 };
 
 #define SERVER_PORT (4567)
@@ -77,6 +78,7 @@ struct CompressedTextures
 	char* pCompressedData = nullptr;
 	DWORD compressedSize;
 	SRWLOCK lock;
+	bool bBuffered = false;
 	bool bRendered = false;
 };
 
