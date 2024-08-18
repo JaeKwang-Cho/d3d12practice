@@ -101,10 +101,13 @@ void ImageSendManager::InitializeWinsock()
 	}
 
 	// Overlapped 구조체 미리 할당해놓기
-	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
 	{
-		overlapped_IO_Data[i] = new Overlapped_IO_Data;
-		overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+		for (UINT j = 0; j < MAXIMUM_WAIT_OBJECTS; j++)
+		{
+			overlapped_IO_Data[i][j] = new Overlapped_IO_Data;
+			overlapped_IO_Data[i][j]->wsaOL.hEvent = 0;
+		}
 	}
 	overlapped_IO_State = new Overlapped_IO_State;
 	// 압축 텍스쳐 버퍼 미리 할당
@@ -121,12 +124,6 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize, UINT _uiThreadI
 		DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
 		if (result == WAIT_OBJECT_0)
 		{
-			DWORD dwExitCode = -1;
-			GetExitCodeThread(hThread[_uiThreadIndex], &dwExitCode);
-			if (dwExitCode == 0)
-			{
-				//
-			}
 			CloseHandle(hThread[_uiThreadIndex]);
 			hThread[_uiThreadIndex] = 0;
 		}
@@ -152,7 +149,7 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize, UINT _uiThreadI
 	threadParam.addr = addr;
 	threadParam.hSendSocket = hSendSocket;
 	threadParam.uiSessionID = uiSessionID++;
-	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data, sizeof(overlapped_IO_Data));
+	memcpy(threadParam.overlapped_IO_Data, overlapped_IO_Data[_uiThreadIndex], sizeof(overlapped_IO_Data[_uiThreadIndex]));
 
 	//ThreadSendToClient((LPVOID)(&threadParam));
 	hThread[_uiThreadIndex] = ::CreateThread(
@@ -174,8 +171,16 @@ bool ImageSendManager::CanSendData(UINT _uiThreadIndex)
 	DWORD result = WaitForSingleObject(hThread[_uiThreadIndex], 0);
 	if (result == WAIT_OBJECT_0)
 	{
+		DWORD dwExitCode = -1;
+		GetExitCodeThread(hThread[_uiThreadIndex], &dwExitCode);
+		if (dwExitCode == 0)
+		{
+			// 잘 보냈을때
+			// OutputDebugStringW(std::format(L"Send Sessions: {}\n", uiSessionID).c_str());
+		}
 		CloseHandle(hThread[_uiThreadIndex]);
 		hThread[_uiThreadIndex] = 0;
+
 		return true;
 	}
 	else if (result == WAIT_TIMEOUT)
@@ -197,18 +202,22 @@ ImageSendManager::ImageSendManager()
 
 ImageSendManager::~ImageSendManager()
 {
-	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
 	{
-		if (overlapped_IO_Data[i])
+		for (UINT j = 0; j < MAXIMUM_WAIT_OBJECTS; j++)
 		{
-			if (overlapped_IO_Data[i]->wsaOL.hEvent != 0)
+			if (overlapped_IO_Data[i][j])
 			{
-				::WaitForSingleObject(overlapped_IO_Data[i]->wsaOL.hEvent, INFINITE);
-				overlapped_IO_Data[i]->wsaOL.hEvent = 0;
+				if (overlapped_IO_Data[i][j]->wsaOL.hEvent != 0)
+				{
+					::WaitForSingleObject(overlapped_IO_Data[i][j]->wsaOL.hEvent, INFINITE);
+					overlapped_IO_Data[i][j]->wsaOL.hEvent = 0;
+				}
+				delete overlapped_IO_Data[i][j];
+				overlapped_IO_Data[i][j] = nullptr;
 			}
-			delete overlapped_IO_Data[i];
-			overlapped_IO_Data[i] = nullptr;
 		}
+		
 	}
 	if (overlapped_IO_State)
 	{

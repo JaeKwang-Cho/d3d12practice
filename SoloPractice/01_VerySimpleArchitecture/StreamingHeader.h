@@ -70,7 +70,7 @@ private:
 	ThreadParam threadParam;
 	UINT64 uiSessionID;
 	
-	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
+	Overlapped_IO_Data* overlapped_IO_Data[SWAP_CHAIN_FRAME_COUNT][MAXIMUM_WAIT_OBJECTS];
 	Overlapped_IO_State* overlapped_IO_State;
 
 	char* compressedTexture;

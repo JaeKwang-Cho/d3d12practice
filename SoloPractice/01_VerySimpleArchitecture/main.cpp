@@ -210,11 +210,12 @@ void RunGame()
         g_PrevUpdateTime = CurrTickTime;
     }
 
-    if (CurrTickTime - g_PrevStreamingTime > 66) // 15FPS
+    //if (CurrTickTime - g_PrevStreamingTime > 33) 
     {
-        g_PrevStreamingTime = CurrTickTime;
-        g_pRenderer->TryPixelStreaming();
+        //g_PrevStreamingTime = CurrTickTime;
+        g_pRenderer->TryPixelStreaming(); // 최대한 빨리보내보자.
     }
+    
     // ===== draw object =====
     g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 

@@ -69,7 +69,6 @@ struct Overlapped_IO_Data
 	WSABUF wsabuf;
 	char pData[MAX_PACKET_SIZE];
 	SOCKADDR_IN addr;
-	DWORD ulByteSize;
 	UINT64 sessionID;
 };
 
@@ -78,8 +77,6 @@ struct CompressedTextures
 	char* pCompressedData = nullptr;
 	DWORD compressedSize;
 	SRWLOCK lock;
-	bool bBuffered = false;
-	bool bRendered = false;
 };
 
 struct ImageReceiveManager
@@ -88,7 +85,7 @@ public:
 	void InitializeWinSock();
 	bool StartReceiveManager(D3D12Renderer_Client* _renderer);
 
-	void IncreaseImageNums();
+	UINT64 IncreaseImageNums();
 	bool DecompressNCopyNextBuffer(void* _pUploadData);
 
 	HANDLE GetHaltEvent() { return hHaltEvent; }
@@ -96,7 +93,8 @@ private:
 	void CleanUpManager();
 public:
 	Overlapped_IO_Data* overlapped_IO_Data[MAXIMUM_WAIT_OBJECTS];
-	CompressedTextures* compressedTextureBuffer[IMAGE_NUM_FOR_BUFFERING];
+	CompressedTextures* rawTextureBuffer[IMAGE_NUM_FOR_BUFFERING];
+	CompressedTextures* validTextureBuffer[IMAGE_NUM_FOR_BUFFERING];
 
 	SOCKET hRecvSocket; // 수신 소켓
 private:
@@ -108,10 +106,11 @@ private:
 
 	SRWLOCK countLock;
 
-	UINT64 lastRenderedImageCount;
+	UINT64 renderedImageCount;
 	UINT64 lastRenderedCircularIndex;
+
+	UINT64 updatedImagesCount;
 	UINT64 lastUpdatedCircularIndex;
-	UINT64 numImages;
 
 	D3D12Renderer_Client* renderer;
 public:
