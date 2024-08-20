@@ -252,8 +252,8 @@ EXIT:
 	InitFrameCB();
 
 #if PIXEL_STREAMING
-	// ScreenStreamer
-	m_pScreenStreamer = new ScreenStreamer;
+	// ScreenCapturer
+	m_pScreenStreamer = new ScreenCapturer;
 	m_pScreenStreamer->Initialize(this, m_pRenderTargets[0]->GetDesc());
 #endif
 

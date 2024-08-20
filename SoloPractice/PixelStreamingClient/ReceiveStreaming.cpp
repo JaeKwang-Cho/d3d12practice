@@ -105,14 +105,7 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 					}
 					else
 					{
-						/*
-						[2024-08-17] Server window loop에서 뭔가 이벤트가 일어나면... 송신이 되지 않는다. 이걸 해결 해야 한다.
-						*/
-						if (header.currPacketNumber >= header.totalPacketsNumber - 1)
-						{
-							//OutputDebugStringW(std::format(L"===== Failed ===== \nSession[{}]'s packets {} / {}\n", uiSessionID, sumPacketNums[circularSessionIndex], header.totalPacketsNumber).c_str());
-							//OutputDebugStringW(std::format(L"Session[{}]'s curBytes / totalBytes {} / {}\n", uiSessionID, ulSumByteSizes[circularSessionIndex], ulTotalByteSizes[circularSessionIndex]).c_str());
-						}
+						// packet loss
 					}
 					ReleaseSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
 				}

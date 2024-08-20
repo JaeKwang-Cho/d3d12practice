@@ -9,7 +9,7 @@ class SingleDescriptorAllocator;
 class ConstantBufferManager;
 class D3D12PSOCache;
 class FlyCamera;
-class ScreenStreamer;
+class ScreenCapturer;
 
 class D3D12Renderer
 {
@@ -154,8 +154,8 @@ private:
 	FlyCamera* m_flyCamera;
 	POINT m_LastMousePos;
 
-	// ScreenStreamer
-	ScreenStreamer* m_pScreenStreamer;
+	// ScreenCapturer
+	ScreenCapturer* m_pScreenStreamer;
 	bool bTryPixelStreaming;
 	bool bCheckUpdateTexture;
 

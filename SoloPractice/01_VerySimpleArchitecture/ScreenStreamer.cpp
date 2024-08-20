@@ -26,7 +26,7 @@ DWORD WINAPI CreateFileFromTexture_Thread(LPVOID _pParam)
 }
 
 
-void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _pResDescRT)
+void ScreenCapturer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _pResDescRT)
 {
 	Microsoft::WRL::ComPtr<ID3D12Device> pDevice = _pRenderer->INL_GetD3DDevice();
 	m_TextureDesc = _pResDescRT;
@@ -75,7 +75,7 @@ void ScreenStreamer::Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _
 	m_decompressedTexture = new char[OriginalTextureSize];
 }
 
-void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
+void ScreenCapturer::CreatFileFromTexture(DWORD _dwTexIndex)
 {
 	//m_Image.pixels = m_pMappedData[_dwTexIndex];
 	
@@ -117,7 +117,7 @@ void ScreenStreamer::CreatFileFromTexture(DWORD _dwTexIndex)
 	}
 }
 
-void ScreenStreamer::SendPixelsFromTexture()
+void ScreenCapturer::SendPixelsFromTexture()
 {
 	if (m_imageSendManager)
 	{
@@ -125,7 +125,7 @@ void ScreenStreamer::SendPixelsFromTexture()
 	}
 }
 
-ScreenStreamer::ScreenStreamer()
+ScreenCapturer::ScreenCapturer()
 	:m_pScreenTexture{}, m_pMappedData{}, 
 	m_uiCurTextureIndex(0), m_TextureDesc{}, m_Image{},
 	m_hThread(0), m_footPrint{}, m_imageSendManager(nullptr), m_indexToCopyDest_Circular(0), m_testIndex(0), 
@@ -133,7 +133,7 @@ ScreenStreamer::ScreenStreamer()
 {
 }
 
-ScreenStreamer::~ScreenStreamer()
+ScreenCapturer::~ScreenCapturer()
 {
 	if (m_hThread != 0)
 	{
@@ -153,7 +153,7 @@ ScreenStreamer::~ScreenStreamer()
 	}
 }
 
-bool ScreenStreamer::CheckSendable()
+bool ScreenCapturer::CheckSendable()
 {
 	return m_imageSendManager->CanSendData(m_indexToCopyDest_Circular);
 }

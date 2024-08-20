@@ -13,7 +13,7 @@ struct ImageFile
 	int compressSize;
 };
 
-class ScreenStreamer
+class ScreenCapturer
 {
 public:
 	void Initialize(D3D12Renderer* _pRenderer, D3D12_RESOURCE_DESC _pResDescRT);
@@ -44,8 +44,8 @@ private:
 	char* m_compressedTexture;
 	char* m_decompressedTexture;
 public:
-	ScreenStreamer();
-	virtual ~ScreenStreamer();
+	ScreenCapturer();
+	virtual ~ScreenCapturer();
 
 	// Mapped 된 데이터를 Sending Thread가 작업 중인지 확인하는 것
 	bool CheckSendable();
