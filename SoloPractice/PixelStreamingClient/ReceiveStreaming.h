@@ -19,21 +19,11 @@ enum class E_ClientState : UINT8
 	END
 };
 
-struct StateExchange
-{
-	uint32_t totalPacketsNumber;
-	size_t compressedSize;
-	E_ClientState eClientState;
-};
-
 struct Overlapped_IO_State
 {
 	WSAOVERLAPPED wsaOL;
 	WSABUF wsabuf;
-	StateExchange state;
 	SOCKADDR_IN addr;
-	DWORD ulByteSize;
-	UINT64 sessionID;
 };
 
 struct ScreenImageHeader
@@ -68,8 +58,6 @@ struct Overlapped_IO_Data
 	WSAOVERLAPPED wsaOL;
 	WSABUF wsabuf;
 	char pData[MAX_PACKET_SIZE];
-	SOCKADDR_IN addr;
-	UINT64 sessionID;
 };
 
 struct CompressedTextures

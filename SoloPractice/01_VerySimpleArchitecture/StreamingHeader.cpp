@@ -35,9 +35,6 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 		}
 
 		// 보낼 데이터를 준비하고
-		curOverlapped_Param->addr = pThreadParam->addr;
-		curOverlapped_Param->ulByteSize = pThreadParam->ulByteSize;
-
 		int startOffset = i * DATA_SIZE;
 		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
 		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
@@ -47,7 +44,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
 		curOverlapped_Param->wsabuf.len = endOffset - startOffset + HEADER_SIZE;
-		int addrLen = sizeof(curOverlapped_Param->addr);
+		int addrLen = sizeof(pThreadParam->addr);
 
 		// Overlapped I/O 요청을 건다.
 		if (curOverlapped_Param->wsaOL.hEvent == 0)
@@ -63,7 +60,7 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 			pThreadParam->hSendSocket,
 			&curOverlapped_Param->wsabuf, 1,
 			nullptr, 0,
-			(sockaddr*)&curOverlapped_Param->addr, addrLen,
+			(sockaddr*)&pThreadParam->addr, addrLen,
 			&curOverlapped_Param->wsaOL, NULL);
 
 		int lastError = WSAGetLastError();
@@ -109,7 +106,6 @@ void ImageSendManager::InitializeWinsock()
 			overlapped_IO_Data[i][j]->wsaOL.hEvent = 0;
 		}
 	}
-	overlapped_IO_State = new Overlapped_IO_State;
 	// 압축 텍스쳐 버퍼 미리 할당
 	compressedTexture = new char[LZ4_compressBound(OriginalTextureSize)];
 }
@@ -196,7 +192,7 @@ bool ImageSendManager::CanSendData(UINT _uiThreadIndex)
 
 ImageSendManager::ImageSendManager()
 	:wsa{ 0 }, addr{ 0 }, hSendSocket(0), hThread{}, threadParam{ {0}, {0}, {0} }, uiSessionID(0),
-	overlapped_IO_Data{}, overlapped_IO_State(nullptr), compressedTexture(nullptr)
+	overlapped_IO_Data{}, compressedTexture(nullptr)
 {
 }
 
@@ -218,11 +214,6 @@ ImageSendManager::~ImageSendManager()
 			}
 		}
 		
-	}
-	if (overlapped_IO_State)
-	{
-		delete overlapped_IO_State;
-		overlapped_IO_State = nullptr;
 	}
 	if (compressedTexture)
 	{

@@ -48,5 +48,6 @@
     <None Include="packages.config" />
     <None Include="vcpkg.json" />
     <None Include="vcpkg-configuration.json" />
+    <None Include="ClassDiagram.cd" />
   </ItemGroup>
 </Project>

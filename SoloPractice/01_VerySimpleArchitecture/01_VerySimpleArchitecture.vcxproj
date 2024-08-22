@@ -170,6 +170,7 @@
     <ClInclude Include="targetver.h" />
     <ClInclude Include="typedef.h" />
     <ClInclude Include="VertexUtil.h" />
+    <None Include="ClassDiagram.cd" />
     <None Include="vcpkg-configuration.json" />
     <None Include="vcpkg.json" />
   </ItemGroup>
