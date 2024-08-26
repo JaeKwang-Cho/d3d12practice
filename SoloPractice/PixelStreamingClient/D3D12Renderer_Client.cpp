@@ -2,7 +2,7 @@
 #include "D3D12Renderer_Client.h"
 #include <DirectXColors.h>
 
-void D3D12Renderer_Client::DrawStreamPixels()
+bool D3D12Renderer_Client::DrawStreamPixels()
 {
 	bool bReadyPixels = CheckPixelReady();
 	if (bReadyPixels)
@@ -12,6 +12,7 @@ void D3D12Renderer_Client::DrawStreamPixels()
 		EndRender();
 		Present();
 	}
+	return bReadyPixels;
 }
 
 bool D3D12Renderer_Client::CheckPixelReady()

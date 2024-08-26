@@ -9,6 +9,9 @@
 #include <lz4.h>
 #include <unordered_set>
 
+SRWLOCK g_receiverInfoPerFrameLock = SRWLOCK_INIT;
+DWORD g_overbufferSessionNum = 0;
+
 void ErrorHandler(const wchar_t* _pszMessage)
 {
 	OutputDebugStringW(std::format(L"ERROR: {}\n", _pszMessage).c_str());
@@ -102,10 +105,6 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 							imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->pCompressedData,
 							header.totalCompressedSize);
 						ReleaseSRWLockExclusive(&imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock);
-					}
-					else
-					{
-						// packet loss
 					}
 					ReleaseSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
 				}
@@ -246,6 +245,9 @@ UINT64 ImageReceiveManager::IncreaseImageNums()
 	}
 	else 
 	{
+		AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
+		g_overbufferSessionNum++;
+		ReleaseSRWLockExclusive(&g_receiverInfoPerFrameLock);
 		return lastUpdatedCircularIndex;
 	}
 }

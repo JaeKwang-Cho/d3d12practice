@@ -29,6 +29,12 @@ D3D12Renderer_Client* g_pRenderer;
 const int g_ClientWidth = 1280;
 const int g_ClientHeight = 720;
 ULONGLONG g_PixelStreamingTime = 0;
+ULONGLONG g_PrevFrameTime = 0;
+DWORD	g_FrameCount = 0;
+
+// extern 변수
+extern SRWLOCK g_receiverInfoPerFrameLock;
+extern DWORD g_overbufferSessionNum;
 
 // 테스트용 텍스쳐
 UINT8 texturePixels[g_ClientWidth * g_ClientHeight * 4];
@@ -92,10 +98,25 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         else {
             // Rendering
             ULONGLONG CurrTickTime = GetTickCount64();
-            if (CurrTickTime - g_PixelStreamingTime > 16)
+            g_PixelStreamingTime = CurrTickTime;
+            if (g_pRenderer->DrawStreamPixels())
             {
-                g_PixelStreamingTime = CurrTickTime;
-                g_pRenderer->DrawStreamPixels();
+                g_FrameCount++;
+            }
+
+            // FPS
+            if (CurrTickTime - g_PrevFrameTime > 1000)
+            {
+                g_PrevFrameTime = CurrTickTime;
+
+                WCHAR wchTxt[64];
+                swprintf_s(wchTxt, L"FPS: %u, Buffer Over Counts : %u", g_FrameCount, g_overbufferSessionNum);
+                SetWindowText(g_hWnd, wchTxt);
+                g_FrameCount = 0;
+
+                AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
+                g_overbufferSessionNum = 0;
+                ReleaseSRWLockExclusive(&g_receiverInfoPerFrameLock);
             }
         }
     }

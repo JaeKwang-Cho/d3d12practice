@@ -7,7 +7,7 @@ class D3D12Renderer_Client
 public:
 	bool Initialize(HWND _hWnd);
 
-	void DrawStreamPixels();
+	bool DrawStreamPixels();
 protected:
 private:
 	bool CheckPixelReady();
