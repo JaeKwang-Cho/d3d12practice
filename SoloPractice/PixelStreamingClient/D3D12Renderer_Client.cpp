@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "D3D12Renderer_Client.h"
 #include <DirectXColors.h>
+#include <format>
 
 bool D3D12Renderer_Client::DrawStreamPixels()
 {
@@ -11,14 +12,61 @@ bool D3D12Renderer_Client::DrawStreamPixels()
 		UploadStreamPixels();
 		EndRender();
 		Present();
+		IncreaseRenderIndex();
 	}
 	return bReadyPixels;
 }
 
+UINT8* D3D12Renderer_Client::TryLockUploadTexture(UINT _uiTextureIndexCircular)
+{
+	BOOLEAN result = TryAcquireSRWLockExclusive(m_lockUploadTexture + _uiTextureIndexCircular);
+	if (result != 0) {
+		return m_ppMappedData[_uiTextureIndexCircular];
+	}
+	else 
+	{
+		return nullptr;
+	}
+}
+
+void D3D12Renderer_Client::ReleaseUploadTexture(UINT _uiTextureIndexCircular)
+{
+	ReleaseSRWLockExclusive(m_lockUploadTexture + _uiTextureIndexCircular);
+}
+
+UINT64 D3D12Renderer_Client::IncreaseCircularIndex()
+{
+	AcquireSRWLockExclusive(&m_countLock);
+	OutputDebugStringW(std::format(L"<<<< Renderer Circular Buffer Ready: {} / {}\n", m_lastUpdatedCircularIndex, m_updatedImagesCount).c_str());
+	if (m_updatedImagesCount - m_renderedImageCount < IMAGE_NUM_FOR_BUFFERING)
+	{
+		m_updatedImagesCount++;
+		m_lastUpdatedCircularIndex = (m_lastUpdatedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
+		UINT64 result = (m_lastUpdatedCircularIndex - 1 + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
+		ReleaseSRWLockExclusive(&m_countLock);
+		return result;
+	}
+	else
+	{
+		UINT64 result = m_lastUpdatedCircularIndex;
+		ReleaseSRWLockExclusive(&m_countLock);
+		return result;
+	}
+}
+
 bool D3D12Renderer_Client::CheckPixelReady()
 {
-	bool result = m_ImageReceiveManager->DecompressNCopyNextBuffer(m_ppMappedData[m_uiTextureIndexCircular]);
-	return result;
+	if (m_updatedImagesCount < 5 || m_updatedImagesCount - 5 <= m_renderedImageCount)
+	{
+		return false;
+	}
+	BOOLEAN bResult = TryAcquireSRWLockExclusive(m_lockUploadTexture + m_lastRenderedCircularIndex);
+	if (bResult != 0)
+	{
+		OutputDebugStringW(std::format(L"########## Try to Render: {} / {}\n", m_lastRenderedCircularIndex, m_renderedImageCount).c_str());
+		return true;
+	}
+	return false;
 }
 
 void D3D12Renderer_Client::BeginRender()
@@ -75,8 +123,8 @@ void D3D12Renderer_Client::Present()
 	}
 
 	// 가장 마지막으로 command를 텍스쳐에 해당하는 fence값이 완료되면, 백버퍼를 바꾼다.
-	UINT formalTextureIndex = (m_uiTextureIndexCircular - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
-	WaitForCopyFenceValue(m_pui64CopyFenceValue[formalTextureIndex]);
+	UINT formalRenderTargetIndex = (m_uiSwapChainIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
+	WaitForCopyFenceValue(m_pui64CopyFenceValue[formalRenderTargetIndex]);
 	HRESULT hr = m_pSwapChain->Present(uiSyncInterval, uiPresentFlags);
 
 	if (DXGI_ERROR_DEVICE_REMOVED == hr)
@@ -84,7 +132,7 @@ void D3D12Renderer_Client::Present()
 		__debugbreak();
 	}
 	m_uiSwapChainIndex = m_pSwapChain->GetCurrentBackBufferIndex();
-	m_uiTextureIndexCircular = (m_uiTextureIndexCircular + 1) % SWAP_CHAIN_FRAME_COUNT;
+	m_uiTextureIndexCircular = (m_uiTextureIndexCircular + 1) % IMAGE_NUM_FOR_BUFFERING;
 }
 
 UINT64 D3D12Renderer_Client::DoCopyFence()
@@ -107,9 +155,9 @@ void D3D12Renderer_Client::WaitForCopyFenceValue(UINT64 _expectedFenceValue)
 
 void D3D12Renderer_Client::IncreaseFenceValue_Wait()
 {
-	AcquireSRWLockExclusive(&m_srwLock);
+	//AcquireSRWLockExclusive(&m_srwLock);
 	m_ui64FenceValue++;
-	ReleaseSRWLockExclusive(&m_srwLock);
+	//ReleaseSRWLockExclusive(&m_srwLock);
 }
 
 void D3D12Renderer_Client::CleanUpRenderer()
@@ -132,8 +180,11 @@ D3D12Renderer_Client::D3D12Renderer_Client()
 	m_ui64FenceValue(0), m_pui64CopyFenceValue{}, 
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, 
-	m_pRTVHeap(nullptr), m_uiTextureIndexCircular(0), m_uiSwapChainIndex(0),
-	m_rtvDescriptorSize(0), m_pUploadTexture{}, m_ppMappedData{},
+	m_pRTVHeap(nullptr), m_uiTextureIndexCircular(0), 
+	m_renderedImageCount(0), m_lastRenderedCircularIndex(0),
+	m_updatedImagesCount(0), m_lastUpdatedCircularIndex(0), m_countLock(),
+	m_uiSwapChainIndex(0),	m_rtvDescriptorSize(0), 
+	m_pUploadTexture{}, m_ppMappedData{}, m_lockUploadTexture{},
 	m_dwSwapChainFlags(0),
 	m_hCopyFenceEvent(nullptr),	m_pFence(nullptr),	
 	m_Viewport{}, m_ScissorRect{}, m_dwWidth(0), m_dwHeight(0),
@@ -424,7 +475,7 @@ EXIT:
 	CD3DX12_HEAP_PROPERTIES defaultHeapProps(D3D12_HEAP_TYPE_DEFAULT);
 	CD3DX12_HEAP_PROPERTIES uploadHeapProps(D3D12_HEAP_TYPE_UPLOAD);
 
-	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
+	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++)
 	{
 		/*
 		m_pD3DDevice->CreateCommittedResource(
@@ -436,7 +487,7 @@ EXIT:
 			IID_PPV_ARGS(m_pDefaultTexture[i].GetAddressOf())
 		);
 		*/
-		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[i].Get(), 0, 1);
+		const UINT uploadBufferSize = GetRequiredIntermediateSize(m_pRenderTargets[0].Get(), 0, 1);
 		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
 
 		if (FAILED(m_pD3DDevice->CreateCommittedResource(
@@ -453,7 +504,12 @@ EXIT:
 
 		CD3DX12_RANGE readRange(0, 0);
 		m_pUploadTexture[i]->Map(0, &readRange, reinterpret_cast<void**>(m_ppMappedData + i));
+
+		// upload lock 초기화
+		m_lockUploadTexture[i] = SRWLOCK_INIT;
 	}
+	// count lock 초기화
+	m_countLock = SRWLOCK_INIT;
 
 	// ImageReceiveManager 초기화.
 	m_ImageReceiveManager = new ImageReceiveManager;

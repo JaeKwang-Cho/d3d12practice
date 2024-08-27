@@ -12,6 +12,10 @@
 SRWLOCK g_receiverInfoPerFrameLock = SRWLOCK_INIT;
 DWORD g_overbufferSessionNum = 0;
 
+SRWLOCK g_decompressTimeLock = SRWLOCK_INIT;
+double g_decompressTime = 0.0;
+
+
 void ErrorHandler(const wchar_t* _pszMessage)
 {
 	OutputDebugStringW(std::format(L"ERROR: {}\n", _pszMessage).c_str());
@@ -21,6 +25,44 @@ void ErrorHandler(const wchar_t* _pszMessage)
 }
 
 static ULONGLONG g_PrevUpdateTime = 0;
+
+struct ThreadParam_Decomp
+{
+	ImageReceiveManager* imageReceiveMananger;
+	UINT64 circularIndex;
+	PSRWLOCK pLock;
+};
+
+DWORD __stdcall ThreadDecompressNCopyTexture(LPVOID _pParam)
+{
+	ThreadParam_Decomp* theadParam = (ThreadParam_Decomp*)_pParam;
+	ImageReceiveManager* imageReceiveMananger = theadParam->imageReceiveMananger;
+	UINT64 circularIndex = theadParam->circularIndex;
+	PSRWLOCK pLock = theadParam->pLock;
+
+	D3D12Renderer_Client* const clientRenderer = imageReceiveMananger->GetRenderer();
+
+	UINT8* curTextureMappedData = clientRenderer->TryLockUploadTexture(circularIndex);
+	if (curTextureMappedData == nullptr)
+	{
+		OutputDebugString(L"clientRenderer->TryLockUploadTexture(curCircularIndex) failed\n");
+		return 1;
+	}
+	bool bResult = imageReceiveMananger->TryDecompressNCopyNextBuffer(curTextureMappedData, circularIndex);
+	if (bResult)
+	{
+		OutputDebugString(L"clientRenderer->IncreaseCircularIndex()\n");
+		clientRenderer->IncreaseCircularIndex();
+		OutputDebugStringW(std::format(L"<<<< Decompress Completes: {}\n", circularIndex).c_str());
+	}
+	else
+	{
+		OutputDebugString(L"imageReceiveMananger->TryDecompressNCopyNextBuffer failed\n");
+	}
+	clientRenderer->ReleaseUploadTexture(circularIndex);
+
+	return 0;
+}
 
 DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 {
@@ -40,11 +82,17 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 	DWORD ulTotalByteSizes[IMAGE_NUM_FOR_BUFFERING];
 	uint32_t sumPacketNums[IMAGE_NUM_FOR_BUFFERING];
 	DWORD ulSumByteSizes[IMAGE_NUM_FOR_BUFFERING];
+	HANDLE hDecompressThreads[IMAGE_NUM_FOR_BUFFERING];
+	bool bDiscardFlags[IMAGE_NUM_FOR_BUFFERING];
+	ThreadParam_Decomp threadParams[IMAGE_NUM_FOR_BUFFERING];
 	memset(lastSessionID, 0xff, sizeof(lastSessionID));
 	memset(totalPacketNums, 0, sizeof(totalPacketNums));
 	memset(ulTotalByteSizes, 0, sizeof(ulTotalByteSizes));
 	memset(sumPacketNums, 0, sizeof(sumPacketNums));
 	memset(ulSumByteSizes, 0, sizeof(ulSumByteSizes));
+	memset(hDecompressThreads, 0, sizeof(hDecompressThreads));
+	memset(bDiscardFlags, 0, sizeof(bDiscardFlags));
+	memset(threadParams, 0, sizeof(threadParams));
 
 	/*
 	그냥 냅다 버퍼링을 시도하는 버퍼와
@@ -78,11 +126,14 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 					bool bResult = lastSessionID[circularSessionIndex] < uiSessionID;
 					if (bResult) // 현재 버퍼에 새로운 session이 들어올 차례인 경우
 					{
+						//OutputDebugStringW(std::format(L"reset: {}\n", circularSessionIndex).c_str());
 						lastSessionID[circularSessionIndex] = uiSessionID;
 						totalPacketNums[circularSessionIndex] = header.totalPacketsNumber;
 						ulTotalByteSizes[circularSessionIndex] = header.totalCompressedSize;
 						sumPacketNums[circularSessionIndex] = 0;
 						ulSumByteSizes[circularSessionIndex] = 0;
+						//bDiscardFlags[circularSessionIndex] = false; 
+						//memset(threadParams + circularSessionIndex, 0, sizeof(threadParams[0]));
 					}
 
 					lastSessionID[circularSessionIndex] = uiSessionID;
@@ -91,29 +142,62 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 
 					ulSumByteSizes[circularSessionIndex] += receivedBytes - HEADER_SIZE;
 					sumPacketNums[circularSessionIndex]++;
-
+					//OutputDebugStringW(std::format(L"get: {}\n", circularSessionIndex).c_str());
 					// 혹시 rederer에서 drawing 중이면 기다린다.
-					AcquireSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
+					//AcquireSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
 					memcpy(imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->pCompressedData + dataOffset, pDataToWrite + HEADER_SIZE, receivedBytes - HEADER_SIZE);
 					if (ulTotalByteSizes[circularSessionIndex] == ulSumByteSizes[circularSessionIndex])
 					{
 						UINT64 indexToUpdate = imageReceiveMananger->IncreaseImageNums();
-						AcquireSRWLockExclusive(&imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock);
-						imageReceiveMananger->validTextureBuffer[indexToUpdate]->compressedSize = header.totalCompressedSize;
-						memcpy(
-							imageReceiveMananger->validTextureBuffer[indexToUpdate]->pCompressedData,
-							imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->pCompressedData,
-							header.totalCompressedSize);
-						ReleaseSRWLockExclusive(&imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock);
+						//OutputDebugStringW(std::format(L">>>> acquire: {}\n", indexToUpdate).c_str());
+						if (hDecompressThreads[indexToUpdate] != 0)
+						{
+							DWORD result = WaitForSingleObject(hDecompressThreads[indexToUpdate], 0);
+							if (WAIT_OBJECT_0 == result)
+							{
+								ReleaseSRWLockExclusive(&imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock);
+							}
+						}
+						BOOLEAN bResult = TryAcquireSRWLockExclusive(&imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock);
+						if (bResult != 0)
+						{
+							imageReceiveMananger->validTextureBuffer[indexToUpdate]->compressedSize = header.totalCompressedSize;
+							memcpy(
+								imageReceiveMananger->validTextureBuffer[indexToUpdate]->pCompressedData,
+								imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->pCompressedData,
+								header.totalCompressedSize);
+
+							DWORD dwThreadID = 0;
+							threadParams[indexToUpdate].imageReceiveMananger = imageReceiveMananger;
+							threadParams[indexToUpdate].circularIndex = indexToUpdate;
+							threadParams[indexToUpdate].pLock = &imageReceiveMananger->validTextureBuffer[indexToUpdate]->lock;
+							hDecompressThreads[indexToUpdate] = ::CreateThread(
+								NULL,
+								0,
+								ThreadDecompressNCopyTexture,
+								(LPVOID)(threadParams + indexToUpdate),
+								0,
+								&dwThreadID
+							);
+							if (hDecompressThreads[indexToUpdate] != 0)
+							{
+								//OutputDebugStringW(std::format(L"**** thread created: {} / {}\n", indexToUpdate, circularSessionIndex).c_str());
+							}
+						}
+						else
+						{
+							indexToUpdate = imageReceiveMananger->DecreaseImageNums();
+							//OutputDebugStringW(std::format(L"\t(thread still working: {} / {})\n", indexToUpdate, circularSessionIndex).c_str());
+						}
 					}
-					ReleaseSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
+					//ReleaseSRWLockExclusive(&imageReceiveMananger->rawTextureBuffer[circularSessionIndex]->lock);
 				}
 			}
 			else if (result == 0 && GetLastError() == WAIT_TIMEOUT)
 			{
 				// recv가 오지 않았거나, 그 어떤 Read도 OS가 끝마치지 않은 경우를 말한다.
 				CancelIoEx((HANDLE)imageReceiveMananger->hRecvSocket, &curOverlapped_Param->wsaOL);
-				OutputDebugStringW(L"No Socket Input from Server\n");
+				//OutputDebugStringW(L"No Socket Input from Server\n");
 			}
 			else 
 			{
@@ -146,6 +230,12 @@ DWORD __stdcall ThreadManageReceiverAndSendToServer(LPVOID _pParam)
 		numTryToGetPackets++;
 	}
 
+	for (UINT i = 0; i < IMAGE_NUM_FOR_BUFFERING; i++) {
+		if (hDecompressThreads[i] != 0)
+		{
+			::WaitForSingleObject(hDecompressThreads[i], INFINITE);
+		}
+	}
 	return 0;
 }
 
@@ -219,7 +309,7 @@ bool ImageReceiveManager::StartReceiveManager(D3D12Renderer_Client* _renderer)
 		}
 	}
 	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
-	hHaltEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+	hHaltEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	hThread = ::CreateThread(
 		NULL,
@@ -230,43 +320,89 @@ bool ImageReceiveManager::StartReceiveManager(D3D12Renderer_Client* _renderer)
 		&dwThreadID
 	);
 
+	// 이 다음에 Renderer Upload 버퍼에 압축 해제해는 스레드도 추가하기
+
 	return hThread != NULL;
 } 
 
+UINT64 ImageReceiveManager::GetImagesNums()
+{
+	AcquireSRWLockShared(&updateCountLock);
+	UINT64 result = lastUpdatedCircularIndex;
+	ReleaseSRWLockShared(&updateCountLock);
+	return result;
+}
+
 UINT64 ImageReceiveManager::IncreaseImageNums()
 {
+	//OutputDebugString(L"ImageReceiveManager::IncreaseImageNums()\n");
+	AcquireSRWLockExclusive(&updateCountLock);
 	if (updatedImagesCount - renderedImageCount < IMAGE_NUM_FOR_BUFFERING)
 	{
-		AcquireSRWLockExclusive(&countLock);
 		updatedImagesCount++;
 		lastUpdatedCircularIndex = (lastUpdatedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
-		ReleaseSRWLockExclusive(&countLock);
-		return (lastUpdatedCircularIndex - 1 + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
+		UINT64 result = (lastUpdatedCircularIndex - 1 + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
+		ReleaseSRWLockExclusive(&updateCountLock);
+		return result;
 	}
 	else 
 	{
-		AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
-		g_overbufferSessionNum++;
-		ReleaseSRWLockExclusive(&g_receiverInfoPerFrameLock);
-		return lastUpdatedCircularIndex;
+		//AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
+		//g_overbufferSessionNum++;
+		//ReleaseSRWLockExclusive(&g_receiverInfoPerFrameLock);
+		UINT64 result = lastUpdatedCircularIndex;
+		ReleaseSRWLockExclusive(&updateCountLock);
+		return result;
 	}
 }
 
-bool ImageReceiveManager::DecompressNCopyNextBuffer(void* _pUploadData)
+UINT64 ImageReceiveManager::DecreaseImageNums()
 {
-	if (updatedImagesCount < 5 || updatedImagesCount <= renderedImageCount)
+	//OutputDebugString(L"ImageReceiveManager::DecreaseImageNums()\n");
+
+	AcquireSRWLockExclusive(&updateCountLock);
+
+	updatedImagesCount--;
+	lastUpdatedCircularIndex = (lastUpdatedCircularIndex - 1 + IMAGE_NUM_FOR_BUFFERING) % IMAGE_NUM_FOR_BUFFERING;
+	UINT64 result = lastUpdatedCircularIndex;
+
+	ReleaseSRWLockExclusive(&updateCountLock);
+	return result;
+}
+
+bool ImageReceiveManager::TryDecompressNCopyNextBuffer(void* _pUploadData, UINT64 _circularIndex)
+{
+	AcquireSRWLockExclusive(&renderCountLock);
+	AcquireSRWLockShared(&updateCountLock);
+	if (updatedImagesCount <= renderedImageCount)
 	{
+		OutputDebugString(L"updatedImagesCount <= renderedImageCount\n");
+		ReleaseSRWLockExclusive(&renderCountLock);
+		ReleaseSRWLockShared(&updateCountLock);
 		return false;
 	}
-	AcquireSRWLockExclusive(&validTextureBuffer[lastRenderedCircularIndex]->lock);
+	ReleaseSRWLockShared(&updateCountLock);
+	//auto start = std::chrono::high_resolution_clock::now();
+	
+	int result = LZ4_decompress_safe(validTextureBuffer[_circularIndex]->pCompressedData, (char*)_pUploadData,
+		validTextureBuffer[_circularIndex]->compressedSize, s_OriginalTextureSize);
+	if (result <= 0)
+	{
+		ReleaseSRWLockExclusive(&renderCountLock);
+		return false;
+	}
 
-	LZ4_decompress_safe(validTextureBuffer[lastRenderedCircularIndex]->pCompressedData, (char*)_pUploadData,
-		validTextureBuffer[lastRenderedCircularIndex]->compressedSize, s_OriginalTextureSize);
+	//auto end = std::chrono::high_resolution_clock::now();
 
-	ReleaseSRWLockExclusive(&validTextureBuffer[lastRenderedCircularIndex]->lock);
+	//std::chrono::duration<double> elapsedTime = end - start;
+	//AcquireSRWLockExclusive(&g_decompressTimeLock);
+	//g_decompressTime = elapsedTime.count();
+	//ReleaseSRWLockExclusive(&g_decompressTimeLock);
 
 	lastRenderedCircularIndex = (lastRenderedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
 	renderedImageCount++;
+
+	ReleaseSRWLockExclusive(&renderCountLock);
 	return true;
 }
 
@@ -275,6 +411,7 @@ void ImageReceiveManager::CleanUpManager()
 	::SetEvent(hHaltEvent);
 	::WaitForSingleObject(hThread, INFINITE);
 	::CloseHandle(hHaltEvent);
+	::CloseHandle(hThread);
 
 	for (UINT i = 0; i < MAXIMUM_WAIT_OBJECTS; i++)
 	{
@@ -310,19 +447,20 @@ void ImageReceiveManager::CleanUpManager()
 		}
 	}
 
-	CloseHandle(hThread);
 	::closesocket(hRecvSocket);
 	::WSACleanup();
 }
 
 ImageReceiveManager::ImageReceiveManager()
 	:wsa{ 0 }, addr{ 0 }, hRecvSocket(0),  hThread(0), hHaltEvent(0),
+	updateCountLock(), renderCountLock(),
 	renderedImageCount(0), lastRenderedCircularIndex(0), 
 	lastUpdatedCircularIndex(0), updatedImagesCount(0),
 	overlapped_IO_Data{}, rawTextureBuffer {}, validTextureBuffer{},
 	renderer(nullptr)
 {
-	countLock = SRWLOCK_INIT;
+	updateCountLock = SRWLOCK_INIT;
+	renderCountLock = SRWLOCK_INIT;
 }
 
 ImageReceiveManager::~ImageReceiveManager()

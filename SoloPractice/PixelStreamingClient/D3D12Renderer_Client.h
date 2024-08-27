@@ -8,6 +8,10 @@ public:
 	bool Initialize(HWND _hWnd);
 
 	bool DrawStreamPixels();
+
+	UINT8* TryLockUploadTexture(UINT _uiTextureIndexCircular);
+	void ReleaseUploadTexture(UINT _uiTextureIndexCircular);
+	UINT64 IncreaseCircularIndex();
 protected:
 private:
 	bool CheckPixelReady();
@@ -20,6 +24,13 @@ private:
 	void WaitForCopyFenceValue(UINT64 _expectedFenceValue);
 
 	void IncreaseFenceValue_Wait();
+
+	void IncreaseRenderIndex() 
+	{
+		ReleaseSRWLockExclusive(m_lockUploadTexture + m_lastRenderedCircularIndex);
+		m_lastRenderedCircularIndex = (m_lastRenderedCircularIndex + 1) % IMAGE_NUM_FOR_BUFFERING;
+		m_renderedImageCount++;
+	}
 
 	void CleanUpRenderer();
 public:
@@ -46,13 +57,22 @@ private:
 	//Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
 
 	//Microsoft::WRL::ComPtr<ID3D12Resource> m_pDefaultTexture[THREAD_NUMBER_BY_FRAME];
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[SWAP_CHAIN_FRAME_COUNT];
-	UINT8* m_ppMappedData[SWAP_CHAIN_FRAME_COUNT];
+	Microsoft::WRL::ComPtr<ID3D12Resource> m_pUploadTexture[IMAGE_NUM_FOR_BUFFERING];
+	UINT8* m_ppMappedData[IMAGE_NUM_FOR_BUFFERING];
+	SRWLOCK m_lockUploadTexture[IMAGE_NUM_FOR_BUFFERING];
 
 	//Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
 	UINT m_uiTextureIndexCircular;
-	UINT m_uiSwapChainIndex;
 
+	UINT64 m_renderedImageCount;
+	UINT64 m_lastRenderedCircularIndex;
+
+	UINT64 m_updatedImagesCount;
+	UINT64 m_lastUpdatedCircularIndex;
+	
+	SRWLOCK m_countLock;
+
+	UINT m_uiSwapChainIndex;
 
 	HANDLE m_hCopyFenceEvent;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;

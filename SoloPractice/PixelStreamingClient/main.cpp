@@ -35,6 +35,7 @@ DWORD	g_FrameCount = 0;
 // extern 변수
 extern SRWLOCK g_receiverInfoPerFrameLock;
 extern DWORD g_overbufferSessionNum;
+extern double g_decompressTime;
 
 // 테스트용 텍스쳐
 UINT8 texturePixels[g_ClientWidth * g_ClientHeight * 4];
@@ -110,11 +111,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                 g_PrevFrameTime = CurrTickTime;
 
                 WCHAR wchTxt[64];
-                swprintf_s(wchTxt, L"FPS: %u, Buffer Over Counts : %u", g_FrameCount, g_overbufferSessionNum);
+
+                AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
+                swprintf_s(wchTxt, L"FPS: %u, Buffer Over Counts: %u, Decompress Time: %lf", g_FrameCount, g_overbufferSessionNum, g_decompressTime);
                 SetWindowText(g_hWnd, wchTxt);
                 g_FrameCount = 0;
 
-                AcquireSRWLockExclusive(&g_receiverInfoPerFrameLock);
                 g_overbufferSessionNum = 0;
                 ReleaseSRWLockExclusive(&g_receiverInfoPerFrameLock);
             }

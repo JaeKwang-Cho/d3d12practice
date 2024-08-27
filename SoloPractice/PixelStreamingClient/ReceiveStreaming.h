@@ -40,7 +40,7 @@ struct ScreenImageHeader
 #define HEADER_SIZE sizeof(ScreenImageHeader)
 #define DATA_SIZE (MAX_PACKET_SIZE - HEADER_SIZE)
 
-#define IMAGE_NUM_FOR_BUFFERING (30)
+#define IMAGE_NUM_FOR_BUFFERING (15)
 
 #if LZ4_COMPRESSION
 static const size_t s_OriginalTextureSize = (1280 * 720 * 4);
@@ -73,8 +73,12 @@ public:
 	void InitializeWinSock();
 	bool StartReceiveManager(D3D12Renderer_Client* _renderer);
 
+	D3D12Renderer_Client* const GetRenderer() {	return renderer;}
+
+	UINT64 GetImagesNums();
 	UINT64 IncreaseImageNums();
-	bool DecompressNCopyNextBuffer(void* _pUploadData);
+	UINT64 DecreaseImageNums();
+	bool TryDecompressNCopyNextBuffer(void* _pUploadData, UINT64 _circularIndex);
 
 	HANDLE GetHaltEvent() { return hHaltEvent; }
 private:
@@ -92,7 +96,8 @@ private:
 	HANDLE hThread;
 	HANDLE hHaltEvent;
 
-	SRWLOCK countLock;
+	SRWLOCK updateCountLock;
+	SRWLOCK renderCountLock;
 
 	UINT64 renderedImageCount;
 	UINT64 lastRenderedCircularIndex;
