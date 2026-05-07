@@ -10,6 +10,14 @@ enum class E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ
 	END
 };
 
+struct SubmeshRange
+{
+	UINT startPosIndex;
+	UINT posIndexCount;
+	UINT startIndexIndex;
+	UINT indexIndexCount;
+};
+
 class TextureRenderMesh
 {
 public:
@@ -25,7 +33,12 @@ public:
 	void DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld);
 
 	void CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount);
+	[[deprecated("Use CreateRenderAssetsFromSingleMesh(...) instead.")]]
 	void CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount, std::vector<uint32_t>& _adjIndices);
+	bool CreateRenderAssetsFromSingleMesh(
+		const TextureMeshData& mesh,
+		const std::vector<uint32_t>& adjIndices,
+		const std::vector<SubmeshRange>& ranges);
 	void BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex);
 	void SetMaterial(CONSTANT_BUFFER_MATERIAL& _MaterialData, const UINT _subRenderAssetIndex);
 
@@ -37,6 +50,7 @@ protected:
 	virtual bool InitPipelineState();
 	bool InitPipelineState_Outline();
 
+	bool BuildOutlineGeoFromMesh(const TextureMeshData& mesh, const std::vector<uint32_t>& adjIndices);
 	void CleanUpAssets();
 private:
 
@@ -47,6 +61,10 @@ protected:
 
 	// sub - render asset
 	SubRenderGeometry* m_subRenderGeometries[MAX_SUB_RENDER_GEO_COUNT];
+
+	// outline Àü¿ë
+	SubRenderGeometry* m_pOutlineRenderGeo;
+
 	UINT m_subRenderGeoCount;
 	// PSO
 	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;

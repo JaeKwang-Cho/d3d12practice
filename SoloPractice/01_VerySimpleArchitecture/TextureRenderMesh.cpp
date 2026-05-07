@@ -128,15 +128,20 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 	for (UINT i = 0; i < m_subRenderGeoCount; i++)
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
-		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForSubrenderGeo(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
 		if (pSubRenderGeo) {
 			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
+
+			UINT descriptorOffset = 1 + i * 2; // CBV 1개 + Texture, Material 각각 1개씩이므로 *2
+
+			CD3DX12_GPU_DESCRIPTOR_HANDLE gpuTexHandle(gpuDescriptorTable, descriptorOffset, srvDescriptorSize);
+			CD3DX12_GPU_DESCRIPTOR_HANDLE gpuMatHandle(gpuDescriptorTable, descriptorOffset + 1, srvDescriptorSize);
+
 			// Texture
-			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForSubrenderGeo);
-			gpuDescriptorTableForSubrenderGeo.Offset(1, srvDescriptorSize);
+			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuTexHandle);
+			gpuTexHandle.Offset(1, srvDescriptorSize);
 			// Material
-			_pCommandList->SetGraphicsRootDescriptorTable(3, gpuDescriptorTableForSubrenderGeo);
-			gpuDescriptorTableForSubrenderGeo.Offset(1, srvDescriptorSize);
+			_pCommandList->SetGraphicsRootDescriptorTable(3, gpuMatHandle);
+			gpuMatHandle.Offset(1, srvDescriptorSize);
 
 			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->IndexBufferView);
 			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
@@ -157,7 +162,7 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
 
 	// subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
-	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, 2)) {
 		__debugbreak();
 	}
 
@@ -189,21 +194,13 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
 
 	// Texture를 넘겨주는 것
-	for (UINT i = 0; i < m_subRenderGeoCount; i++)
-	{
-		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
-		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
-		if (pTexHandle)
-		{
-			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		}
-		else
-		{
-			pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-		}
-		dest.Offset(1, srvDescriptorSize);
+	TEXTURE_HANDLE* pTexHandle = m_pOutlineRenderGeo->pTexHandle;
+	if (pTexHandle) {
+		pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
-
+	else {
+		pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	}
 
 	// 루트 시그니처를 설정하고
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
@@ -221,20 +218,12 @@ void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommand
 	// Triangle list with adjacency로 그린다.
 	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ);
 
-	for (UINT i = 0; i < m_subRenderGeoCount; i++)
-	{
-		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
-		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuTex(gpuDescriptorTable, (UINT)E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+	_pCommandList->SetGraphicsRootDescriptorTable(1, gpuTex);
 
-		if (pSubRenderGeo) {
-			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
-			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
-			// index 버퍼도 잘 설정해준다.
-			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->AdjIndexBufferView);
-			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->adjIndexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
-		}
-		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
-	}
+	_pCommandList->IASetVertexBuffers(0, 1, &m_pOutlineRenderGeo->VertexBufferView);
+	_pCommandList->IASetIndexBuffer(&m_pOutlineRenderGeo->AdjIndexBufferView);
+	_pCommandList->DrawIndexedInstanced(m_pOutlineRenderGeo->adjIndexCount, 1, 0, 0, 0);
 }
 
 void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount)
@@ -284,24 +273,61 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 {
 	CreateRenderAssets(_ppMeshData, _meshDataCount);
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
-	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	// 기존 재사용: outline 전용은 첫 번째 메시 기준
+	if (_meshDataCount > 0) {
+		BuildOutlineGeoFromMesh(_ppMeshData[0], _adjIndices);
+	}
+}
 
-	for (UINT i = 0; i < m_subRenderGeoCount; i++)
+bool TextureRenderMesh::CreateRenderAssetsFromSingleMesh(const TextureMeshData& mesh, const std::vector<uint32_t>& adjIndices, const std::vector<SubmeshRange>& ranges)
+{
+	if (ranges.empty() || ranges.size() > MAX_SUB_RENDER_GEO_COUNT) {
+		__debugbreak();
+		return false;
+	}
+
+	std::vector<TextureMeshData> splitMeshes;
+	splitMeshes.resize(ranges.size());
+
+	for (UINT i = 0; i < ranges.size(); i++)
 	{
-		// Adj - Index Buffer도 생성한다.
-		if (FAILED(pResourceManager->CreateIndexBuffer(
-			_adjIndices.size(),
-			&(m_subRenderGeometries[i]->AdjIndexBufferView),
-			&(m_subRenderGeometries[i]->pAdjIndexBuffer),
-			(void*)(_adjIndices.data()),
-			sizeof(uint32_t)
-		)))
+		const SubmeshRange& range = ranges[i];
+
+		if (range.startPosIndex + range.posIndexCount > mesh.Vertices.size() ||
+			range.startIndexIndex + range.indexIndexCount > mesh.Indices32.size())
 		{
 			__debugbreak();
+			return false;
 		}
-		m_subRenderGeometries[i]->adjIndexCount = _adjIndices.size();
+
+		TextureMeshData& subMeshData = splitMeshes[i];
+
+		subMeshData.Vertices.assign(
+			mesh.Vertices.begin() + range.startPosIndex,
+			mesh.Vertices.begin() + range.startPosIndex + range.posIndexCount);
+
+		subMeshData.Indices32.reserve(range.indexIndexCount);
+
+		for (UINT idx = 0; idx < range.indexIndexCount; idx++)
+		{
+			uint32_t globalIndex = mesh.Indices32[range.startIndexIndex + idx];
+			if (globalIndex < range.startPosIndex ||
+				globalIndex >= range.startPosIndex + range.posIndexCount)
+			{
+				__debugbreak();
+				return false;
+			}
+			subMeshData.Indices32.push_back(globalIndex - range.startPosIndex);
+		}
 	}
+
+	CreateRenderAssets(splitMeshes, static_cast<UINT>(splitMeshes.size()));
+
+	if (!BuildOutlineGeoFromMesh(mesh, adjIndices)) {
+		return false;
+	}
+
+	return true;
 }
 
 void TextureRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
@@ -577,6 +603,54 @@ RETURN:
 	return true;
 }
 
+bool TextureRenderMesh::BuildOutlineGeoFromMesh(const TextureMeshData& mesh, const std::vector<uint32_t>& adjIndices)
+{
+	if (mesh.Vertices.empty() || adjIndices.empty()) {
+		return false;
+	}
+
+	if (m_pOutlineRenderGeo) {
+		delete m_pOutlineRenderGeo;
+		m_pOutlineRenderGeo = nullptr;
+	}
+
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	m_pOutlineRenderGeo = new SubRenderGeometry;
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(
+		sizeof(TextureVertex), static_cast<UINT>(mesh.Vertices.size()),
+		&(m_pOutlineRenderGeo->VertexBufferView),
+		&(m_pOutlineRenderGeo->pVertexBuffer),
+		(void*)mesh.Vertices.data()
+	))) {
+		__debugbreak();
+		return false;
+	}
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(
+		static_cast<UINT>(adjIndices.size()),
+		&(m_pOutlineRenderGeo->AdjIndexBufferView),
+		&(m_pOutlineRenderGeo->pAdjIndexBuffer),
+		(void*)adjIndices.data(),
+		sizeof(uint32_t)
+	))) {
+		__debugbreak();
+		return false;
+	}
+
+	m_pOutlineRenderGeo->adjIndexCount = static_cast<UINT>(adjIndices.size());
+	m_pOutlineRenderGeo->startIndexLocation = 0;
+	m_pOutlineRenderGeo->baseVertexLocation = 0;
+
+	// 기본적으로 0번 subgeo 텍스처를 따라가게
+	if (m_subRenderGeoCount > 0 && m_subRenderGeometries[0]) {
+		m_pOutlineRenderGeo->pTexHandle = m_subRenderGeometries[0]->pTexHandle;
+	}
+
+	return true;
+}
+
 void TextureRenderMesh::CleanUpAssets()
 {
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
@@ -585,13 +659,18 @@ void TextureRenderMesh::CleanUpAssets()
 			m_subRenderGeometries[i] = nullptr;
 		}
 	}
+
+	if (m_pOutlineRenderGeo) {
+		delete m_pOutlineRenderGeo;
+		m_pOutlineRenderGeo = nullptr;
+	}
 	CleanupSharedResources();
 }
 
 TextureRenderMesh::TextureRenderMesh()
 	:m_pRenderer(nullptr), m_PrimitiveTopoloy(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST),
 	m_subRenderGeometries{ nullptr, },
-	m_subRenderGeoCount(0), m_pPipelineState(nullptr)
+	m_subRenderGeoCount(0), m_pOutlineRenderGeo(nullptr), m_pPipelineState(nullptr)
 {
 }
 

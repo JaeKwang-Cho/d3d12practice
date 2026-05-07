@@ -17,7 +17,7 @@
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
 
-#define PIXEL_STREAMING (1)
+#define PIXEL_STREAMING (0)
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -138,7 +138,6 @@ EXIT:
 	CreateDescriptorHeapForRTV();
 
 	// #7 swap chain과 그에 필요한 ID3DResource를 만든다.
-
 	// swapchain 속성을 지정하고
 	{
 		RECT rect;

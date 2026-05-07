@@ -31,15 +31,15 @@
 // https://github.com/microsoft/DirectXTex
 #if defined(_M_AMD64)
 #ifdef _DEBUG
-#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/debug/DirectXTex.lib")
+//#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/debug/DirectXTex.lib")
 #else
-#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/release/DirectXTex.lib")
+//#pragma comment(lib, "../../DirectXTex/DirectXTex/Bin/Desktop_2022/x64/release/DirectXTex.lib")
 #endif
 #endif
 
 // D3D12 Agility 설정
 // 방법 : https://devblogs.microsoft.com/directx/gettingstarted-dx12agility/#OS
-extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 614; }
+extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 619; }
 
 #if defined(_M_AMD64)
 extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3D12\\x64\\"; } // c++20 이므로 이렇게 해줘야 한다.
@@ -64,6 +64,10 @@ D3D12Renderer* g_pRenderer = nullptr;
 
 void* g_pGrid = nullptr;
 void* g_pCube = nullptr;
+void* g_pTexCube = nullptr;
+
+// 큐브 각 면 텍스처 (salt_01 ~ salt_06)
+TEXTURE_HANDLE* g_pCubeFaceTextures[6] = { nullptr, };
 
 XMMATRIX g_matWorldGrid = {};
 XMMATRIX g_matWorldCube = {};
@@ -168,6 +172,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         pCube = nullptr;
     }
 
+    // 큐브 면 텍스처 해제
+    for (UINT i = 0; i < 6; i++)
+    {
+        if (g_pCubeFaceTextures[i])
+        {
+            g_pRenderer->DeleteTexture(g_pCubeFaceTextures[i]);
+            g_pCubeFaceTextures[i] = nullptr;
+        }
+    }
+
     if (g_pRenderer) {
         delete g_pRenderer;
         g_pRenderer = nullptr;
@@ -239,7 +253,7 @@ void RunGame()
         g_PrevFrameTime = CurrTickTime;
 
         WCHAR wchTxt[64];
-        swprintf_s(wchTxt, L"FPS:%u Delta:%f", g_FrameCount, g_GameTimer.GetDeltaTime());
+        swprintf_s(wchTxt, L"FPS:%u           Delta:%f", g_FrameCount, g_GameTimer.GetDeltaTime());
         SetWindowText(g_hWnd, wchTxt);
         g_FrameCount = 0;
     }
@@ -247,7 +261,16 @@ void RunGame()
 
 void Update()
 {
-    g_matWorldCube = XMMatrixIdentity();
+    //g_matWorldCube = XMMatrixIdentity();
+    
+    float totalTime = g_GameTimer.GetTotalTime();
+
+    XMMATRIX matRotX = XMMatrixRotationX(totalTime * 0.8f);
+    XMMATRIX matRotY = XMMatrixRotationY(totalTime * 1.3f);
+    XMMATRIX matRotZ = XMMatrixRotationZ(totalTime * 0.5f);
+
+    g_matWorldCube = matRotZ * matRotX * matRotY;
+    
     UpdateGridPos();
 }
 
@@ -290,124 +313,154 @@ void* CreateTileGrid()
 
 void* CreateCube(float _width, float _height, float _depth)
 {
-    std::vector<TextureMeshData> meshData;
-    meshData.push_back(TextureMeshData());
+    TextureMeshData mesh;
 
-    TextureMeshData& refMeshData = meshData[0];
-
-    // adjacency test
     std::vector<XMFLOAT3> posL;
+    posL.resize(24);
 
     float w2 = 0.5f * _width;
     float h2 = 0.5f * _height;
     float d2 = 0.5f * _depth;
 
-    refMeshData.Vertices.resize(24);
-    posL.resize(24);
-    // 앞면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[0] = TextureVertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[1] = TextureVertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[2] = TextureVertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-    refMeshData.Vertices[3] = TextureVertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    mesh.Vertices.resize(24);
+
+    // 앞면
+    mesh.Vertices[0] = TextureVertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    mesh.Vertices[1] = TextureVertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    mesh.Vertices[2] = TextureVertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    mesh.Vertices[3] = TextureVertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
 
     posL[0] = XMFLOAT3(-w2, -h2, -d2);
     posL[1] = XMFLOAT3(-w2, +h2, -d2);
     posL[2] = XMFLOAT3(+w2, +h2, -d2);
     posL[3] = XMFLOAT3(+w2, -h2, -d2);
 
-    // 뒷면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[4] = TextureVertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    refMeshData.Vertices[5] = TextureVertex(+w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[6] = TextureVertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[7] = TextureVertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    // 뒷면
+    mesh.Vertices[4] = TextureVertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    mesh.Vertices[5] = TextureVertex(+w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    mesh.Vertices[6] = TextureVertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    mesh.Vertices[7] = TextureVertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
     posL[4] = XMFLOAT3(-w2, -h2, +d2);
     posL[5] = XMFLOAT3(+w2, -h2, +d2);
     posL[6] = XMFLOAT3(+w2, +h2, +d2);
     posL[7] = XMFLOAT3(-w2, +h2, +d2);
 
-    // 윗면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[8] = TextureVertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[9] = TextureVertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[10] =TextureVertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
-    refMeshData.Vertices[11] =TextureVertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    // 윗면
+    mesh.Vertices[8] = TextureVertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    mesh.Vertices[9] = TextureVertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    mesh.Vertices[10] = TextureVertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    mesh.Vertices[11] = TextureVertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
 
-    posL[8]  = XMFLOAT3(-w2, +h2, -d2);
-    posL[9]  = XMFLOAT3(-w2, +h2, +d2);
+    posL[8] = XMFLOAT3(-w2, +h2, -d2);
+    posL[9] = XMFLOAT3(-w2, +h2, +d2);
     posL[10] = XMFLOAT3(+w2, +h2, +d2);
     posL[11] = XMFLOAT3(+w2, +h2, -d2);
 
-    // 밑면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[12] = TextureVertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-    refMeshData.Vertices[13] = TextureVertex(+w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[14] = TextureVertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[15] = TextureVertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+    // 밑면
+    mesh.Vertices[12] = TextureVertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+    mesh.Vertices[13] = TextureVertex(+w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    mesh.Vertices[14] = TextureVertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    mesh.Vertices[15] = TextureVertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
 
     posL[12] = XMFLOAT3(-w2, -h2, -d2);
     posL[13] = XMFLOAT3(+w2, -h2, -d2);
     posL[14] = XMFLOAT3(+w2, -h2, +d2);
     posL[15] = XMFLOAT3(-w2, -h2, +d2);
 
-    // 왼면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[16] = TextureVertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[17] = TextureVertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[18] = TextureVertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f);
-    refMeshData.Vertices[19] = TextureVertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f);
+    // 왼면
+    mesh.Vertices[16] = TextureVertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f);
+    mesh.Vertices[17] = TextureVertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f);
+    mesh.Vertices[18] = TextureVertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f);
+    mesh.Vertices[19] = TextureVertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f);
 
     posL[16] = XMFLOAT3(-w2, -h2, +d2);
     posL[17] = XMFLOAT3(-w2, +h2, +d2);
     posL[18] = XMFLOAT3(-w2, +h2, -d2);
     posL[19] = XMFLOAT3(-w2, -h2, -d2);
 
-    // 오른면 (pos, norm, tangent, UVc 순)
-    refMeshData.Vertices[20] = TextureVertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
-    refMeshData.Vertices[21] = TextureVertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
-    refMeshData.Vertices[22] = TextureVertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
-    refMeshData.Vertices[23] = TextureVertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+    // 오른면
+    mesh.Vertices[20] = TextureVertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+    mesh.Vertices[21] = TextureVertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+    mesh.Vertices[22] = TextureVertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
+    mesh.Vertices[23] = TextureVertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
 
     posL[20] = XMFLOAT3(+w2, -h2, -d2);
     posL[21] = XMFLOAT3(+w2, +h2, -d2);
     posL[22] = XMFLOAT3(+w2, +h2, +d2);
     posL[23] = XMFLOAT3(+w2, -h2, +d2);
 
-    // Index 버퍼를 만든다.
+    mesh.Indices32.resize(36);
 
-    refMeshData.Indices32.resize(36);
-    // 전면 인덱스
-    refMeshData.Indices32[0] = 0; refMeshData.Indices32[1] = 1; refMeshData.Indices32[2] = 2;
-    refMeshData.Indices32[3] = 0; refMeshData.Indices32[4] = 2; refMeshData.Indices32[5] = 3;
+    mesh.Indices32[0] = 0; mesh.Indices32[1] = 1; mesh.Indices32[2] = 2;
+    mesh.Indices32[3] = 0; mesh.Indices32[4] = 2; mesh.Indices32[5] = 3;
 
-    // 후면 인덱스
-    refMeshData.Indices32[6] = 4; refMeshData.Indices32[7] = 5; refMeshData.Indices32[8] = 6;
-    refMeshData.Indices32[9] = 4; refMeshData.Indices32[10] = 6; refMeshData.Indices32[11] = 7;
+    mesh.Indices32[6] = 4; mesh.Indices32[7] = 5; mesh.Indices32[8] = 6;
+    mesh.Indices32[9] = 4; mesh.Indices32[10] = 6; mesh.Indices32[11] = 7;
 
-    // 윗면 인덱스
-    refMeshData.Indices32[12] = 8; refMeshData.Indices32[13] = 9; refMeshData.Indices32[14] = 10;
-    refMeshData.Indices32[15] = 8; refMeshData.Indices32[16] = 10; refMeshData.Indices32[17] = 11;
+    mesh.Indices32[12] = 8; mesh.Indices32[13] = 9; mesh.Indices32[14] = 10;
+    mesh.Indices32[15] = 8; mesh.Indices32[16] = 10; mesh.Indices32[17] = 11;
 
-    // 밑면 인덱스
-    refMeshData.Indices32[18] = 12; refMeshData.Indices32[19] = 13; refMeshData.Indices32[20] = 14;
-    refMeshData.Indices32[21] = 12; refMeshData.Indices32[22] = 14; refMeshData.Indices32[23] = 15;
+    mesh.Indices32[18] = 12; mesh.Indices32[19] = 13; mesh.Indices32[20] = 14;
+    mesh.Indices32[21] = 12; mesh.Indices32[22] = 14; mesh.Indices32[23] = 15;
 
-    // 왼면 인덱스
-    refMeshData.Indices32[24] = 16; refMeshData.Indices32[25] = 17; refMeshData.Indices32[26] = 18;
-    refMeshData.Indices32[27] = 16; refMeshData.Indices32[28] = 18; refMeshData.Indices32[29] = 19;
+    mesh.Indices32[24] = 16; mesh.Indices32[25] = 17; mesh.Indices32[26] = 18;
+    mesh.Indices32[27] = 16; mesh.Indices32[28] = 18; mesh.Indices32[29] = 19;
 
-    // 오른면 인덱스
-    refMeshData.Indices32[30] = 20; refMeshData.Indices32[31] = 21; refMeshData.Indices32[32] = 22;
-    refMeshData.Indices32[33] = 20; refMeshData.Indices32[34] = 22; refMeshData.Indices32[35] = 23;
+    mesh.Indices32[30] = 20; mesh.Indices32[31] = 21; mesh.Indices32[32] = 22;
+    mesh.Indices32[33] = 20; mesh.Indices32[34] = 22; mesh.Indices32[35] = 23;
+
+    std::vector<uint32_t> adjIndices;
+    GenerateAdjacencyIndices(posL, mesh.Indices32, adjIndices);
+
+    std::vector<SubmeshRange> ranges;
+    ranges.reserve(6);
+    for (UINT i = 0; i < 6; i++)
+    {
+        SubmeshRange range = {};
+        range.startPosIndex = i * 4;
+        range.posIndexCount = 4;
+        range.startIndexIndex = i * 6;
+        range.indexIndexCount = 6;
+        ranges.push_back(range);
+    }
 
     TextureRenderMesh* pNewCube = new TextureRenderMesh;
     pNewCube->Initialize(g_pRenderer);
 
-    // adjacency test
-    std::vector<uint32_t> adjIndices;
-    GenerateAdjacencyIndices(posL, refMeshData.Indices32, adjIndices);
+    if (!pNewCube->CreateRenderAssetsFromSingleMesh(mesh, adjIndices, ranges))
+    {
+        delete pNewCube;
+        return nullptr;
+    }
 
-    pNewCube->CreateRenderAssets(meshData, 1, adjIndices);
-    CONSTANT_BUFFER_MATERIAL purpleMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(0.5f, 0.2f, 0.7f, 1.f));
-    pNewCube->SetMaterial(purpleMat, 0);
-    
+    const WCHAR* saltTexFiles[6] =
+    {
+        L"../../Assets/salt_01.dds",
+        L"../../Assets/salt_02.dds",
+        L"../../Assets/salt_03.dds",
+        L"../../Assets/salt_04.dds",
+        L"../../Assets/salt_05.dds",
+        L"../../Assets/salt_06.dds"
+    };
+
+    for (UINT i = 0; i < 6; i++)
+    {
+        if (!g_pCubeFaceTextures[i])
+        {
+            g_pCubeFaceTextures[i] = reinterpret_cast<TEXTURE_HANDLE*>(g_pRenderer->CreateTextureFromFile(saltTexFiles[i]));
+        }
+
+        if (g_pCubeFaceTextures[i])
+        {
+            pNewCube->BindTextureAssets(g_pCubeFaceTextures[i], i);
+        }
+
+        //CONSTANT_BUFFER_MATERIAL purpleMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(0.5f, 0.2f, 0.7f, 1.f));
+        CONSTANT_BUFFER_MATERIAL whiteMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(1.f, 1.f, 1.f, 1.f));
+        pNewCube->SetMaterial(whiteMat, i);
+    }
+
     return pNewCube;
 }
 
@@ -420,8 +473,8 @@ void UpdateGridPos()
 {
     XMFLOAT3 curCameraPos = g_pRenderer->GetCameraWorldPos();
 
-    UINT xOffset = curCameraPos.x / g_GridCellOffset;
-    UINT zOffset = curCameraPos.z / g_GridCellOffset;
+    float xOffset = curCameraPos.x / g_GridCellOffset;
+    float zOffset = curCameraPos.z / g_GridCellOffset;
     
     g_matWorldGrid = XMMatrixTranslation(xOffset * g_GridCellOffset, 0.f, zOffset * g_GridCellOffset);
 }
