@@ -39,7 +39,7 @@ PSInput VS(VSInput _vin)
     float2 scale = (g_TexSize / g_ScreenRes) * g_Scale;
     float2 offset = (g_Pos / g_ScreenRes); // float좌표계 기준 지정한 위치
     float2 pos = _vin.pos.xy * scale + offset;
-    result.position = float4(pos.xy * float2(2, -2) + float2(-1, 1), g_Z, 1); // 정규좌표게로 변환
+    result.position = float4(pos.xy * float2(2, -2) + float2(-1, 1), g_Z, 1); // 정규좌표계로 변환
  
     float2 tex_scale = (g_TexSampleSize / g_TexSize);
     float2 tex_offset = (g_TexSampePos / g_TexSize);

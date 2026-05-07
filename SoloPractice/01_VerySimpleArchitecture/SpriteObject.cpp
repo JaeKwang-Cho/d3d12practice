@@ -310,7 +310,7 @@ bool SpriteObject::InitMesh()
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 
-	// Quad로 표현한다.
+	// Quad로 표현한다. (정규좌표계로 하고, 외부에서 스케일과 위치로 조절한다.)
 	ColorVertex Vertices[] =
 	{
 		{ { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },

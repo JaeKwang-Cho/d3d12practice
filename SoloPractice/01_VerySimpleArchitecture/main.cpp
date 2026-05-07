@@ -62,9 +62,15 @@ D3D12_HEAP_PROPERTIES HEAP_PROPS_READBACK = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_T
 // 렌더링 전역 변수
 D3D12Renderer* g_pRenderer = nullptr;
 
+// Common Assets
 void* g_pGrid = nullptr;
 void* g_pCube = nullptr;
 void* g_pTexCube = nullptr;
+
+// Sprites
+void* g_pSpriteObjs[5] = {nullptr,};
+void* g_pTexHandleForSprites = nullptr;
+
 
 // 큐브 각 면 텍스처 (salt_01 ~ salt_06)
 TEXTURE_HANDLE* g_pCubeFaceTextures[6] = { nullptr, };
@@ -140,6 +146,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pGrid = CreateTileGrid();
     g_pCube = CreateCube(10.f, 5.f, 2.f);
 
+    // Sprite
+    g_pTexHandleForSprites = g_pRenderer->CreateTextureFromFile(L"../../Assets/tex_00.dds");
+    g_pSpriteObjs[0] = g_pRenderer->CreateSpriteObject();
+
+    g_pSpriteObjs[1] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 0, 0, 512, 512);
+    g_pSpriteObjs[2] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 512, 0, 1024, 512);
+    g_pSpriteObjs[3] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 0, 512, 512, 1024);
+    g_pSpriteObjs[4] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 512, 512, 1024, 1024);
+
     MSG msg = {};
 
     // 기본으로 PeekMessage를 사용
@@ -170,6 +185,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         delete pCube;
         //g_pRenderer->DeleteRenderMesh(g_pCube, E_RENDER_MESH_TYPE::TEXTURE);
         pCube = nullptr;
+    }
+
+    for (UINT i = 0; i < 5; i++) {
+        if(g_pSpriteObjs[i]) {
+            g_pRenderer->DeleteSpriteObject(g_pSpriteObjs[i]);
+            g_pSpriteObjs[i] = nullptr;
+		}
+    }
+
+    if (g_pTexHandleForSprites) {
+        g_pRenderer->DeleteTexture(g_pTexHandleForSprites);
+		g_pTexHandleForSprites = nullptr;
     }
 
     // 큐브 면 텍스처 해제
@@ -236,6 +263,103 @@ void RunGame()
     g_pRenderer->DrawRenderMesh(g_pCube, &g_matWorldCube, E_RENDER_MESH_TYPE::TEXTURE);
 
     g_pRenderer->DrawOutlineMesh(g_pCube, &g_matWorldCube);
+    // =======================
+
+	// ===== draw sprite =====
+    TEXTURE_HANDLE* pSpriteTex = reinterpret_cast<TEXTURE_HANDLE*>(g_pTexHandleForSprites);
+    if (pSpriteTex)
+    {
+        D3D12_RESOURCE_DESC spriteTexDesc = pSpriteTex->pTexResource->GetDesc();
+
+        LONG texWidth = static_cast<LONG>(spriteTexDesc.Width);
+        LONG texHeight = static_cast<LONG>(spriteTexDesc.Height);
+
+        float totalTime = g_GameTimer.GetTotalTime();
+
+        auto Clamp01 = [](float v) -> float
+            {
+                if (v < 0.0f) return 0.0f;
+                if (v > 1.0f) return 1.0f;
+                return v;
+            };
+
+        // 각 sprite 하나가 샘플링할 정규화 크기
+        // 0.5f면 4개를 합쳐 전체 텍스처를 모두 덮으므로 이동 없음
+        // 0.25f면 4개를 합쳐 0.5 x 0.5만 덮으므로 이동 가능
+        const float tileSampleWidthN = 0.125f;
+        const float tileSampleHeightN = 0.125f;
+
+        const float fullSampleWidthN = Clamp01(tileSampleWidthN * 2.0f);
+        const float fullSampleHeightN = Clamp01(tileSampleHeightN * 2.0f);
+
+        const float travelWidthN = 1.0f - fullSampleWidthN;
+        const float travelHeightN = 1.0f - fullSampleHeightN;
+
+        const float moveSpeedU = 0.20f;
+        const float moveSpeedV = 0.13f;
+
+        float sampleLeftN = 0.0f;
+        float sampleTopN = 0.0f;
+
+        if (travelWidthN > 0.0f)
+        {
+            sampleLeftN = fmodf(totalTime * moveSpeedU, travelWidthN);
+        }
+
+        if (travelHeightN > 0.0f)
+        {
+            sampleTopN = fmodf(totalTime * moveSpeedV, travelHeightN);
+        }
+
+        LONG tileSampleWidth = static_cast<LONG>(tileSampleWidthN * static_cast<float>(texWidth));
+        LONG tileSampleHeight = static_cast<LONG>(tileSampleHeightN * static_cast<float>(texHeight));
+
+        LONG sampleLeft = static_cast<LONG>(sampleLeftN * static_cast<float>(texWidth));
+        LONG sampleTop = static_cast<LONG>(sampleTopN * static_cast<float>(texHeight));
+
+        RECT rectLT = {};
+        rectLT.left = sampleLeft;
+        rectLT.top = sampleTop;
+        rectLT.right = rectLT.left + tileSampleWidth;
+        rectLT.bottom = rectLT.top + tileSampleHeight;
+
+        RECT rectRT = {};
+        rectRT.left = sampleLeft + tileSampleWidth;
+        rectRT.top = sampleTop;
+        rectRT.right = rectRT.left + tileSampleWidth;
+        rectRT.bottom = rectRT.top + tileSampleHeight;
+
+        RECT rectLB = {};
+        rectLB.left = sampleLeft;
+        rectLB.top = sampleTop + tileSampleHeight;
+        rectLB.right = rectLB.left + tileSampleWidth;
+        rectLB.bottom = rectLB.top + tileSampleHeight;
+
+        RECT rectRB = {};
+        rectRB.left = sampleLeft + tileSampleWidth;
+        rectRB.top = sampleTop + tileSampleHeight;
+        rectRB.right = rectRB.left + tileSampleWidth;
+        rectRB.bottom = rectRB.top + tileSampleHeight;
+
+        // 화면 배치 크기
+        const LONG drawWidth = 128;
+        const LONG drawHeight = 128;
+        const LONG drawGap = 5;
+
+        float spriteScaleX = static_cast<float>(drawWidth) / static_cast<float>(texWidth);
+        float spriteScaleY = static_cast<float>(drawHeight) / static_cast<float>(texHeight);
+
+        g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], 0, 0, spriteScaleX, spriteScaleY, &rectLT, 0.0f, g_pTexHandleForSprites);
+        g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], drawWidth + drawGap, 0, spriteScaleX, spriteScaleY, &rectRT, 0.0f, g_pTexHandleForSprites);
+        g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], 0, drawHeight + drawGap, spriteScaleX, spriteScaleY, &rectLB, 0.0f, g_pTexHandleForSprites);
+        g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], drawWidth + drawGap, drawHeight + drawGap, spriteScaleX, spriteScaleY, &rectRB, 0.0f, g_pTexHandleForSprites);
+    }
+
+	g_pRenderer->RenderSprite(g_pSpriteObjs[1], 512 + 10, 0, 0.5f, 0.5f, 1.0f); // z가 1이므로 뒤에 그려진다.
+    g_pRenderer->RenderSprite(g_pSpriteObjs[2], 512 + 10 + 10 + 256, 0, 0.5f, 0.5f, 1.0f);
+    g_pRenderer->RenderSprite(g_pSpriteObjs[3], 512 + 10, 256 + 10, 0.5f, 0.5f, 0.0f); // z가 0이므로 앞에 그려진다.
+    g_pRenderer->RenderSprite(g_pSpriteObjs[4], 512 + 10 + 10 + 256, 256 + 10, 0.5f, 0.5f, 0.0f); 
+
     // =======================
 
     // copy render target

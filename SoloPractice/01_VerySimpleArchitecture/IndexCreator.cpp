@@ -68,6 +68,7 @@ void IndexCreator::CleanUp()
 void IndexCreator::Check()
 {
 	if (m_dwAllocatedCount) {
+		// 혹시나 아직 Alloc된 Index가 남아있다면 디버그 브레이크
 		__debugbreak();
 	}
 }
