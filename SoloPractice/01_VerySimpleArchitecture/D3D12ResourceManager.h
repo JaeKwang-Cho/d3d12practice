@@ -18,6 +18,7 @@ public:
 
 	HRESULT CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage);
 	HRESULT CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName);
+	HRESULT CreateTexturePair(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format);
 
 	void UpdateTextureForWrite(Microsoft::WRL::ComPtr<ID3D12Resource> _pDestTexResource, Microsoft::WRL::ComPtr<ID3D12Resource> _pSrcTexResource);
 protected:

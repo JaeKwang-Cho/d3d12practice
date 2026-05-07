@@ -13,3 +13,5 @@ inline size_t AlignConstantBufferSize(size_t _size) {
 	return aligned_size;
 }
 
+void UpdateTexture(ID3D12Device* _pD3DDevice, ID3D12GraphicsCommandList* _pCommandList, ID3D12Resource* _pDestTexResource, ID3D12Resource* _pSrcTexResource);
+

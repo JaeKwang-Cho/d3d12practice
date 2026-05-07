@@ -71,6 +71,11 @@ void* g_pTexCube = nullptr;
 void* g_pSpriteObjs[5] = {nullptr,};
 void* g_pTexHandleForSprites = nullptr;
 
+// Dynamic Texture
+void* g_pDynamicTexHandle = nullptr;
+BYTE* g_pImage = nullptr;
+UINT g_ImageWidth = 0;
+UINT g_ImageHeight = 0;
 
 // 큐브 각 면 텍스처 (salt_01 ~ salt_06)
 TEXTURE_HANDLE* g_pCubeFaceTextures[6] = { nullptr, };
@@ -155,6 +160,21 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pSpriteObjs[3] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 0, 512, 512, 1024);
     g_pSpriteObjs[4] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 512, 512, 1024, 1024);
 
+	// Sprice - Dynamic Texture
+    g_ImageWidth = 512;
+    g_ImageHeight = 256;
+    g_pImage = (BYTE*)malloc(g_ImageWidth * g_ImageHeight * 4);
+    DWORD* pDest = (DWORD*)g_pImage;
+    for (DWORD y = 0; y < g_ImageHeight; y++)
+    {
+        for (DWORD x = 0; x < g_ImageWidth; x++)
+        {
+            pDest[x + g_ImageWidth * y] = 0xff0000ff;
+        }
+    }
+    g_pDynamicTexHandle = g_pRenderer->CreateDynamicTexture(g_ImageWidth, g_ImageHeight);
+
+
     MSG msg = {};
 
     // 기본으로 PeekMessage를 사용
@@ -197,6 +217,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     if (g_pTexHandleForSprites) {
         g_pRenderer->DeleteTexture(g_pTexHandleForSprites);
 		g_pTexHandleForSprites = nullptr;
+    }
+
+    if (g_pDynamicTexHandle)
+    {
+        g_pRenderer->DeleteTexture(g_pDynamicTexHandle);
+        g_pDynamicTexHandle = nullptr;
+    }
+    if (g_pImage)
+    {
+        free(g_pImage);
+        g_pImage = nullptr;
     }
 
     // 큐브 면 텍스처 해제
@@ -278,7 +309,7 @@ void RunGame()
 
         auto Clamp01 = [](float v) -> float
             {
-                if (v < 0.0f) return 0.0f;
+                if (v < 0.0f) return 0.1f;
                 if (v > 1.0f) return 1.0f;
                 return v;
             };
@@ -362,6 +393,9 @@ void RunGame()
 
     // =======================
 
+	// === draw sprite with dynamic texture ===
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], 0, 256 + 5 + 256 + 5, 0.5f, 0.5f, nullptr, 0.0f, g_pDynamicTexHandle);
+    // =======================
     // copy render target
     g_pRenderer->CopyRenderTarget();
 
@@ -386,14 +420,82 @@ void RunGame()
 void Update()
 {
     //g_matWorldCube = XMMatrixIdentity();
-    
-    float totalTime = g_GameTimer.GetTotalTime();
+ 
+    { // Rotate Cube
+        float totalTime = g_GameTimer.GetTotalTime();
 
-    XMMATRIX matRotX = XMMatrixRotationX(totalTime * 0.8f);
-    XMMATRIX matRotY = XMMatrixRotationY(totalTime * 1.3f);
-    XMMATRIX matRotZ = XMMatrixRotationZ(totalTime * 0.5f);
+        XMMATRIX matRotX = XMMatrixRotationX(totalTime * 0.8f);
+        XMMATRIX matRotY = XMMatrixRotationY(totalTime * 1.3f);
+        XMMATRIX matRotZ = XMMatrixRotationZ(totalTime * 0.5f);
 
-    g_matWorldCube = matRotZ * matRotX * matRotY;
+        g_matWorldCube = matRotZ * matRotX * matRotY;
+    }
+
+
+    {// Update Texture
+        static DWORD g_dwCount = 0;
+        static DWORD g_dwTileColorR = 0;
+        static DWORD g_dwTileColorG = 0;
+        static DWORD g_dwTileColorB = 0;
+
+        const DWORD TILE_WIDTH = 16;
+        const DWORD TILE_HEIGHT = 16;
+
+        DWORD TILE_WIDTH_COUNT = g_ImageWidth / TILE_WIDTH;
+        DWORD TILE_HEIGHT_COUNT = g_ImageHeight / TILE_HEIGHT;
+
+        if (g_dwCount >= TILE_WIDTH_COUNT * TILE_HEIGHT_COUNT)
+        {
+            g_dwCount = 0;
+        }
+        DWORD TileY = g_dwCount / TILE_WIDTH_COUNT;
+        DWORD TileX = g_dwCount % TILE_WIDTH_COUNT;
+
+        DWORD StartX = TileX * TILE_WIDTH;
+        DWORD StartY = TileY * TILE_HEIGHT;
+
+
+        //DWORD r = rand() % 256;
+        //DWORD g = rand() % 256;
+        //DWORD b = rand() % 256;
+
+        DWORD r = g_dwTileColorR;
+        DWORD g = g_dwTileColorG;
+        DWORD b = g_dwTileColorB;
+
+
+        DWORD* pDest = (DWORD*)g_pImage;
+        for (DWORD y = 0; y < 16; y++)
+        {
+            for (DWORD x = 0; x < 16; x++)
+            {
+                if (StartX + x >= g_ImageWidth)
+                    __debugbreak();
+
+                if (StartY + y >= g_ImageHeight)
+                    __debugbreak();
+
+                pDest[(StartX + x) + (StartY + y) * g_ImageWidth] = 0xff000000 | (b << 16) | (g << 8) | r;
+            }
+        }
+        g_dwCount++;
+        g_dwTileColorR += 8;
+        if (g_dwTileColorR > 255)
+        {
+            g_dwTileColorR = 0;
+            g_dwTileColorG += 8;
+        }
+        if (g_dwTileColorG > 255)
+        {
+            g_dwTileColorG = 0;
+            g_dwTileColorB += 8;
+        }
+        if (g_dwTileColorB > 255)
+        {
+            g_dwTileColorB = 0;
+        }
+        g_pRenderer->UpdateTextureWithImage(g_pDynamicTexHandle, g_pImage, g_ImageWidth, g_ImageHeight);
+    }
     
     UpdateGridPos();
 }

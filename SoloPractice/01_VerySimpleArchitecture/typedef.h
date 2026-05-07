@@ -144,9 +144,12 @@ struct CONSTANT_BUFFER_PROPERTY
 
 struct TEXTURE_HANDLE
 {
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource; // GPU Resource
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer; // CPU Upload Resource (from system memory to GPU by PCIe)
 	D3D12_CPU_DESCRIPTOR_HANDLE srv;
-	TEXTURE_HANDLE() :pTexResource(nullptr), srv{} {}
+	bool bUpdated;
+
+	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false) {}
 };
 
 struct SubRenderGeometry 

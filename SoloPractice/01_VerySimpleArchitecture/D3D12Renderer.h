@@ -2,6 +2,8 @@
 // 괜히 최신 d3d12 사용해보기
 #pragma once
 
+#include <unordered_set>
+
 class D3D12ResourceManager;
 class ConstantBufferPool;
 class DescriptorPool;
@@ -50,10 +52,12 @@ public:
 	void DeleteSpriteObject(void* _pSpriteObjHandle);
 	void RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle);
 	void RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z);
+	void UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight);
 
 	// texture
 	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
 	void* CreateTextureFromFile(const WCHAR* _wchFileName);
+	void* CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight);
 	void DeleteTexture(void* _pTexHandle);
 
 	// PSO
@@ -90,6 +94,9 @@ private:
 	void WaitForFenceValue(UINT64 _expectedFenceValue);
 
 	void CleanUpRenderer();
+
+	TEXTURE_HANDLE* AllocTextureHandle();
+	void ReleaseAllTextureHandles();
 
 public:
 
@@ -158,6 +165,8 @@ private:
 	ScreenCapturer* m_pScreenStreamer;
 	bool bTryPixelStreaming;
 	bool bCheckUpdateTexture;
+
+	std::unordered_set<TEXTURE_HANDLE*> m_TextureHandles;
 
 public:
 	D3D12Renderer();

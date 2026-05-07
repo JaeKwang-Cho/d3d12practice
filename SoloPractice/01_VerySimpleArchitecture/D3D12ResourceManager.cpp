@@ -407,6 +407,61 @@ RETURN:
 	return hr;
 }
 
+HRESULT D3D12ResourceManager::CreateTexturePair(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format)
+{
+	HRESULT hr = S_OK;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+
+	D3D12_RESOURCE_DESC textureDesc = {};
+	textureDesc.MipLevels = 1;
+	textureDesc.Format = _format;
+	textureDesc.Width = _width;
+	textureDesc.Height = _height;
+	textureDesc.DepthOrArraySize = 1;
+	textureDesc.SampleDesc.Count = 1;
+	textureDesc.SampleDesc.Quality = 0;
+	textureDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	textureDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+
+	hr = m_pD3DDevice->CreateCommittedResource(
+		&HEAP_PROPS_DEFAULT,
+		D3D12_HEAP_FLAG_NONE,
+		&textureDesc,
+		D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE,
+		nullptr,
+		IID_PPV_ARGS(pTexResource.GetAddressOf())
+	);
+
+	if(FAILED(hr)) {
+		__debugbreak();
+		return hr;
+	}
+
+	UINT64 uploadBufferSize = GetRequiredIntermediateSize(pTexResource.Get(), 0, 1);
+	D3D12_RESOURCE_DESC resDesc_BuffSize = CD3DX12_RESOURCE_DESC::Buffer(uploadBufferSize);
+
+	hr = m_pD3DDevice->CreateCommittedResource(
+		&HEAP_PROPS_UPLOAD,
+		D3D12_HEAP_FLAG_NONE,
+		&resDesc_BuffSize,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+	);
+
+	if (FAILED(hr)) {
+		__debugbreak();
+		return hr;
+	}
+
+	*_ppOutResource = pTexResource;
+	*_ppOutUploadBuffer = pUploadBuffer;
+
+	return hr;
+}
+
 void D3D12ResourceManager::UpdateTextureForWrite(Microsoft::WRL::ComPtr<ID3D12Resource> _pDestTexResource, Microsoft::WRL::ComPtr<ID3D12Resource> _pSrcTexResource)
 {
 	// 전반적인 내용은 여기에 있다.

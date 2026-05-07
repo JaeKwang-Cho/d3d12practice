@@ -625,17 +625,25 @@ void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
+
 	delete pSpriteObj;
 }
 
 void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
 {
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	TEXTURE_HANDLE* pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle);
 
 	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
 
 	XMFLOAT2 pos = { (float)_posX, (float)_posY };
 	XMFLOAT2 scale = { _scaleX, _scaleY };
+
+	if(pTexHandle->pUploadBuffer && pTexHandle->bUpdated)
+	{
+		UpdateTexture(m_pD3DDevice.Get(), pCommandList.Get(), pTexHandle->pTexResource.Get(), pTexHandle->pUploadBuffer.Get());
+		pTexHandle->bUpdated = false;
+	}
 
 	pSpriteObj->DrawWithTex(pCommandList, &pos, &scale, _pRect, _z, (TEXTURE_HANDLE*)_pTexHandle);
 }
@@ -650,6 +658,48 @@ void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, 
 	XMFLOAT2 scale = { _scaleX, _scaleY };
 
 	pSpriteObj->Draw(pCommandList, &pos, &scale, _z);
+}
+
+void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)
+{
+	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTextHandle;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pDestTexResource = pTexHandle->pTexResource;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = pTexHandle->pUploadBuffer;
+
+	D3D12_RESOURCE_DESC Desc = pDestTexResource->GetDesc();
+	if(_SrcHeight > Desc.Height || _SrcWidth > Desc.Width)
+	{
+		__debugbreak();
+		return;
+	}
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT Footprint;
+	UINT Rows = 0;
+	UINT64 RowSize = 0;
+	UINT64 TotalBytes = 0;
+
+	m_pD3DDevice->GetCopyableFootprints(&Desc, 0, 1, 0, &Footprint, &Rows, &RowSize, &TotalBytes);
+
+	BYTE* pMappedData = nullptr;
+	CD3DX12_RANGE readRange(0, 0);
+
+	HRESULT hr = pUploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pMappedData));
+	if(FAILED(hr)){
+		__debugbreak();
+		return;
+	}
+
+	const BYTE* pSrc = _pSrcBytes;
+	BYTE* pDest = pMappedData;
+	for(UINT y = 0; y < _SrcHeight; y++)
+	{
+		memcpy(pDest, pSrc, _SrcWidth * sizeof(BYTE) * 4);
+		pSrc += _SrcWidth * sizeof(BYTE) * 4;
+		pDest += RowSize;
+	}
+	pUploadBuffer->Unmap(0, nullptr);
+
+	pTexHandle->bUpdated = true;
 }
 
 void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
@@ -700,7 +750,7 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
 			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
 
-			pTexHandle = new TEXTURE_HANDLE;
+			pTexHandle = AllocTextureHandle();
 			pTexHandle->pTexResource = pTexResource;
 			pTexHandle->srv = srv;
 		}
@@ -730,9 +780,47 @@ void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
 		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
 			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
 
-			pTexHandle = new TEXTURE_HANDLE;
+			pTexHandle = AllocTextureHandle();
 			pTexHandle->pTexResource = pTexResource;
 			pTexHandle->srv = srv;
+		}
+	}
+
+	return pTexHandle;
+}
+
+void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
+{
+	TEXTURE_HANDLE* pTexHandle = nullptr;
+
+	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
+
+	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // 일단 이걸로 하드코딩
+
+	if(S_OK == m_pResourceManager->CreateTexturePair(&pTexResource, &pUploadBuffer, _TexWidth, _TexHeight, TexFormat))
+	{
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Format = TexFormat;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		if(m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv))
+		{
+			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
+
+			pTexHandle = AllocTextureHandle();
+			pTexHandle->pTexResource = pTexResource;
+			pTexHandle->pUploadBuffer = pUploadBuffer;
+			pTexHandle->srv = srv;
+		}
+		else
+		{
+			pTexResource->Release(); 
+			pTexResource = nullptr;
+			pUploadBuffer->Release();
+			pUploadBuffer = nullptr;
 		}
 	}
 
@@ -746,10 +834,29 @@ void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
-	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTexHandle;
-	// 스마트 포인터를 사용하지 않으면 release를 해줘야 한다.
+	if (_pTexHandle == nullptr)
+	{
+		return;
+	}
+
+	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTexHandle;	
+
+	auto iter = m_TextureHandles.find(pTexHandle);
+	if (iter == m_TextureHandles.end())
+	{
+		return;
+	}
+		
+	m_TextureHandles.erase(iter);
+
 	pTexHandle->pTexResource = nullptr;
-	m_pSingleDescriptorAllocator->FreeDescriptorHandle(pTexHandle->srv);
+	pTexHandle->pUploadBuffer = nullptr;
+
+	if (m_pSingleDescriptorAllocator != nullptr && pTexHandle->srv.ptr != 0)
+	{
+		m_pSingleDescriptorAllocator->FreeDescriptorHandle(pTexHandle->srv);
+		pTexHandle->srv = {};
+	}
 
 	delete pTexHandle;
 }
@@ -1056,6 +1163,8 @@ void D3D12Renderer::CleanUpRenderer()
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
+	ReleaseAllTextureHandles();
+
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		if (m_ppConstantBufferManager[i]) {
 			delete m_ppConstantBufferManager[i];
@@ -1100,6 +1209,22 @@ void D3D12Renderer::CleanUpRenderer()
 	}
 
 	CleanupFence();
+}
+
+TEXTURE_HANDLE* D3D12Renderer::AllocTextureHandle()
+{
+	TEXTURE_HANDLE* pTexHandle = new TEXTURE_HANDLE;
+	m_TextureHandles.insert(pTexHandle);
+	return pTexHandle;
+}
+
+void D3D12Renderer::ReleaseAllTextureHandles()
+{
+	while (!m_TextureHandles.empty())
+	{
+		TEXTURE_HANDLE* pTexHandle = *m_TextureHandles.begin();
+		DeleteTexture(pTexHandle);
+	}
 }
 
 D3D12Renderer::D3D12Renderer()
