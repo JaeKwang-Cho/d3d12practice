@@ -28,7 +28,7 @@
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <d3d11on12.h>
-#include <dwrite.h>
+#include <dwrite_3.h>
 #include <dxgi.h>
 #include <d3dx12.h>
 #include <d3d12sdklayers.h>

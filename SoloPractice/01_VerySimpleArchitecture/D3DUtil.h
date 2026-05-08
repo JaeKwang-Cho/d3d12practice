@@ -5,7 +5,7 @@ void GetHardwareAdaptor(IDXGIFactory7* _pFactory, IDXGIAdapter4** _ppAdaptor);
 void GetSoftwareAdaptor(IDXGIFactory7* _pFactory, IDXGIAdapter4** _ppAdaptor);
 void SetDebugLayerInfo(ID3D12Device* _pD3DDevice);
 void SetDefaultSamplerDesc(D3D12_STATIC_SAMPLER_DESC* _pOutSamplerDesc, UINT _RegisterIndex);
-HRESULT CreateSimpleVertexBuffer(ID3D12Device* _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, ID3D12Resource** _ppOutBuffer);
+HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer);
 
 inline size_t AlignConstantBufferSize(size_t _size) {
 	// 이렇게 하면 256 보다 작은 값은 날라간다.
@@ -13,5 +13,4 @@ inline size_t AlignConstantBufferSize(size_t _size) {
 	return aligned_size;
 }
 
-void UpdateTexture(ID3D12Device* _pD3DDevice, ID3D12GraphicsCommandList* _pCommandList, ID3D12Resource* _pDestTexResource, ID3D12Resource* _pSrcTexResource);
-
+void UpdateTexture(D3D12Device_ptr _pD3DDevice, D3D12GraphicsCommandList_ptr _pCommandList, D3D12Resource_ptr _pDestTexResource, D3D12Resource_ptr _pSrcTexResource);

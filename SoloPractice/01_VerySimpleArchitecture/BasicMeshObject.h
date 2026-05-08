@@ -26,7 +26,7 @@ enum class E_BASIC_MESH_DESCRIPTOR_INDEX_PER_TRI_GROUP
 // 바로 Pipeline에 bind 할 수 있도록 맴버를 구성하고 있다.
 struct INDEXED_TRI_GROUP
 {
-	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
+	D3D12Resource_ptr pIndexBuffer = nullptr;
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
 	DWORD dwTriCount = -1;
 	TEXTURE_HANDLE* pTexHandle = nullptr;
@@ -53,7 +53,7 @@ public:
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	// 외부에서 Texture를 받지 않는다. MeshObject를 생성할때 이미 맴버로 가지고 있는 것들을 bind한다.
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld);
+	void Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld);
 
 	bool BeginCreateMesh(const ColorVertex* _pVertexList, DWORD _dwVertexNum, DWORD _dwTriGroupCount);
 	bool InsertIndexedTriList(const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
@@ -79,7 +79,7 @@ private:
 	D3D12Renderer* m_pRenderer;
 
 	// vertex data
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pVertexBuffer;
+	D3D12Resource_ptr m_pVertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
 	// index data
 	INDEXED_TRI_GROUP* m_pTriGroupList;

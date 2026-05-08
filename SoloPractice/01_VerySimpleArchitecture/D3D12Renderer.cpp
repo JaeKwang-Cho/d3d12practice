@@ -16,6 +16,7 @@
 #include "FlyCamera.h"
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
+#include "FontManager.h"
 
 #define PIXEL_STREAMING (0)
 
@@ -38,6 +39,8 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 
 	DWORD dwCreateFlags = 0;
 	DWORD dwCreateFactoryFlags = 0;
+
+	m_fDPI = GetDpiForWindow(m_hWnd);
 
 	// #1 GPU 디버그 레이어 설정
 	if (_bEnableDebugLayer) {
@@ -223,25 +226,29 @@ EXIT:
 	CreateFence();
 
 	// Resource Manager
-	m_pResourceManager = new D3D12ResourceManager;
+	m_pResourceManager = std::make_unique<D3D12ResourceManager>();
 	m_pResourceManager->Initialize(m_pD3DDevice);
+
+	// Font Manager
+	m_pFontManager = std::make_unique<FontManager>();
+	m_pFontManager->Initialize(this, m_pCommandQueue.Get(), 1024, 256, _bEnableDebugLayer);
 
 	// Command List당 pool도 각각 만들어준다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		// Constant Buffer Pool
-		m_ppConstantBufferManager[i] = new ConstantBufferManager;
+		m_ppConstantBufferManager[i] = std::make_unique<ConstantBufferManager>();
 		m_ppConstantBufferManager[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME);
 
 		// Descriptor Pool
-		m_ppDescriptorPool[i] = new DescriptorPool;
+		m_ppDescriptorPool[i] = std::make_unique<DescriptorPool>();
 		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
 	}
 	// SingleDescriptorAllocator
-	m_pSingleDescriptorAllocator = new SingleDescriptorAllocator;
+	m_pSingleDescriptorAllocator = std::make_unique<SingleDescriptorAllocator>();
 	m_pSingleDescriptorAllocator->Initialize(m_pD3DDevice, MAX_DESCRIPRTOR_COUNT, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 
 	// PSOCache
-	m_pD3D12PSOCache = new D3D12PSOCache;
+	m_pD3D12PSOCache = std::make_unique<D3D12PSOCache>();
 	m_pD3D12PSOCache->Initialize(this);
 
 	// Camera
@@ -252,7 +259,7 @@ EXIT:
 
 #if PIXEL_STREAMING
 	// ScreenCapturer
-	m_pScreenStreamer = new ScreenCapturer;
+	m_pScreenStreamer = std::make_unique<ScreenCapturer>();
 	m_pScreenStreamer->Initialize(this, m_pRenderTargets[0]->GetDesc());
 #endif
 
@@ -296,7 +303,7 @@ void D3D12Renderer::BeginRender()
 	// 화면 클리어 및 이번 프레임 렌더링을 위한 자료구조 초기화
 
 	// 현재 Rendering을 할 Command Allocator와 List에 대해서 초기화를 진행한다.
-	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> pCommandAllocator = m_ppCommandAllocator[m_dwCurContextIndex];
+	D3D12CommandAllocator_ptr pCommandAllocator = m_ppCommandAllocator[m_dwCurContextIndex];
 	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	if (FAILED(pCommandAllocator->Reset())) {
@@ -520,7 +527,7 @@ void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYP
 
 void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType)
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	switch (_eRenderMeshType)
 	{
@@ -539,7 +546,7 @@ void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMa
 }
 void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
 	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
@@ -570,7 +577,7 @@ void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
 
 void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
 	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
@@ -631,7 +638,7 @@ void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
 
 void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 	TEXTURE_HANDLE* pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle);
 
 	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
@@ -650,7 +657,7 @@ void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int 
 
 void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
 	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
 
@@ -663,8 +670,8 @@ void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, 
 void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)
 {
 	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTextHandle;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pDestTexResource = pTexHandle->pTexResource;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = pTexHandle->pUploadBuffer;
+	D3D12Resource_ptr pDestTexResource = pTexHandle->pTexResource;
+	D3D12Resource_ptr pUploadBuffer = pTexHandle->pUploadBuffer;
 
 	D3D12_RESOURCE_DESC Desc = pDestTexResource->GetDesc();
 	if(_SrcHeight > Desc.Height || _SrcWidth > Desc.Width)
@@ -706,7 +713,7 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 {
 	TEXTURE_HANDLE* pTexHandle = nullptr;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
 	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
 
 	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -765,7 +772,7 @@ void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
 {
 	TEXTURE_HANDLE* pTexHandle = nullptr;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
 	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
 
 	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -793,8 +800,8 @@ void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
 {
 	TEXTURE_HANDLE* pTexHandle = nullptr;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
 
 	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // 일단 이걸로 하드코딩
@@ -861,12 +868,24 @@ void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 	delete pTexHandle;
 }
 
-Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12Renderer::GetPSO(std::string _strPSOName)
+std::unique_ptr<FONT_HANDLE> D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
 {
-	return m_pD3D12PSOCache->GetPSO(_strPSOName);
+	std::unique_ptr<FONT_HANDLE> pFontHandle = m_pFontManager->CreateFontObject_ITL(_wchFontFamilyName, _fFontSize);
+	return std::move(pFontHandle);
 }
 
-bool D3D12Renderer::CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc)
+bool D3D12Renderer::WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen)
+{
+	bool bResult = m_pFontManager->WriteTextToBitmap_ITL(_pDestImage, _DestWidth, _DestHeight, _DestPitch, _piOutWidth, _piOutHeight, (FONT_HANDLE*)_pFontHandle, _wchString, _dwLen);
+	return bResult;
+}
+
+D3D12PipelineState_raw D3D12Renderer::GetPSO(std::string _strPSOName)
+{
+	return m_pD3D12PSOCache->GetPSO(_strPSOName).Get();
+}
+
+bool D3D12Renderer::CachePSO(std::string _strPSOName, D3D12PipelineState_raw _pPSODesc)
 {
 	return m_pD3D12PSOCache->CachePSO(_strPSOName, _pPSODesc);
 }
@@ -933,8 +952,8 @@ void D3D12Renderer::FlushMultiRendering()
 void D3D12Renderer::CreateCommandList()
 {
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		Microsoft::WRL::ComPtr<ID3D12CommandAllocator> pCommandAllocator = nullptr;
-		Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> pCommandList = nullptr;
+		D3D12CommandAllocator_ptr pCommandAllocator = nullptr;
+		D3D12GraphicsCommandList_ptr pCommandList = nullptr;
 
 		// command list는 command allocator와 command list로 나뉘어져 있다.
 		if (FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(pCommandAllocator.GetAddressOf())))) {
@@ -1167,13 +1186,11 @@ void D3D12Renderer::CleanUpRenderer()
 
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		if (m_ppConstantBufferManager[i]) {
-			delete m_ppConstantBufferManager[i];
-			m_ppConstantBufferManager[i] = nullptr;
+			m_ppConstantBufferManager[i].reset();
 		}
 
 		if (m_ppDescriptorPool[i]) {
-			delete m_ppDescriptorPool[i];
-			m_ppDescriptorPool[i] = nullptr;
+			m_ppDescriptorPool[i].reset();
 		}
 
 		if (m_ppFrameUploadCBs[i]) {
@@ -1183,20 +1200,20 @@ void D3D12Renderer::CleanUpRenderer()
 		m_ppFrameSystemMemAddrs[i] = nullptr;
 	}
 	if (m_pResourceManager) {
-		delete m_pResourceManager;
-		m_pResourceManager = nullptr;
+		m_pResourceManager.reset();
 	}
 
 	if (m_pSingleDescriptorAllocator) {
-		delete m_pSingleDescriptorAllocator;
-		m_pSingleDescriptorAllocator = nullptr;
+		m_pSingleDescriptorAllocator.reset();
 	}
 
 	if (m_pD3D12PSOCache) {
-		delete m_pD3D12PSOCache;
-		m_pD3D12PSOCache = nullptr;
+		m_pD3D12PSOCache.reset();
 	}
-
+	if(m_pFontManager)
+	{
+		m_pFontManager.reset();
+	}
 	if (m_flyCamera) {
 		delete m_flyCamera;
 		m_flyCamera = nullptr;
@@ -1250,11 +1267,31 @@ D3D12Renderer::~D3D12Renderer()
 	CleanUpRenderer();
 }
 
+D3D12ResourceManager* D3D12Renderer::INL_GetResourceManager()
+{
+	return m_pResourceManager.get();
+}
+
 ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type)
 {
-	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex];
+	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex].get();
 	ConstantBufferPool* pConstBufferPool = pConstBufferManager->GetConstantBufferPool(_type);
 	return pConstBufferPool;
+}
+
+DescriptorPool* D3D12Renderer::INL_DescriptorPool()
+{
+	return m_ppDescriptorPool[m_dwCurContextIndex].get();
+}
+
+SingleDescriptorAllocator* D3D12Renderer::INL_GetSingleDescriptorAllocator()
+{
+	return m_pSingleDescriptorAllocator.get();
+}
+
+D3D12PSOCache* D3D12Renderer::INL_GetD3D12PSOCache()
+{
+	return m_pD3D12PSOCache.get();
 }
 
 void D3D12Renderer::GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj)

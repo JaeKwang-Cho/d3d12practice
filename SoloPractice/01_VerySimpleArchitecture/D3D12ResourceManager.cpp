@@ -8,7 +8,7 @@
 #include "WICTextureLoader12.h"
 #include "CommonAssets.h"
 
-bool D3D12ResourceManager::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice)
+bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 {
 	bool bResult = false;
 	m_pD3DDevice = _pD3DDevice;
@@ -32,14 +32,14 @@ RETURN:
 	return bResult;
 }
 
-HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData)
+HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData)
 {
 	HRESULT hr = S_OK;
 
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 	// 업로드 버퍼를 이용해서, 기본 버퍼로 데이터를 전달한다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> pVertexBuffer = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pVertexBuffer = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 	UINT vertexBufferSize = _sizePerVertex * _dwVertexNum;
 
 	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -126,13 +126,13 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwV
 			return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize)
+HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize)
 {
 	HRESULT hr = S_OK;
 
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
-	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pIndexBuffer = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 	UINT indexBufferSize = _indexTypeSize * _dwIndexNum;
 
 	// Index도 upload heap buffer를 이용해서 default heap buffer에 데이터를 올린다.
@@ -221,13 +221,13 @@ RETURN:
 	return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage)
+HRESULT D3D12ResourceManager::CreateTexture(D3D12Resource_ptr* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage)
 {
 	HRESULT hr = S_OK;
 
 	// 텍스쳐도 마찬가지로 upload -> default를 이용해서 GPU에 올린다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 
 	D3D12_RESOURCE_DESC textureDesc = {};
 	textureDesc.MipLevels = 1;
@@ -312,12 +312,12 @@ RETURN:
 	return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName)
+HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName)
 {
 	HRESULT hr = S_OK;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 
 	D3D12_RESOURCE_DESC textureDesc = {};
 
@@ -407,12 +407,12 @@ RETURN:
 	return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateTexturePair(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format)
+HRESULT D3D12ResourceManager::CreateTexturePair(D3D12Resource_ptr* _ppOutResource, D3D12Resource_ptr* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format)
 {
 	HRESULT hr = S_OK;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource = nullptr;
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer = nullptr;
+	D3D12Resource_ptr pTexResource = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 
 	D3D12_RESOURCE_DESC textureDesc = {};
 	textureDesc.MipLevels = 1;
@@ -462,7 +462,7 @@ HRESULT D3D12ResourceManager::CreateTexturePair(Microsoft::WRL::ComPtr<ID3D12Res
 	return hr;
 }
 
-void D3D12ResourceManager::UpdateTextureForWrite(Microsoft::WRL::ComPtr<ID3D12Resource> _pDestTexResource, Microsoft::WRL::ComPtr<ID3D12Resource> _pSrcTexResource)
+void D3D12ResourceManager::UpdateTextureForWrite(D3D12Resource_ptr _pDestTexResource, D3D12Resource_ptr _pSrcTexResource)
 {
 	// 전반적인 내용은 여기에 있다.
 	// https://learn.microsoft.com/ko-kr/windows/win32/direct3d12/upload-and-readback-of-texture-data

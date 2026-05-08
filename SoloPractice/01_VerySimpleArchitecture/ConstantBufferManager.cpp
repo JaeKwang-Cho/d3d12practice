@@ -12,7 +12,7 @@ static CONSTANT_BUFFER_PROPERTY f_pCBPropList[] =
 	{E_CONSTANT_BUFFER_TYPE::SPRITE, sizeof(CONSTANT_BUFFER_SPRITE)}
 };
 
-bool ConstantBufferManager::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, DWORD _dwMaxCBVNum)
+bool ConstantBufferManager::Initialize(D3D12Device_ptr _pD3DDevice, DWORD _dwMaxCBVNum)
 {
 	for (UINT i = 0; i < (UINT)E_CONSTANT_BUFFER_TYPE::END; i++) {
 		m_ppConstantBufferPool[i] = new ConstantBufferPool;

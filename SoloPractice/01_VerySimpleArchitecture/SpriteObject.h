@@ -20,17 +20,17 @@ private:
 	static DWORD m_dwInitRefCount;
 
 	// TextureVertex 정보와 Index 정보도 static으로 한다. 아마 Quad로만 그리기 때문일 것이다.
-	static Microsoft::WRL::ComPtr<ID3D12Resource> m_pVertexBuffer;
+	static D3D12Resource_ptr m_pVertexBuffer;
 	static D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
 
-	static Microsoft::WRL::ComPtr<ID3D12Resource> m_pIndexBuffer;
+	static D3D12Resource_ptr m_pIndexBuffer;
 	static D3D12_INDEX_BUFFER_VIEW m_IndexBufferView;
 
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	bool Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFileName, const RECT* _pRect);
-	void DrawWithTex(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle);
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z);
+	void DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle);
+	void Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z);
 protected:
 private:
 	bool InitCommonResources();

@@ -145,6 +145,7 @@
   <ItemGroup>
     <None Include="BasicMeshObject.h" />
     <ClInclude Include="FlyCamera.h" />
+    <ClInclude Include="FontManager.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
     <ClInclude Include="ScreenStreamer.h" />
@@ -177,6 +178,7 @@
   <ItemGroup>
     <None Include="BasicMeshObject.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
+    <ClCompile Include="FontManager.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />

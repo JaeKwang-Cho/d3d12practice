@@ -95,12 +95,12 @@ void SetDefaultSamplerDesc(D3D12_STATIC_SAMPLER_DESC* _pOutSamplerDesc, UINT _Re
 	_pOutSamplerDesc->ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 }
 
-HRESULT CreateSimpleVertexBuffer(ID3D12Device* _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, ID3D12Resource** _ppOutBuffer)
+HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer)
 {
 	HRESULT hr = S_OK;
 
 	D3D12_VERTEX_BUFFER_VIEW	VertexBufferView = {};
-	Microsoft::WRL::ComPtr<ID3D12Resource> pVertexBuffer = nullptr;
+	D3D12Resource_ptr pVertexBuffer = nullptr;
 	UINT VertexBufferSize = _SizePerVertex * _dwVertexNum;
 
 	// TextureVertex Buffer를 생성한다.
@@ -132,7 +132,7 @@ RETURN:
 	return hr;
 }
 
-void UpdateTexture(ID3D12Device* _pD3DDevice, ID3D12GraphicsCommandList* _pCommandList, ID3D12Resource* _pDestTexResource, ID3D12Resource* _pSrcTexResource)
+void UpdateTexture(D3D12Device_ptr _pD3DDevice, D3D12GraphicsCommandList_ptr _pCommandList, D3D12Resource_ptr _pDestTexResource, D3D12Resource_ptr _pSrcTexResource)
 {
 	const DWORD MAX_SUB_RESOURCE_NUM = 32;
 	D3D12_PLACED_SUBRESOURCE_FOOTPRINT Footprint[MAX_SUB_RESOURCE_NUM] = {};
@@ -145,24 +145,24 @@ void UpdateTexture(ID3D12Device* _pD3DDevice, ID3D12GraphicsCommandList* _pComma
 		__debugbreak();
 
 	_pD3DDevice->GetCopyableFootprints(&Desc, 0, Desc.MipLevels, 0, Footprint, Rows, RowSize, &TotalBytes);
-	D3D12_RESOURCE_BARRIER trans_ASR_CD= CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
+	D3D12_RESOURCE_BARRIER trans_ASR_CD= CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource.Get(), D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
 	_pCommandList->ResourceBarrier(1, &trans_ASR_CD);
 	for (DWORD i = 0; i < Desc.MipLevels; i++)
 	{
 
 		D3D12_TEXTURE_COPY_LOCATION	destLocation = {};
 		destLocation.PlacedFootprint = Footprint[i];
-		destLocation.pResource = _pDestTexResource;
+		destLocation.pResource = _pDestTexResource.Get();
 		destLocation.SubresourceIndex = i;
 		destLocation.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 
 		D3D12_TEXTURE_COPY_LOCATION	srcLocation = {};
 		srcLocation.PlacedFootprint = Footprint[i];
-		srcLocation.pResource = _pSrcTexResource;
+		srcLocation.pResource = _pSrcTexResource.Get();
 		srcLocation.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
 
 		_pCommandList->CopyTextureRegion(&destLocation, 0, 0, 0, &srcLocation, nullptr);
 	}
-	D3D12_RESOURCE_BARRIER trans_CD_ASR = CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+	D3D12_RESOURCE_BARRIER trans_CD_ASR = CD3DX12_RESOURCE_BARRIER::Transition(_pDestTexResource.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 	_pCommandList->ResourceBarrier(1, &trans_CD_ASR);
 }

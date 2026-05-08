@@ -3,7 +3,7 @@
 #include "pch.h"
 #include "SingleDescriptorAllocator.h"
 
-bool SingleDescriptorAllocator::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pDevice, DWORD _dwMaxCount, D3D12_DESCRIPTOR_HEAP_FLAGS _flags)
+bool SingleDescriptorAllocator::Initialize(D3D12Device_ptr _pDevice, DWORD _dwMaxCount, D3D12_DESCRIPTOR_HEAP_FLAGS _flags)
 {
 	m_pD3DDevice = _pDevice;
 

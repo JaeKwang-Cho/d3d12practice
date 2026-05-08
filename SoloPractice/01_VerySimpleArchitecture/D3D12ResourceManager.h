@@ -1,4 +1,5 @@
 // D3D12ResourceManager.h from "megayuchi"
+#include "typedef.h"
 
 
 #pragma once
@@ -6,21 +7,21 @@
 class D3D12ResourceManager
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice);
+	bool Initialize(D3D12Device_ptr _pD3DDevice);
 
 	HRESULT CreateVertexBuffer(
 		UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView,
-		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData);
+		D3D12Resource_ptr* _ppOutBuffer, void* _pInitData);
 
 	HRESULT CreateIndexBuffer(
 		DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView,
-		Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize = sizeof(uint16_t));
+		D3D12Resource_ptr* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize = sizeof(uint16_t));
 
-	HRESULT CreateTexture(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage);
-	HRESULT CreateTextureFromFile(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName);
-	HRESULT CreateTexturePair(Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutResource, Microsoft::WRL::ComPtr<ID3D12Resource>* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format);
+	HRESULT CreateTexture(D3D12Resource_ptr* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage);
+	HRESULT CreateTextureFromFile(D3D12Resource_ptr* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName);
+	HRESULT CreateTexturePair(D3D12Resource_ptr* _ppOutResource, D3D12Resource_ptr* _ppOutUploadBuffer, UINT _width, UINT _height, DXGI_FORMAT _format);
 
-	void UpdateTextureForWrite(Microsoft::WRL::ComPtr<ID3D12Resource> _pDestTexResource, Microsoft::WRL::ComPtr<ID3D12Resource> _pSrcTexResource);
+	void UpdateTextureForWrite(D3D12Resource_ptr _pDestTexResource, D3D12Resource_ptr _pSrcTexResource);
 protected:
 private:
 
@@ -36,11 +37,11 @@ public:
 protected:
 private:
 	
-	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice;
+	D3D12Device_ptr m_pD3DDevice;
 	// 클래스 내부에서 따로 queue와 allocator, list를 가진다.
-	Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_pCommandQueue;
-	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_pCommandAllocator;
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_pCommandList;
+	D3D12CommandQueue_ptr m_pCommandQueue;
+	D3D12CommandAllocator_ptr m_pCommandAllocator;
+	D3D12GraphicsCommandList_ptr m_pCommandList;
 
 	HANDLE m_hFenceEvent;
 	Microsoft::WRL::ComPtr<ID3D12Fence> m_pFence;

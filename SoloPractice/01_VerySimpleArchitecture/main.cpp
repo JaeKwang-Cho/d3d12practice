@@ -26,6 +26,7 @@
 #pragma comment(lib, "D3DCompiler.lib")
 #pragma comment(lib, "d2d1.lib")
 #pragma comment(lib, "dwrite.lib")
+#pragma comment( lib, "d3d11.lib" ) // DWrite Font을 사용하기 위해서 D3D11도 링크한다. D3D12과 D3D11은 리소스 공유가 가능하다.
 
 // DirectX Tex 설정
 // https://github.com/microsoft/DirectXTex
@@ -77,6 +78,15 @@ BYTE* g_pImage = nullptr;
 UINT g_ImageWidth = 0;
 UINT g_ImageHeight = 0;
 
+// Font
+BYTE* g_pTextImage = nullptr;
+UINT g_TextImageWidth = 0;
+UINT g_TextImageHeight = 0;
+FONT_HANDLE* g_pFontObj = nullptr;
+void* g_pTextTextureHandle = nullptr;
+WCHAR g_wchText[64] = {};
+
+
 // 큐브 각 면 텍스처 (salt_01 ~ salt_06)
 TEXTURE_HANDLE* g_pCubeFaceTextures[6] = { nullptr, };
 
@@ -88,6 +98,7 @@ ULONGLONG g_PrevFrameTime = 0;
 ULONGLONG g_PrevUpdateTime = 0;
 ULONGLONG g_PrevStreamingTime = 0;
 DWORD	g_FrameCount = 0;
+DWORD g_FPS = 0;
 float g_DeltaTime = 0;
 
 GameTimer g_GameTimer;
@@ -160,7 +171,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     g_pSpriteObjs[3] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 0, 512, 512, 1024);
     g_pSpriteObjs[4] = g_pRenderer->CreateSpriteObject(L"../../Assets/sprite_1024x1024.dds", 512, 512, 1024, 1024);
 
-	// Sprice - Dynamic Texture
+	// Sprite - Dynamic Texture
     g_ImageWidth = 512;
     g_ImageHeight = 256;
     g_pImage = (BYTE*)malloc(g_ImageWidth * g_ImageHeight * 4);
@@ -173,6 +184,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         }
     }
     g_pDynamicTexHandle = g_pRenderer->CreateDynamicTexture(g_ImageWidth, g_ImageHeight);
+
+    // Font
+	std::unique_ptr<FONT_HANDLE> pFontHandle = g_pRenderer->CreateFontObject(L"Tahoma", 18.f);
+	g_pFontObj = pFontHandle.get();
+    g_TextImageHeight = 256;
+	g_TextImageWidth = 512;
+	g_pTextImage = (BYTE*)malloc(g_TextImageWidth * g_TextImageHeight * 4);
+    memset(g_pTextImage, 0, g_TextImageWidth * g_TextImageHeight * 4);
+	g_pTextTextureHandle = g_pRenderer->CreateDynamicTexture(g_TextImageWidth, g_TextImageHeight);
 
 
     MSG msg = {};
@@ -229,6 +249,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         free(g_pImage);
         g_pImage = nullptr;
     }
+    if(g_pTextTextureHandle) {
+        g_pRenderer->DeleteTexture(g_pTextTextureHandle);
+        g_pTextTextureHandle = nullptr;
+	}
+    if(g_pTextImage)
+    {
+        free(g_pTextImage);
+        g_pTextImage = nullptr;
+	}
 
     // 큐브 면 텍스처 해제
     for (UINT i = 0; i < 6; i++)
@@ -396,6 +425,12 @@ void RunGame()
 	// === draw sprite with dynamic texture ===
     g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], 0, 256 + 5 + 256 + 5, 0.5f, 0.5f, nullptr, 0.0f, g_pDynamicTexHandle);
     // =======================
+     
+	// === draw text with dynamic texture === 
+     
+    g_pRenderer->RenderSpriteWithTex(g_pSpriteObjs[0], 512 + 5, 256 + 5 + 256 + 5, 1.0f, 1.0f, nullptr, 0.0f, g_pTextTextureHandle);
+
+    // ======================================
     // copy render target
     g_pRenderer->CopyRenderTarget();
 
@@ -411,6 +446,7 @@ void RunGame()
         g_PrevFrameTime = CurrTickTime;
 
         WCHAR wchTxt[64];
+		g_FPS = g_FrameCount;
         swprintf_s(wchTxt, L"FPS:%u           Delta:%f", g_FrameCount, g_GameTimer.GetDeltaTime());
         SetWindowText(g_hWnd, wchTxt);
         g_FrameCount = 0;
@@ -465,9 +501,9 @@ void Update()
 
 
         DWORD* pDest = (DWORD*)g_pImage;
-        for (DWORD y = 0; y < 16; y++)
+        for (DWORD y = 0; y < TILE_WIDTH; y++)
         {
-            for (DWORD x = 0; x < 16; x++)
+            for (DWORD x = 0; x < TILE_WIDTH; x++)
             {
                 if (StartX + x >= g_ImageWidth)
                     __debugbreak();
@@ -495,6 +531,20 @@ void Update()
             g_dwTileColorB = 0;
         }
         g_pRenderer->UpdateTextureWithImage(g_pDynamicTexHandle, g_pImage, g_ImageWidth, g_ImageHeight);
+    }
+
+    // update font
+    int iTextWidth = 0;
+    int iTextHeight = 0;
+    WCHAR wchText[64] = {};
+	DWORD dwTextLen = swprintf_s(wchText, L"Current FrameRate: %u", g_FPS);
+    // 텍스트를 찍을 때 마다, RenderTarget을 만복사를 하는 것은 너무 느리다. 
+    // 문자열 별로 Texture를 캐싱해서 사용해야 한다.
+    if (wcscmp(g_wchText, wchText) != 0) {
+		memset(g_pTextImage, 0, g_TextImageWidth * g_TextImageHeight * 4);
+        g_pRenderer->WriteTextToBitmap(g_pTextImage, g_TextImageWidth, g_TextImageHeight, g_TextImageWidth * 4, &iTextWidth, &iTextHeight, g_pFontObj, wchText, dwTextLen);
+		g_pRenderer->UpdateTextureWithImage(g_pTextTextureHandle, g_pTextImage, g_TextImageWidth, g_TextImageHeight);
+		wcsncpy_s(g_wchText, wchText, 64);
     }
     
     UpdateGridPos();

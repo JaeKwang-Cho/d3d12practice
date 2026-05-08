@@ -79,6 +79,9 @@
     <Filter Include="Engine\Timer\DirectXTex\WICLoader">
       <UniqueIdentifier>{9aa48b06-2c42-4ff9-9ef4-6a21a1c162d0}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\FontManager">
+      <UniqueIdentifier>{e085a5f5-4a4e-4045-b76a-a2e3cc2e2f47}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -153,6 +156,9 @@
     </ClInclude>
     <ClInclude Include="ScreenStreamer.h" />
     <ClInclude Include="StreamingHeader.h" />
+    <ClInclude Include="FontManager.h">
+      <Filter>Renderer\FontManager</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -254,5 +260,8 @@
     </ClCompile>
     <ClCompile Include="ScreenStreamer.cpp" />
     <ClCompile Include="StreamingHeader.cpp" />
+    <ClCompile Include="FontManager.cpp">
+      <Filter>Renderer\FontManager</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

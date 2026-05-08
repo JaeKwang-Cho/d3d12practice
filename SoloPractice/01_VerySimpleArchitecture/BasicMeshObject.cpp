@@ -26,20 +26,20 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 	return bResult;
 }
 
-void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
+void BasicMeshObject::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	// D3D12는 완전 비동기 API이고, GPU와 CPU의 타임라인이 동기화 되어있지 않다.
 	// 그래서 draw를 할 때, shader에 넘어가는 resource들이 구분되어서 안전하게 있어야 한다.
 	// 여기서는 descriptor table과 constant buffer를 말한다.
 	// 그래서 이 함수가 호출 될 때마다, CBV pool과 Descriptor pool에서 하나씩 빼와야 한다.
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
 	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
@@ -57,19 +57,19 @@ void BasicMeshObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _
 		__debugbreak();
 	}
 
-	CONSTANT_BUFFER_OBJECT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_OBJECT*>(pCB->pSystemMemAddr);
+	//CONSTANT_BUFFER_OBJECT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_OBJECT*>(pCB->pSystemMemAddr);
 	// CB 값을 업데이트 하고
 	XMMATRIX viewMat;
 	XMMATRIX projMat;
 	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
 
-	pConstantBufferDefault->matView = XMMatrixTranspose(viewMat);
-	pConstantBufferDefault->matProj = XMMatrixTranspose(projMat);
-	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
+	//pConstantBufferDefault->matView = XMMatrixTranspose(viewMat);
+	//pConstantBufferDefault->matProj = XMMatrixTranspose(projMat);
+	//pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
 
 	XMMATRIX wvpMat = (*_pMatWorld) * viewMat * projMat;
 
-	pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
+	//pConstantBufferDefault->matWVP = XMMatrixTranspose(wvpMat);
 
 	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
 
@@ -128,7 +128,7 @@ bool BasicMeshObject::BeginCreateMesh(const ColorVertex* _pVertexList, DWORD _dw
 {
 	bool bResult = false;
 	
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	if (_dwTriGroupCount > MAX_TRI_GROUP_COUNT_PER_OBJ) {
@@ -154,12 +154,12 @@ bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, DWORD _d
 {
 	bool bResult = false;
 	
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer = nullptr;
+	D3D12Resource_ptr pIndexBuffer = nullptr;
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
 
 	if (m_dwTriGroupCount >= m_dwMaxTriGroupCount) {
@@ -221,7 +221,7 @@ void BasicMeshObject::CleanupSharedResources()
 
 bool BasicMeshObject::InitRootSignature()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 
 	// 중간에 Serialize를 도와줄 blob을 만들고
@@ -279,7 +279,7 @@ bool BasicMeshObject::InitPipelineState()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShaderBlob = nullptr;
@@ -386,7 +386,7 @@ bool BasicMeshObject::CreateMesh()
 	bool bResult = false;
 
 	// Default Buffer에 TextureVertex 정보를 올려보는 것
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// 대충 찍어보자.
@@ -424,7 +424,7 @@ RETURN:
 bool BasicMeshObject::CreateDescriptorTable()
 {
 	bool bResult = false;
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	// SRV으로 사이즈를 구하고
 	m_srvDescriptorSize = pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	// descriptor heap을 생성한다.
@@ -446,7 +446,7 @@ RETURN:
 bool BasicMeshObject::CreateMesh_UploadHeap()
 {
 	// 지금은 임시로 점을 임의로 몇개 찍어서 그려보는 것이다.
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	// 대충 찍어보자.
 	ColorVertex Vertices[] =
 	{
@@ -516,7 +516,7 @@ bool BasicMeshObject::CreateMesh_DefaultHeap()
 	bool bResult = false;
 
 	// Default Buffer에 TextureVertex 정보를 올려보는 것
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// 대충 찍어보자.
@@ -544,7 +544,7 @@ bool BasicMeshObject::CreateMesh_WithIndex()
 	bool bResult = false;
 
 	// Default Buffer에 Vertex와 Index를 올리는 것
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	// vertex buffer.
@@ -583,7 +583,7 @@ bool BasicMeshObject::CreateMesh_WithTexture()
 {
 	bool bResult = false;
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	// uv 좌표도 함께 가진 TextureVertex buffer를 만든다.
 	ColorVertex Vertices[] =
@@ -672,7 +672,7 @@ bool BasicMeshObject::CreateMesh_WithCB()
 
 	// Constant Buffer를 만든다.
 	{
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 		D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 		// CB는 하드웨어 성능상의 이유로 256-bytes aligned이여야 한다.

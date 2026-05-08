@@ -7,7 +7,7 @@ class ConstantBufferPool;
 class ConstantBufferManager
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, DWORD _dwMaxCBVNum);
+	bool Initialize(D3D12Device_ptr _pD3DDevice, DWORD _dwMaxCBVNum);
 	void Reset();
 
 	ConstantBufferPool* GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type);

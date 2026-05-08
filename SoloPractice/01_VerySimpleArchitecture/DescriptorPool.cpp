@@ -3,7 +3,7 @@
 #include "pch.h"
 #include "DescriptorPool.h"
 
-bool DescriptorPool::Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, UINT _maxDescriptorCount)
+bool DescriptorPool::Initialize(D3D12Device_ptr _pD3DDevice, UINT _maxDescriptorCount)
 {
 	bool bResult = false;
 

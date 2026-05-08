@@ -10,12 +10,12 @@
 class DescriptorPool
 {
 public:
-	bool Initialize(Microsoft::WRL::ComPtr<ID3D12Device14> _pD3DDevice, UINT _maxDescriptorCount);
+	bool Initialize(D3D12Device_ptr _pD3DDevice, UINT _maxDescriptorCount);
 	bool AllocDescriptorTable(D3D12_CPU_DESCRIPTOR_HANDLE* _pOutCPUDescriptor, D3D12_GPU_DESCRIPTOR_HANDLE* _pOutGPUDescriptor, UINT _descriptorCount);
 
 	void Reset();
 
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> INL_GetDescriptorHeap() { return m_pDescriptorHeap; }
+	D3D12DescriptorHeap_ptr INL_GetDescriptorHeap() { return m_pDescriptorHeap; }
 protected:
 private:
 	void CleanUpPool();
@@ -23,13 +23,13 @@ public:
 protected:
 protected:
 private:
-	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice;
+	D3D12Device_ptr m_pD3DDevice;
 
 	UINT m_AllocatedDescriptorCount;
 	UINT m_MaxDescriptorCount;
 	UINT m_srvDescriptorSize;
 
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pDescriptorHeap;
+	D3D12DescriptorHeap_ptr m_pDescriptorHeap;
 	D3D12_CPU_DESCRIPTOR_HANDLE m_cpuDescriptorHandle;
 	D3D12_GPU_DESCRIPTOR_HANDLE m_gpuDescriptorHandle;
 public:

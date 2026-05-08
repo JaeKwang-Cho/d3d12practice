@@ -12,10 +12,10 @@
 Microsoft::WRL::ComPtr<ID3D12RootSignature> SpriteObject::m_pRootSignature = nullptr;
 //Microsoft::WRL::ComPtr<ID3D12PipelineState> SpriteObject::m_pPipelineState = nullptr;
 
-Microsoft::WRL::ComPtr<ID3D12Resource> SpriteObject::m_pVertexBuffer = nullptr;
+D3D12Resource_ptr SpriteObject::m_pVertexBuffer = nullptr;
 D3D12_VERTEX_BUFFER_VIEW SpriteObject::m_VertexBufferView = {};
 
-Microsoft::WRL::ComPtr<ID3D12Resource> SpriteObject::m_pIndexBuffer = nullptr;
+D3D12Resource_ptr SpriteObject::m_pIndexBuffer = nullptr;
 D3D12_INDEX_BUFFER_VIEW SpriteObject::m_IndexBufferView = {};
 
 DWORD SpriteObject::m_dwInitRefCount = 0;
@@ -67,15 +67,15 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFil
 	return bResult;
 }
 
-void SpriteObject::DrawWithTex(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
+void SpriteObject::DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
 	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::SPRITE);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	// 텍스쳐 정보를 받는다.
 	UINT texWidth = 0;
@@ -152,7 +152,7 @@ void SpriteObject::DrawWithTex(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList1
 	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 }
 
-void SpriteObject::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
+void SpriteObject::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
 {
 	XMFLOAT2 scale = { m_Scale.x * _pScale->x,  m_Scale.y * _pScale->y };
 	DrawWithTex(_pCommandList, _pPos, &scale, &m_Rect, _z, m_pTexHandle);
@@ -191,7 +191,7 @@ void SpriteObject::CleanUpSharedResources()
 
 bool SpriteObject::InitRootSignature()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignature = nullptr;
 	Microsoft::WRL::ComPtr<ID3DBlob> pError = nullptr;
 
@@ -234,7 +234,7 @@ bool SpriteObject::InitPipelineState()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShader = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShader = nullptr;
@@ -294,7 +294,7 @@ bool SpriteObject::InitPipelineState()
 		}
 
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
 	}
 RETURN:
 
@@ -304,7 +304,7 @@ RETURN:
 bool SpriteObject::InitMesh()
 {
 	bool bResult = false;
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDeivce = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDeivce = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();

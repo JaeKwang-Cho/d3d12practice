@@ -24,13 +24,13 @@ public:
 protected:
 private:
 	Microsoft::WRL::ComPtr< ID3D12Device14> m_pD3DDevice;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pHeap;
+	D3D12DescriptorHeap_ptr m_pHeap;
 
 	IndexCreator m_IndexCreator;
 	UINT m_DescriptorSize = 0;
 
 public:
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> INL_GetDescriptorHeap() { return m_pHeap; }
+	D3D12DescriptorHeap_ptr INL_GetDescriptorHeap() { return m_pHeap; }
 
 	SingleDescriptorAllocator();
 	~SingleDescriptorAllocator();

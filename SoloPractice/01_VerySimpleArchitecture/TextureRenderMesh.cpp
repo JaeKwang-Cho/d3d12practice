@@ -22,14 +22,14 @@ bool TextureRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPO
 	return bResult;
 }
 
-void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
@@ -149,14 +149,14 @@ void TextureRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10>
 	}
 }
 
-void TextureRenderMesh::DrawOutline(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::DrawOutline(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
@@ -235,7 +235,7 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 
 	m_subRenderGeoCount = _meshDataCount;
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
@@ -379,7 +379,7 @@ void TextureRenderMesh::CleanupSharedResources()
 
 bool TextureRenderMesh::InitRootSignature()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	// 일단 CB 하나 SRV 하나 넘어가는거로 한다.
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
@@ -439,7 +439,7 @@ bool TextureRenderMesh::InitPipelineState()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShaderBlob = nullptr;
@@ -505,7 +505,7 @@ bool TextureRenderMesh::InitPipelineState()
 			__debugbreak();
 		}
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
 	}
 
 RETURN:
@@ -522,7 +522,7 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pGeoShaderBlob = nullptr;
@@ -596,7 +596,7 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 			__debugbreak();
 		}
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState_Outline);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState_Outline.Get());
 	}
 
 RETURN:

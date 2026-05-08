@@ -26,7 +26,7 @@ private:
 public:
 protected:
 private:
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_pScreenTexture[SWAP_CHAIN_FRAME_COUNT];
+	D3D12Resource_ptr m_pScreenTexture[SWAP_CHAIN_FRAME_COUNT];
 	UINT8* m_pMappedData[SWAP_CHAIN_FRAME_COUNT];
 	UINT m_uiCurTextureIndex;
 
@@ -51,9 +51,9 @@ public:
 	bool CheckSendable();
 
 	// 렌더링이 완료된 렌더타켓을 카피할 수 있도록, D3D12Renderer에서 호출을 잘 해야 한다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> GetTextureToPaste()
+	D3D12Resource_ptr GetTextureToPaste()
 	{
-		Microsoft::WRL::ComPtr<ID3D12Resource> copyDestTexture = m_pScreenTexture[m_indexToCopyDest_Circular];
+		D3D12Resource_ptr copyDestTexture = m_pScreenTexture[m_indexToCopyDest_Circular];
 		m_indexToCopyDest_Circular = (m_indexToCopyDest_Circular + 1) % SWAP_CHAIN_FRAME_COUNT;
 		return copyDestTexture;
 	}

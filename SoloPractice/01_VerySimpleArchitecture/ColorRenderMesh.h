@@ -20,7 +20,7 @@ protected:
 
 public:
 	bool Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	void Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX*  _pMatWorld);
+	void Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX*  _pMatWorld);
 
 	void CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount);
 	void BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex);

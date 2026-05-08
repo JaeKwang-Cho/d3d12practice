@@ -4,6 +4,26 @@
 #define MAX_LIGHT_COUNTS (16)
 #define D3D_COMPILE_STANDARD_FILE_INCLUDE ((ID3DInclude*)(UINT_PTR)1)
 
+// ComPtr을 파라미터로 넘기면, AddRef가 소유권 분쟁을 일으킬 수 있으니
+typedef Microsoft::WRL::ComPtr<ID3D12Device14> D3D12Device_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12CommandQueue1> D3D12CommandQueue_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12CommandAllocator> D3D12CommandAllocator_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> D3D12GraphicsCommandList_ptr;
+typedef Microsoft::WRL::ComPtr<IDXGISwapChain4> DXGISwapChain_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12Resource> D3D12Resource_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> D3D12DescriptorHeap_ptr;
+typedef Microsoft::WRL::ComPtr<ID3D12PipelineState> D3D12PipelineState_ptr;
+
+// ComPtr이 아닌 원시 포인터로도 typedef를 만들어준다. (나중에 필요할 때 ComPtr로 바꿔주기 편하게)
+using D3D12Device_raw = ID3D12Device14*;
+using D3D12CommandQueue_raw = ID3D12CommandQueue1*;
+using D3D12CommandAllocator_raw = ID3D12CommandAllocator*;
+using D3D12GraphicsCommandList_raw = ID3D12GraphicsCommandList10*;
+using DXGISwapChain_raw = IDXGISwapChain4*;
+using D3D12Resource_raw = ID3D12Resource*;
+using D3D12DescriptorHeap_raw = ID3D12DescriptorHeap*;
+using D3D12PipelineState_raw = ID3D12PipelineState*;
+
 struct ColorVertex {
 	XMFLOAT3 position;
 	XMFLOAT4 color;
@@ -144,12 +164,19 @@ struct CONSTANT_BUFFER_PROPERTY
 
 struct TEXTURE_HANDLE
 {
-	Microsoft::WRL::ComPtr<ID3D12Resource> pTexResource; // GPU Resource
-	Microsoft::WRL::ComPtr<ID3D12Resource> pUploadBuffer; // CPU Upload Resource (from system memory to GPU by PCIe)
+	D3D12Resource_ptr pTexResource; // GPU Resource
+	D3D12Resource_ptr pUploadBuffer; // CPU Upload Resource (from system memory to GPU by PCIe)
 	D3D12_CPU_DESCRIPTOR_HANDLE srv;
 	bool bUpdated;
 
 	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false) {}
+};
+
+struct FONT_HANDLE
+{
+	Microsoft::WRL::ComPtr<IDWriteTextFormat> pTextFormat;
+	float fFontSize;
+	WCHAR	wchFontFamilyName[512];
 };
 
 struct SubRenderGeometry 
@@ -159,13 +186,13 @@ struct SubRenderGeometry
 	UINT startIndexLocation;
 	UINT baseVertexLocation;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pVertexBuffer;
+	D3D12Resource_ptr pVertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW VertexBufferView;
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> pIndexBuffer;
+	D3D12Resource_ptr pIndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW IndexBufferView;
 
-	Microsoft::WRL::ComPtr< ID3D12Resource> pAdjIndexBuffer;
+	D3D12Resource_ptr pAdjIndexBuffer;
 	D3D12_INDEX_BUFFER_VIEW AdjIndexBufferView;
 
 	TEXTURE_HANDLE* pTexHandle;

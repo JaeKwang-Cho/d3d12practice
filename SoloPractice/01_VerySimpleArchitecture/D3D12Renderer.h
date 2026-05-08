@@ -12,6 +12,7 @@ class ConstantBufferManager;
 class D3D12PSOCache;
 class FlyCamera;
 class ScreenCapturer;
+class FontManager;
 
 class D3D12Renderer
 {
@@ -60,9 +61,13 @@ public:
 	void* CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight);
 	void DeleteTexture(void* _pTexHandle);
 
+	// Font
+	std::unique_ptr<FONT_HANDLE> CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize);
+	bool WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen);
+
 	// PSO
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> GetPSO(std::string _strPSOName);
-	bool CachePSO(std::string _strPSOName, Microsoft::WRL::ComPtr<ID3D12PipelineState> _pPSODesc);
+	D3D12PipelineState_raw GetPSO(std::string _strPSOName);
+	bool CachePSO(std::string _strPSOName, D3D12PipelineState_raw _pPSODesc);
 
 	// Camera
 
@@ -103,27 +108,29 @@ public:
 protected:
 private:
 	HWND m_hWnd;
-	Microsoft::WRL::ComPtr<ID3D12Device14> m_pD3DDevice; 
-	Microsoft::WRL::ComPtr<ID3D12CommandQueue> m_pCommandQueue;
+	D3D12Device_ptr m_pD3DDevice; // 나중에 다 typedef로 바꾸기
+	D3D12CommandQueue_ptr m_pCommandQueue;
 	
 	// 중첩 렌더링을 위해 Command Allocator와 Command List를 여러개 가진다.
 	// 이러면 Fence가 좀더 여유로워 지고 GPU의 부하를 늘려줘서 프레임이 빨라진다.
-	Microsoft::WRL::ComPtr<ID3D12CommandAllocator> m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> m_ppCommandList[MAX_PENDING_FRAME_COUNT];
+	D3D12CommandAllocator_ptr m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
+	D3D12GraphicsCommandList_ptr m_ppCommandList[MAX_PENDING_FRAME_COUNT];
 	// Frame 별 한번씩 넘어가는 CBV이다.
-	Microsoft::WRL::ComPtr<ID3D12Resource> m_ppFrameUploadCBs[MAX_PENDING_FRAME_COUNT];
+	D3D12Resource_ptr m_ppFrameUploadCBs[MAX_PENDING_FRAME_COUNT];
 	void* m_ppFrameSystemMemAddrs[MAX_PENDING_FRAME_COUNT];
 
 	// Resource를 GPU에 올려주는 친구
-	D3D12ResourceManager* m_pResourceManager;
+	std::unique_ptr<D3D12ResourceManager> m_pResourceManager;
 	// CBV pool이랑 DescriptorPool 도 CommandList 마다 하나씩 만든다.
 	// 얘도 Render Pipeline에 bind되어서 쓰이는 애들이다. CommandList만 분리해서는 절대 안된다.
-	ConstantBufferManager* m_ppConstantBufferManager[MAX_PENDING_FRAME_COUNT]; // 이제 pool에서 바로 빼오는 것이 아니라 manager를 통해서 가져온다.
-	DescriptorPool* m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
+	std::unique_ptr<ConstantBufferManager> m_ppConstantBufferManager[MAX_PENDING_FRAME_COUNT]; // 이제 pool에서 바로 빼오는 것이 아니라 manager를 통해서 가져온다.
+	std::unique_ptr<DescriptorPool> m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
 	// Descriptor(View)를 모아서 관리해주는 친구
-	SingleDescriptorAllocator* m_pSingleDescriptorAllocator;
+	std::unique_ptr<SingleDescriptorAllocator>	m_pSingleDescriptorAllocator;
 	// PSO를 캐싱해주는 친구
-	D3D12PSOCache* m_pD3D12PSOCache;
+	std::unique_ptr<D3D12PSOCache> m_pD3D12PSOCache;
+	// Font Manager
+	std::unique_ptr<FontManager> m_pFontManager;
 
 	UINT64 m_ui64FenceValue;
 	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.
@@ -132,12 +139,12 @@ private:
 	D3D_FEATURE_LEVEL m_FeatureLevel;
 	DXGI_ADAPTER_DESC3 m_AdaptorDesc;
 
-	Microsoft::WRL::ComPtr<IDXGISwapChain4> m_pSwapChain;
-	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pRenderTargets[SWAP_CHAIN_FRAME_COUNT];
-	Microsoft::WRL::ComPtr<ID3D12Resource2> m_pDepthStencil;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pRTVHeap;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pDSVHeap;
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> m_pSRVHeap;
+	DXGISwapChain_ptr m_pSwapChain;
+	D3D12Resource_ptr m_pRenderTargets[SWAP_CHAIN_FRAME_COUNT];
+	D3D12Resource_ptr m_pDepthStencil;
+	D3D12DescriptorHeap_ptr m_pRTVHeap;
+	D3D12DescriptorHeap_ptr m_pDSVHeap;
+	D3D12DescriptorHeap_ptr m_pSRVHeap;
 
 	UINT m_rtvDescriptorSize;
 	UINT m_srvDescriptorSize;
@@ -166,23 +173,27 @@ private:
 	bool bTryPixelStreaming;
 	bool bCheckUpdateTexture;
 
+	// Font Manager
+	float m_fDPI = 96.f;
+
 	std::unordered_set<TEXTURE_HANDLE*> m_TextureHandles;
 
 public:
 	D3D12Renderer();
 	~D3D12Renderer();
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> INL_GetD3DDevice() { return m_pD3DDevice; }
-	D3D12ResourceManager* INL_GetResourceManager() { return m_pResourceManager; }
+	D3D12Device_raw INL_GetD3DDevice() { return m_pD3DDevice.Get(); }
+	D3D12ResourceManager* INL_GetResourceManager();
 	ConstantBufferPool* INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type);
-	DescriptorPool* INL_DescriptorPool() { return m_ppDescriptorPool[m_dwCurContextIndex]; }
+	DescriptorPool* INL_DescriptorPool();
 	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
-	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator; }
-	D3D12PSOCache* INL_GetD3D12PSOCache() { return m_pD3D12PSOCache; }
+	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator();
+	D3D12PSOCache* INL_GetD3D12PSOCache();
 	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj);
 	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
 	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
-	Microsoft::WRL::ComPtr<ID3D12Resource> INL_GetFrameCBResource() { return m_ppFrameUploadCBs[m_dwCurContextIndex]; }
+	D3D12Resource_raw INL_GetFrameCBResource() { return m_ppFrameUploadCBs[m_dwCurContextIndex].Get(); }
+	float INL_GetDPI() const { return m_fDPI; }
 
 
 	XMFLOAT3 GetCameraWorldPos() const;

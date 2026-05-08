@@ -19,7 +19,7 @@ bool Grid_RenderMesh::InitPipelineState()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pGeoShaderBlob = nullptr;
@@ -99,7 +99,7 @@ bool Grid_RenderMesh::InitPipelineState()
 			__debugbreak();
 		}
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
 	}
 
 RETURN:

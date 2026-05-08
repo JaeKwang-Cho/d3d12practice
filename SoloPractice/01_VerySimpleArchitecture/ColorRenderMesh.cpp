@@ -22,15 +22,15 @@ bool ColorRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLO
 	return bResult;
 }
 
-void ColorRenderMesh::Draw(Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList10> _pCommandList, const XMMATRIX* _pMatWorld)
+void ColorRenderMesh::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
 	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
 	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
 	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
@@ -116,7 +116,7 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 
 	m_subRenderGeoCount = _meshDataCount;
 
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	
 	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
@@ -190,7 +190,7 @@ void ColorRenderMesh::CleanupSharedResources()
 
 bool ColorRenderMesh::InitRootSignature()
 {
-	Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	// 일단 CB 하나 SRV 하나 넘어가는거로 한다.
 	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
@@ -246,7 +246,7 @@ bool ColorRenderMesh::InitPipelineState()
 		goto RETURN;
 	}
 	else {
-		Microsoft::WRL::ComPtr<ID3D12Device14> pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShaderBlob = nullptr;
 		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShaderBlob = nullptr;
@@ -313,7 +313,7 @@ bool ColorRenderMesh::InitPipelineState()
 			__debugbreak();
 		}
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
 	}
 
 RETURN:
