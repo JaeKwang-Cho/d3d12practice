@@ -82,6 +82,9 @@
     <Filter Include="Renderer\FontManager">
       <UniqueIdentifier>{e085a5f5-4a4e-4045-b76a-a2e3cc2e2f47}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\TextureManager">
+      <UniqueIdentifier>{04d0078c-a504-48bc-b331-b3e72573711d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -158,6 +161,9 @@
     <ClInclude Include="StreamingHeader.h" />
     <ClInclude Include="FontManager.h">
       <Filter>Renderer\FontManager</Filter>
+    </ClInclude>
+    <ClInclude Include="TextureManager.h">
+      <Filter>Renderer\TextureManager</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -262,6 +268,9 @@
     <ClCompile Include="StreamingHeader.cpp" />
     <ClCompile Include="FontManager.cpp">
       <Filter>Renderer\FontManager</Filter>
+    </ClCompile>
+    <ClCompile Include="TextureManager.cpp">
+      <Filter>Renderer\TextureManager</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

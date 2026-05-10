@@ -169,7 +169,10 @@ struct TEXTURE_HANDLE
 	D3D12_CPU_DESCRIPTOR_HANDLE srv;
 	bool bUpdated;
 
-	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false) {}
+	bool bFromFile;
+	DWORD dwRefCount;
+
+	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false), bFromFile(false), dwRefCount(0) {}
 };
 
 struct FONT_HANDLE
