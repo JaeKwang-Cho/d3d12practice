@@ -13,6 +13,7 @@ class D3D12PSOCache;
 class FlyCamera;
 class ScreenCapturer;
 class FontManager;
+class TextureManager;
 
 class D3D12Renderer
 {
@@ -131,6 +132,8 @@ private:
 	std::unique_ptr<D3D12PSOCache> m_pD3D12PSOCache;
 	// Font Manager
 	std::unique_ptr<FontManager> m_pFontManager;
+	// Texture Manager
+	std::unique_ptr<TextureManager> m_pTextureManager;
 
 	UINT64 m_ui64FenceValue;
 	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.
@@ -180,7 +183,7 @@ private:
 
 public:
 	D3D12Renderer();
-	~D3D12Renderer();
+	virtual ~D3D12Renderer();
 
 	D3D12Device_raw INL_GetD3DDevice() { return m_pD3DDevice.Get(); }
 	D3D12ResourceManager* INL_GetResourceManager();

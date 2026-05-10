@@ -17,6 +17,7 @@
 #include "TextureRenderMesh.h"
 #include "ScreenStreamer.h"
 #include "FontManager.h"
+#include "TextureManager.h"
 
 #define PIXEL_STREAMING (0)
 
@@ -232,6 +233,10 @@ EXIT:
 	// Font Manager
 	m_pFontManager = std::make_unique<FontManager>();
 	m_pFontManager->Initialize(this, m_pCommandQueue.Get(), 1024, 256, _bEnableDebugLayer);
+
+	// Texture Manager
+	m_pTextureManager = std::make_unique<TextureManager>();
+	m_pTextureManager->Initalize(this);
 
 	// Command List당 pool도 각각 만들어준다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -711,11 +716,6 @@ void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrc
 
 void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
 {
-	TEXTURE_HANDLE* pTexHandle = nullptr;
-
-	D3D12Resource_ptr pTexResource = nullptr;
-	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
-
 	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	UINT pixSize = sizeof(uint32_t);
@@ -744,24 +744,8 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 		bWhiteStart %= 2;
 	}
 
+	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateImmutableTexture_ITL(_texWidth, _texHeight, texFormat, pImage);
 
-	HRESULT hr = m_pResourceManager->CreateTexture(&pTexResource, _texWidth, _texHeight, texFormat, pImage);
-	if (SUCCEEDED(hr)) {
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = texFormat;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = 1;
-
-		// SingleDescriptorAllocator에서 한 자리를 받아 Texture Resource에 View를 할당한다.
-		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
-			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
-
-			pTexHandle = AllocTextureHandle();
-			pTexHandle->pTexResource = pTexResource;
-			pTexHandle->srv = srv;
-		}
-	}
 	free(pImage);
 	pImage = nullptr;
 
@@ -770,68 +754,12 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 
 void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
 {
-	TEXTURE_HANDLE* pTexHandle = nullptr;
-
-	D3D12Resource_ptr pTexResource = nullptr;
-	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
-
-	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-	D3D12_RESOURCE_DESC desc = {};
-	if (SUCCEEDED(m_pResourceManager->CreateTextureFromFile(&pTexResource, &desc, _wchFileName))) {
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = desc.Format;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = desc.MipLevels;
-
-		if (m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
-			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
-
-			pTexHandle = AllocTextureHandle();
-			pTexHandle->pTexResource = pTexResource;
-			pTexHandle->srv = srv;
-		}
-	}
-
-	return pTexHandle;
+	return m_pTextureManager->CreateTextureFromFile_ITL(_wchFileName);
 }
 
 void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
 {
-	TEXTURE_HANDLE* pTexHandle = nullptr;
-
-	D3D12Resource_ptr pTexResource = nullptr;
-	D3D12Resource_ptr pUploadBuffer = nullptr;
-	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
-
-	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM; // 일단 이걸로 하드코딩
-
-	if(S_OK == m_pResourceManager->CreateTexturePair(&pTexResource, &pUploadBuffer, _TexWidth, _TexHeight, TexFormat))
-	{
-		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-		srvDesc.Format = TexFormat;
-		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-		srvDesc.Texture2D.MipLevels = 1;
-		if(m_pSingleDescriptorAllocator->AllocDescriptorHandle(&srv))
-		{
-			m_pD3DDevice->CreateShaderResourceView(pTexResource.Get(), &srvDesc, srv);
-
-			pTexHandle = AllocTextureHandle();
-			pTexHandle->pTexResource = pTexResource;
-			pTexHandle->pUploadBuffer = pUploadBuffer;
-			pTexHandle->srv = srv;
-		}
-		else
-		{
-			pTexResource->Release(); 
-			pTexResource = nullptr;
-			pUploadBuffer->Release();
-			pUploadBuffer = nullptr;
-		}
-	}
-
-	return pTexHandle;
+	return m_pTextureManager->CreateDynamicTexture_ITL(_TexWidth, _TexHeight);
 }
 
 void D3D12Renderer::DeleteTexture(void* _pTexHandle)
@@ -841,31 +769,7 @@ void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
-	if (_pTexHandle == nullptr)
-	{
-		return;
-	}
-
-	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTexHandle;	
-
-	auto iter = m_TextureHandles.find(pTexHandle);
-	if (iter == m_TextureHandles.end())
-	{
-		return;
-	}
-		
-	m_TextureHandles.erase(iter);
-
-	pTexHandle->pTexResource = nullptr;
-	pTexHandle->pUploadBuffer = nullptr;
-
-	if (m_pSingleDescriptorAllocator != nullptr && pTexHandle->srv.ptr != 0)
-	{
-		m_pSingleDescriptorAllocator->FreeDescriptorHandle(pTexHandle->srv);
-		pTexHandle->srv = {};
-	}
-
-	delete pTexHandle;
+	m_pTextureManager->DeleteTexture_ITL((TEXTURE_HANDLE*)_pTexHandle);
 }
 
 std::unique_ptr<FONT_HANDLE> D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
@@ -1228,20 +1132,9 @@ void D3D12Renderer::CleanUpRenderer()
 	CleanupFence();
 }
 
-TEXTURE_HANDLE* D3D12Renderer::AllocTextureHandle()
-{
-	TEXTURE_HANDLE* pTexHandle = new TEXTURE_HANDLE;
-	m_TextureHandles.insert(pTexHandle);
-	return pTexHandle;
-}
-
 void D3D12Renderer::ReleaseAllTextureHandles()
 {
-	while (!m_TextureHandles.empty())
-	{
-		TEXTURE_HANDLE* pTexHandle = *m_TextureHandles.begin();
-		DeleteTexture(pTexHandle);
-	}
+	m_pTextureManager.reset();
 }
 
 D3D12Renderer::D3D12Renderer()

@@ -272,5 +272,8 @@
     <ClCompile Include="TextureManager.cpp">
       <Filter>Renderer\TextureManager</Filter>
     </ClCompile>
+    <ClCompile Include="typedef.cpp">
+      <Filter>typedef</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

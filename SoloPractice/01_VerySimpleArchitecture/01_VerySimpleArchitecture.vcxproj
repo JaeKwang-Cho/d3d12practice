@@ -186,6 +186,7 @@
     <ClCompile Include="StreamingHeader.cpp" />
     <ClCompile Include="TextureManager.cpp" />
     <ClCompile Include="TextureRenderMesh.cpp" />
+    <ClCompile Include="typedef.cpp" />
     <ClCompile Include="WICTextureLoader12.cpp" />
     <ClCompile Include="ColorRenderMesh.cpp" />
     <ClCompile Include="CommonAssets.cpp" />

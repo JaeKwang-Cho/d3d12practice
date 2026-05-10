@@ -172,7 +172,11 @@ struct TEXTURE_HANDLE
 	bool bFromFile;
 	DWORD dwRefCount;
 
-	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false), bFromFile(false), dwRefCount(0) {}
+	class SingleDescriptorAllocator* OuterAllocator;
+	WCHAR wchFilePath_debug[MAX_PATH];
+
+	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false), bFromFile(false), dwRefCount(0), OuterAllocator(nullptr) {}
+	virtual ~TEXTURE_HANDLE();
 };
 
 struct FONT_HANDLE
