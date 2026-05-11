@@ -41,7 +41,7 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 	DWORD dwCreateFlags = 0;
 	DWORD dwCreateFactoryFlags = 0;
 
-	m_fDPI = GetDpiForWindow(m_hWnd);
+	m_fDPI = static_cast<float>(GetDpiForWindow(m_hWnd));
 
 	// #1 GPU 디버그 레이어 설정
 	if (_bEnableDebugLayer) {
@@ -556,7 +556,7 @@ void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pM
 	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
 	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
 }
-#if 0
+#if 1
 void* D3D12Renderer::CreateBasicMeshObject()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;
@@ -982,7 +982,7 @@ void D3D12Renderer::InitCamera()
 
 void D3D12Renderer::InitFrameCB()
 {
-	UINT alignedByteSize = AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_FRAME));
+	UINT alignedByteSize = static_cast<UINT>(AlignConstantBufferSize(sizeof(CONSTANT_BUFFER_FRAME)));
 	D3D12_RESOURCE_DESC cbDesc_Size = CD3DX12_RESOURCE_DESC::Buffer(alignedByteSize);
 
 	HRESULT hr = S_OK;

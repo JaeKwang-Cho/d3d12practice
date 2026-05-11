@@ -36,10 +36,10 @@ DWORD WINAPI ThreadSendToClient(LPVOID _pParam)
 
 		// 보낼 데이터를 준비하고
 		int startOffset = i * DATA_SIZE;
-		int endOffset = min(startOffset + DATA_SIZE, ulByteSize);
+		int endOffset = static_cast<int>(min(startOffset + DATA_SIZE, ulByteSize));
 		memcpy(curOverlapped_Param->pData + HEADER_SIZE, pData + startOffset, endOffset - startOffset);
 
-		ScreenImageHeader header = { i, uiSendCount, uiSessionID, ulByteSize };
+		ScreenImageHeader header = { i, static_cast<uint32_t>(uiSendCount), uiSessionID, static_cast<ULONG>(ulByteSize) };
 		memcpy(curOverlapped_Param->pData, &header, HEADER_SIZE);
 
 		curOverlapped_Param->wsabuf.buf = curOverlapped_Param->pData;
@@ -135,7 +135,7 @@ void ImageSendManager::SendData(void* _data, size_t _ulByteSize, UINT _uiThreadI
 	addr.sin_port = htons(CLIENT_PORT);
 	::InetPton(AF_INET, _T("127.0.0.1"), &addr.sin_addr);
 
-	int inputSize = _ulByteSize;
+	int inputSize = static_cast<int>(_ulByteSize);
 	int compressSize = LZ4_compress_fast((char*)_data, compressedTexture, inputSize, LZ4_compressBound(inputSize), 1);
 
 	threadParam.data = compressedTexture;

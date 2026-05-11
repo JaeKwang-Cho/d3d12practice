@@ -8,7 +8,7 @@ DWORD WINAPI CreateFileFromTexture_Thread(LPVOID _pParam)
 {
 	ImageFile* pImage = (ImageFile*)_pParam;
 
-	LZ4_decompress_safe(pImage->compressedTexture, pImage->decompressedTexture, pImage->compressSize, pImage->image.slicePitch);
+	LZ4_decompress_safe(pImage->compressedTexture, pImage->decompressedTexture, static_cast<int>(pImage->compressSize), static_cast<int>(pImage->image.slicePitch));
 	pImage->image.pixels = (UINT8*)pImage->decompressedTexture;
 	HRESULT hr = SaveToWICFile(
 		pImage->image,
@@ -88,10 +88,10 @@ void ScreenCapturer::CreatFileFromTexture(DWORD _dwTexIndex)
 		m_imageFile->compressedTexture = m_compressedTexture;
 		m_imageFile->decompressedTexture = m_decompressedTexture;
 
-		int compressSize = LZ4_compress_fast((char*)m_pMappedData[_dwTexIndex], m_compressedTexture, m_Image.slicePitch, LZ4_compressBound(m_Image.slicePitch), 1);
+		int compressSize = LZ4_compress_fast((char*)m_pMappedData[_dwTexIndex], m_compressedTexture, static_cast<int>(m_Image.slicePitch), LZ4_compressBound(static_cast<int>(m_Image.slicePitch)), 1);
 		m_imageFile->compressSize = compressSize;
 		m_testIndex++;
-		swprintf_s(m_imageFile->fileName, L"testcapturescreen\\screen_copy_%04d.png", m_testIndex);
+		swprintf_s(m_imageFile->fileName, L"testcapturescreen\\screen_copy_%04llu.png", m_testIndex);
 
 		if (m_testIndex >= 300)
 		{

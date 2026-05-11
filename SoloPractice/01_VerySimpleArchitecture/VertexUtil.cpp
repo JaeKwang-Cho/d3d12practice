@@ -25,9 +25,9 @@ bool Float3ForKey::operator!=(const Float3ForKey& _other) const
 size_t Float3Hash::operator()(const Float3ForKey& _f3key) const
 {
 	std::size_t seed = 0;
-	int xVal = std::round(_f3key.x * 1e5);
-	int yVal = std::round(_f3key.y * 1e5);
-	int zVal = std::round(_f3key.z * 1e5);
+	double xVal = std::round(_f3key.x * 1e5);
+	double yVal = std::round(_f3key.y * 1e5);
+	double zVal = std::round(_f3key.z * 1e5);
 
 	boost::hash_combine(seed, xVal);
 	boost::hash_combine(seed, yVal);
@@ -227,9 +227,10 @@ uint32_t FindOtherOneIndex(
 		bItself = false;
 	}
 	__debugbreak();
+	return -1;
 }
 
-int GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::vector<uint32_t>& _indices, std::vector<uint32_t>& _adjIndicies)
+size_t GenerateAdjacencyIndices(const std::vector<XMFLOAT3>& _vertices, const std::vector<uint32_t>& _indices, std::vector<uint32_t>& _adjIndicies)
 {
 	size_t numVerts = _vertices.size();
 	size_t numFaces = _indices.size() / 3;

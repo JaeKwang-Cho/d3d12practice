@@ -311,12 +311,6 @@ void RunGame()
         g_PrevUpdateTime = CurrTickTime;
     }
 
-    //if (CurrTickTime - g_PrevStreamingTime > 33) 
-    {
-        //g_PrevStreamingTime = CurrTickTime;
-        g_pRenderer->TryPixelStreaming(); // 최대한 빨리보내보자.
-    }
-    
     // ===== draw object =====
     g_pRenderer->DrawRenderMesh(g_pGrid, &g_matWorldGrid, E_RENDER_MESH_TYPE::COLOR);
 
@@ -557,7 +551,7 @@ void* CreateTileGrid()
 
     // 간격이 너무 좁은것 같아서 넓혀주었다.
     int vertexCount = 11;
-    g_GridCellOffset = 25.f;
+    g_GridCellOffset = 25;
 
     // -x+, -y+ 번갈아 가면서 넣어주고
     ColorMeshData& refMeshData = meshData[0];

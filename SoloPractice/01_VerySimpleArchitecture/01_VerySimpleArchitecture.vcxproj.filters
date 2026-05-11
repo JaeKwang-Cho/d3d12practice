@@ -85,6 +85,9 @@
     <Filter Include="Renderer\TextureManager">
       <UniqueIdentifier>{04d0078c-a504-48bc-b331-b3e72573711d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Game">
+      <UniqueIdentifier>{e6cf3407-edbf-425d-bd99-843fa877f467}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -165,6 +168,15 @@
     <ClInclude Include="TextureManager.h">
       <Filter>Renderer\TextureManager</Filter>
     </ClInclude>
+    <ClInclude Include="Game.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicMeshObject.h">
+      <Filter>[Deleted]\BasicMeshObject</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -179,12 +191,6 @@
     </None>
     <None Include="Shaders\GridTile.hlsl">
       <Filter>Shaders</Filter>
-    </None>
-    <None Include="BasicMeshObject.cpp">
-      <Filter>[Deleted]\BasicMeshObject</Filter>
-    </None>
-    <None Include="BasicMeshObject.h">
-      <Filter>[Deleted]\BasicMeshObject</Filter>
     </None>
     <None Include="Shaders\Commons.hlsl">
       <Filter>Shaders\Common</Filter>
@@ -274,6 +280,15 @@
     </ClCompile>
     <ClCompile Include="typedef.cpp">
       <Filter>typedef</Filter>
+    </ClCompile>
+    <ClCompile Include="Game.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="GameObject.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicMeshObject.cpp">
+      <Filter>[Deleted]\BasicMeshObject</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

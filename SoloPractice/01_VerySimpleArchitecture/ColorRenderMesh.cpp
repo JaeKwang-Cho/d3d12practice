@@ -125,7 +125,7 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 
 		// TextureVertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
-			sizeof(ColorVertex), pCurMeshData.Vertices.size(), 
+			sizeof(ColorVertex), static_cast<UINT>(pCurMeshData.Vertices.size()), 
 			&(subRenderGeometries[i]->VertexBufferView),
 			&(subRenderGeometries[i]->pVertexBuffer), 
 			(void*)pCurMeshData.Vertices.data()
@@ -136,7 +136,7 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 
 		// Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
-			pCurMeshData.Indices32.size(),
+			static_cast<UINT>(pCurMeshData.Indices32.size()),
 			&(subRenderGeometries[i]->IndexBufferView),
 			&(subRenderGeometries[i]->pIndexBuffer),
 			(void*)(pCurMeshData.GetIndices16().data())
@@ -144,7 +144,7 @@ void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData
 		{
 			__debugbreak();
 		}
-		subRenderGeometries[i]->indexCount = pCurMeshData.Indices32.size();
+		subRenderGeometries[i]->indexCount = static_cast<UINT>(pCurMeshData.Indices32.size());
 		subRenderGeometries[i]->startIndexLocation = 0;
 		subRenderGeometries[i]->baseVertexLocation = 0;
 	}

@@ -123,6 +123,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -143,9 +144,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <None Include="BasicMeshObject.h" />
+    <ClInclude Include="BasicMeshObject.h" />
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="FontManager.h" />
+    <ClInclude Include="Game.h" />
+    <ClInclude Include="GameObject.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
     <ClInclude Include="ScreenStreamer.h" />
@@ -177,9 +180,11 @@
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="BasicMeshObject.cpp" />
+    <ClCompile Include="BasicMeshObject.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="FontManager.cpp" />
+    <ClCompile Include="Game.cpp" />
+    <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />

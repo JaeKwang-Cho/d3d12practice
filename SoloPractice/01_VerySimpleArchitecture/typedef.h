@@ -175,7 +175,7 @@ struct TEXTURE_HANDLE
 	class SingleDescriptorAllocator* OuterAllocator;
 	WCHAR wchFilePath_debug[MAX_PATH];
 
-	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false), bFromFile(false), dwRefCount(0), OuterAllocator(nullptr) {}
+	TEXTURE_HANDLE() :pTexResource(nullptr), pUploadBuffer(nullptr), srv{}, bUpdated(false), bFromFile(false), dwRefCount(0), OuterAllocator(nullptr), wchFilePath_debug{} {}
 	virtual ~TEXTURE_HANDLE();
 };
 

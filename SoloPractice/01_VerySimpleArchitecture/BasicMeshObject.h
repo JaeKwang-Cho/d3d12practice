@@ -86,7 +86,7 @@ private:
 	DWORD m_dwTriGroupCount;
 	DWORD m_dwMaxTriGroupCount;
 	// PSO
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> m_pPipelineState;
+	D3D12PipelineState_ptr m_pPipelineState;
 
 public:
 	BasicMeshObject();

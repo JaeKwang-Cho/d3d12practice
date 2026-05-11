@@ -346,7 +346,7 @@ bool BasicMeshObject::InitPipelineState()
 			__debugbreak();
 		}
 
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState);
+		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
 	}
 
 RETURN:

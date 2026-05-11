@@ -244,7 +244,7 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 
 		// TextureVertex Buffer 먼저 생성한다.
 		if (FAILED(pResourceManager->CreateVertexBuffer(
-			sizeof(TextureVertex), pCurMeshData.Vertices.size(),
+			sizeof(TextureVertex), static_cast<UINT>(pCurMeshData.Vertices.size()),
 			&(m_subRenderGeometries[i]->VertexBufferView),
 			&(m_subRenderGeometries[i]->pVertexBuffer),
 			(void*)pCurMeshData.Vertices.data()
@@ -255,7 +255,7 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 
 		// Index Buffer도 생성한다.
 		if (FAILED(pResourceManager->CreateIndexBuffer(
-			pCurMeshData.Indices32.size(),
+			static_cast<UINT>(pCurMeshData.Indices32.size()),
 			&(m_subRenderGeometries[i]->IndexBufferView),
 			&(m_subRenderGeometries[i]->pIndexBuffer),
 			(void*)(pCurMeshData.GetIndices16().data())
@@ -263,7 +263,7 @@ void TextureRenderMesh::CreateRenderAssets(std::vector<TextureMeshData>& _ppMesh
 		{
 			__debugbreak();
 		}
-		m_subRenderGeometries[i]->indexCount = pCurMeshData.Indices32.size();
+		m_subRenderGeometries[i]->indexCount = static_cast<UINT>(pCurMeshData.Indices32.size());
 		m_subRenderGeometries[i]->startIndexLocation = 0;
 		m_subRenderGeometries[i]->baseVertexLocation = 0;
 	}
