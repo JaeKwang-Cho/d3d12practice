@@ -18,7 +18,7 @@ class TextureManager;
 class D3D12Renderer
 {
 public:
-	static const UINT MAX_DRAW_COUNT_PER_FRAME = 256; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
+	static const UINT MAX_DRAW_COUNT_PER_FRAME = 1024; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
 	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
@@ -31,7 +31,7 @@ public:
 	void EndRender();
 	void Present();
 
-	bool UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight);
+	bool UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight);
 
 	// Render Mesh
 	void DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
@@ -73,10 +73,10 @@ public:
 	// Camera
 
 	// Input
-	void OnRButtonDown(WPARAM _btnState, int _x, int _y);
-	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
-	void OnMouseMove(WPARAM _btnState, int _x, int _y);
-	void OnKeyboardInput(const GameTimer& _gameTimer);
+	void OnRButtonDown_Renderer(WPARAM _btnState, int _x, int _y);
+	void OnRButtonUp_Renderer(WPARAM _btnState, int _x, int _y);
+	void OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y);
+	void OnKeyboardInput_Renderer(const GameTimer& _gameTimer);
 
 	void FlushMultiRendering();
 

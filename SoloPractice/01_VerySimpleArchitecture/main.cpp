@@ -776,7 +776,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             GetClientRect(hWnd, &rect);
             DWORD dwWidth = rect.right - rect.left;
             DWORD dwHeight = rect.bottom - rect.top;
-            g_pRenderer->UpdateWindowSize(dwWidth, dwHeight);
+            g_pRenderer->UpdateWindowSize_Renderer(dwWidth, dwHeight);
         }
     }
     break;
@@ -787,7 +787,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_RBUTTONDOWN:
     {
         if (g_pRenderer) {
-            g_pRenderer->OnRButtonDown(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            g_pRenderer->OnRButtonDown_Renderer(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         }
     }
     return 0;
@@ -798,14 +798,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_RBUTTONUP:
     {
         if (g_pRenderer) {
-            g_pRenderer->OnRButtonUp(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            g_pRenderer->OnRButtonUp_Renderer(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         }
     } 
     return 0;
     case WM_MOUSEMOVE:
     {
         if (g_pRenderer) {
-            g_pRenderer->OnMouseMove(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            g_pRenderer->OnMouseMove_Renderer(wParam, GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
         }
     }
     return 0;

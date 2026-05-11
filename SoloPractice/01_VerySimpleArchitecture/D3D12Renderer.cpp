@@ -294,7 +294,7 @@ void D3D12Renderer::Update(const GameTimer& _gameTimer)
 {
 	// 뭔가 업데이트를 해보자
 	// 입력이라던가..
-	OnKeyboardInput(_gameTimer);
+	OnKeyboardInput_Renderer(_gameTimer);
 	
 	// 카메라 같은것들
 	m_flyCamera->UpdateViewMatrix();
@@ -443,7 +443,7 @@ void D3D12Renderer::Present()
 	m_dwCurContextIndex = dwNextContextIndex;
  }
 
-bool D3D12Renderer::UpdateWindowSize(DWORD _dwWidth, DWORD _dwHeight)
+bool D3D12Renderer::UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight)
 {
 	// 유효하지 않은 크기나
 	if (!(_dwWidth * _dwHeight)) {
@@ -794,7 +794,7 @@ bool D3D12Renderer::CachePSO(std::string _strPSOName, D3D12PipelineState_raw _pP
 	return m_pD3D12PSOCache->CachePSO(_strPSOName, _pPSODesc);
 }
 
-void D3D12Renderer::OnRButtonDown(WPARAM _btnState, int _x, int _y)
+void D3D12Renderer::OnRButtonDown_Renderer(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스 위치를 기억하고
 	m_LastMousePos.x = _x;
@@ -803,13 +803,13 @@ void D3D12Renderer::OnRButtonDown(WPARAM _btnState, int _x, int _y)
 	SetCapture(m_hWnd);
 }
 
-void D3D12Renderer::OnRButtonUp(WPARAM _btnState, int _x, int _y)
+void D3D12Renderer::OnRButtonUp_Renderer(WPARAM _btnState, int _x, int _y)
 {
 	// 마우스를 놓는다.
 	ReleaseCapture();
 }
 
-void D3D12Renderer::OnMouseMove(WPARAM _btnState, int _x, int _y)
+void D3D12Renderer::OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y)
 {
 	// 왼쪽 마우스가 눌린 상태에서 움직인다면
 	if ((_btnState & MK_LBUTTON) != 0)
@@ -824,7 +824,7 @@ void D3D12Renderer::OnMouseMove(WPARAM _btnState, int _x, int _y)
 	m_LastMousePos.y = _y;
 }
 
-void D3D12Renderer::OnKeyboardInput(const GameTimer& _gameTimer)
+void D3D12Renderer::OnKeyboardInput_Renderer(const GameTimer& _gameTimer)
 {
 	if (GetAsyncKeyState('W') & 0x8000)
 		m_flyCamera->Walk(_gameTimer.GetDeltaTime() * 15.f);

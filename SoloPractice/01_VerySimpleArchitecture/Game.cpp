@@ -111,7 +111,7 @@ bool Game::UpdateWindowSize(ULONG _dwBackBufferWidth, ULONG _dwBackBufferHeight)
 		__debugbreak();
 		return false;
 	}
-	return m_pRenderer->UpdateWindowSize(_dwBackBufferWidth, _dwBackBufferHeight);
+	return m_pRenderer->UpdateWindowSize_Renderer(_dwBackBufferWidth, _dwBackBufferHeight);
 }
 
 void Game::Render()
