@@ -42,12 +42,6 @@ private:
 	void* m_pTextTextureHandle;
 	std::unique_ptr<FONT_HANDLE> m_pFontObj;
 
-	bool m_bShiftKeyDown;
-
-	float m_CamOffsetX;
-	float m_CamOffsetY;
-	float m_CamOffsetZ;
-
 	GameTimer m_GameTimer;
 
 	std::map<GameObject*, std::unique_ptr<GameObject>> m_GameObjects;

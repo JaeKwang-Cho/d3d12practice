@@ -56,7 +56,7 @@ DWORD CreateBoxMesh(ColorVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DW
 void DeleteBoxMesh(ColorVertex* _pVertexList);
 
 // Tile Grid Mesh를 만들어준다.
-const std::vector<ColorMeshData> CreateTileGrid(UINT _gridCellGapOffest);
+const std::vector<ColorMeshData> CreateTileGrid(UINT _gridCellGapOffest = 25);
 void CreateCube(float _width, float _height, float _depth, struct TextureMeshData& _outTextureMeshData, std::vector<uint32_t>& _outAdjIndices, std::vector<struct SubmeshRange>& _outSubmeshRange);
 
 // triangle list인 mesh를 triangle list with adjacency로 바꾼다.

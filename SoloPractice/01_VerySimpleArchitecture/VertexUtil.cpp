@@ -169,7 +169,6 @@ const std::vector<ColorMeshData> CreateTileGrid(UINT _gridCellGapOffest)
 	std::vector<ColorMeshData> meshData;
 	meshData.push_back(ColorMeshData());
 
-	// 간격이 너무 좁은것 같아서 넓혀주었다.
 	int vertexCount = 11;
 
 	// -x+, -y+ 번갈아 가면서 넣어주고

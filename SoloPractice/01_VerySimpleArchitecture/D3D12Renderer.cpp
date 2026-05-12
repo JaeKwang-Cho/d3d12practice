@@ -18,6 +18,8 @@
 #include "ScreenStreamer.h"
 #include "FontManager.h"
 #include "TextureManager.h"
+#include "Grid_RenderMesh.h"
+#include "VertexUtil.h"
 
 #define PIXEL_STREAMING (0)
 
@@ -261,6 +263,14 @@ EXIT:
 
 	// Frame CBV
 	InitFrameCB();
+
+	// Init Grid
+	{
+		m_pGridRenderMesh = std::make_unique<Grid_RenderMesh>();
+		std::vector<ColorMeshData> gridData = CreateTileGrid();
+		m_pGridRenderMesh->Initialize(this, D3D_PRIMITIVE_TOPOLOGY_POINTLIST);
+		m_pGridRenderMesh->CreateRenderAssets(gridData, 1);
+	}
 
 #if PIXEL_STREAMING
 	// ScreenCapturer
@@ -555,6 +565,19 @@ void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pM
 
 	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
 	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
+}
+void D3D12Renderer::DrawGrid()
+{
+	DrawRenderMesh(m_pGridRenderMesh.get(), &m_matGridWorld, E_RENDER_MESH_TYPE::COLOR);
+}
+void D3D12Renderer::UpdateGridWorldMatrix(UINT _gridCellOffset)
+{
+	XMFLOAT3 curCameraPos = GetCameraWorldPos();
+
+	float xSnapped = floorf(curCameraPos.x / _gridCellOffset) * _gridCellOffset;
+	float zSnapped = floorf(curCameraPos.z / _gridCellOffset) * _gridCellOffset;
+
+	m_matGridWorld = XMMatrixTranslation(xSnapped, 0.f, zSnapped);
 }
 #if 0
 void* D3D12Renderer::CreateBasicMeshObject()

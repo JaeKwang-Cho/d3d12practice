@@ -37,6 +37,10 @@ public:
 	void DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
 	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType);
 	void DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
+
+	// Reder Grid
+	void DrawGrid();
+	void UpdateGridWorldMatrix(UINT _gridCellOffset = 25);
 	
 	// mesh
 #if 0
@@ -169,6 +173,10 @@ private:
 	// Camera 
 	FlyCamera* m_flyCamera;
 	POINT m_LastMousePos;
+
+	// Grid
+	std::unique_ptr<class Grid_RenderMesh> m_pGridRenderMesh;
+	XMMATRIX m_matGridWorld;
 
 	// ScreenCapturer
 	ScreenCapturer* m_pScreenStreamer;

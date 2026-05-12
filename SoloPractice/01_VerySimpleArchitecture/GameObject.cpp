@@ -76,7 +76,7 @@ void* GameObject::CreateBoxMeshObject()
 	std::vector<uint32_t> AdjIndices;
 	std::vector<SubmeshRange> Ranges;
 
-	CreateCube(0.25f, 0.25f, 0.25f, meshData, AdjIndices, Ranges);
+	CreateCube(1.f, 1.f, 1.f, meshData, AdjIndices, Ranges);
 
 	pNewBox = new TextureRenderMesh;
 	pNewBox->Initialize(m_pRenderer);

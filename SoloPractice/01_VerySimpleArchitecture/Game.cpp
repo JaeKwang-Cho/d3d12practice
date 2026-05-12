@@ -33,9 +33,9 @@ bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV
 			GameObject* pGameObj = CreateGameObject();
 			if (pGameObj)
 			{
-				float x = (float)((rand() % 5) - 3);	// -3m - 3m 
+				float x = (float)((rand() % 13) - 7);	// -7m - 5m 
 				float y = 0.0f;
-				float z = (float)((rand() % 5) - 3);	// -3m - 3m 
+				float z = (float)((rand() % 13) - 7);	// -3m - 3m 
 				pGameObj->SetGameObjectPosition(x, y, z);
 				float rad = (rand() % 181) * (3.1415f / 180.0f);
 				pGameObj->SetGameObjectRotationY(rad);
@@ -83,6 +83,7 @@ bool Game::Update(ULONGLONG _CurTick)
 	// Camera Update
 	m_GameTimer.Tick();
 	m_pRenderer->Update(m_GameTimer);
+	m_pRenderer->UpdateGridWorldMatrix();
 
 	// Update Game Objects
 	for (auto& pair : m_GameObjects)
@@ -148,6 +149,9 @@ void Game::Render()
 	// Render Text
 	m_pRenderer->RenderSpriteWithTex(m_pSpriteObjCommon, 10, 10, 1.0f, 1.0f, nullptr, 0.0f, m_pTextTextureHandle);
 
+	// Draw Grid
+	m_pRenderer->DrawGrid();
+
 	m_pRenderer->EndRender();
 	m_pRenderer->Present();
 }
@@ -212,7 +216,6 @@ void Game::Cleanup_Game()
 Game::Game() :
 	m_pRenderer(nullptr), m_hWnd(nullptr), m_pSpriteObjCommon(nullptr),
 	m_pTextImage(nullptr), m_TextImageWidth(0), m_TextImageHeight(0), m_pTextTextureHandle(nullptr), m_pFontObj(nullptr),
-	m_bShiftKeyDown(false), m_CamOffsetX(0.f), m_CamOffsetY(0.f), m_CamOffsetZ(0.f),
 	m_PrevFrameCheckTick(0), m_PrevUpdateTick(0), m_FrameCount(0), m_FPS(0), m_GameTimer(), m_wchText{}
 {
 }
