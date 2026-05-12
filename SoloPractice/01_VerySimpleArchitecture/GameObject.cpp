@@ -3,6 +3,7 @@
 #include "Game.h"
 #include "D3D12Renderer.h"
 #include "VertexUtil.h"
+#include "TextureRenderMesh.h"
 
 bool GameObject::Initialize_GameObject(Game* _pGame)
 {
@@ -63,20 +64,31 @@ void GameObject::Render()
 	if(m_pMeshObj)
 	{
 		m_pRenderer->DrawRenderMesh(m_pMeshObj, &m_matWorld, E_RENDER_MESH_TYPE::TEXTURE);
+		m_pRenderer->DrawOutlineMesh(m_pMeshObj, &m_matWorld);
 	}
 }
 
 void* GameObject::CreateBoxMeshObject()
 {
-	void* pMeshObj = nullptr;
+	TextureRenderMesh* pNewBox = nullptr;
 	// ±âº» Box
-	uint16_t pIndexList[36] = {};
-	ColorVertex* pVertexList = nullptr;
-	ULONG dwVertexCount = CreateBoxMesh(&pVertexList, pIndexList, static_cast<DWORD>(_countof(pIndexList)), 0.25f);
+	TextureMeshData meshData;
+	std::vector<uint32_t> AdjIndices;
+	std::vector<SubmeshRange> Ranges;
 
-	pMeshObj = m_pRenderer->CreateBasicMeshObject();
+	CreateCube(0.25f, 0.25f, 0.25f, meshData, AdjIndices, Ranges);
 
-	const WCHAR* wchTexFileNameList[6] = 	{
+	pNewBox = new TextureRenderMesh;
+	pNewBox->Initialize(m_pRenderer);
+
+	if(!pNewBox->CreateRenderAssetsFromSingleMesh(meshData, AdjIndices, Ranges))
+	{
+		delete pNewBox;
+		__debugbreak();
+		return nullptr;
+	}
+
+	const WCHAR* wchTexFileNameList[6] = {
 		L"../../Assets/tex_00.dds",
 		L"../../Assets/tex_01.dds",
 		L"../../Assets/tex_02.dds",
@@ -85,44 +97,15 @@ void* GameObject::CreateBoxMeshObject()
 		L"../../Assets/tex_05.dds"
 	};
 
-	m_pRenderer->BeginCreateMesh(pMeshObj, pVertexList, dwVertexCount, 6);
-	for(ULONG i = 0 ; i < 6; ++i)
+	for (UINT i = 0; i < 6; i++)
 	{
-		m_pRenderer->InsertTriGroup(pMeshObj, &pIndexList[i * 6], 2, wchTexFileNameList[i]);
+		TEXTURE_HANDLE* pTexture = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(wchTexFileNameList[i]));
+		pNewBox->BindTextureAssets(pTexture, i);
+		CONSTANT_BUFFER_MATERIAL whiteMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(1.f, 1.f, 1.f, 1.f));
+		pNewBox->SetMaterial(whiteMat, i);
 	}
-	m_pRenderer->EndCreateMesh(pMeshObj);
 
-	DeleteBoxMesh(pVertexList);
-	pVertexList = nullptr;
-
-	return pVertexList;
-}
-
-void* GameObject::CreateQuadMeshObject()
-{
-	void* pMeshObj = nullptr;
-	pMeshObj = m_pRenderer->CreateBasicMeshObject();
-
-	// Set meshes to the BasicMeshObject
-	ColorVertex pVertexList[] =
-	{
-		{ { -0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
-		{ { 0.25f, 0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
-		{ { 0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
-		{ { -0.25f, -0.25f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
-	};
-
-	WORD pIndexList[] =
-	{
-		0, 1, 2,
-		0, 2, 3
-	};
-
-
-	m_pRenderer->BeginCreateMesh(pMeshObj, pVertexList, (DWORD)_countof(pVertexList), 1);
-	m_pRenderer->InsertTriGroup(pMeshObj, pIndexList, 2, L"../../Assets/tex_06.dds");
-	m_pRenderer->EndCreateMesh(pMeshObj);
-	return pMeshObj;
+	return pNewBox;
 }
 
 void GameObject::UpdateTransform()
@@ -144,7 +127,8 @@ GameObject::GameObject() :
 void GameObject::Cleanup_GameObject()
 {
 	if (m_pMeshObj) {
-		m_pRenderer->DeleteBasicMeshObject(m_pMeshObj);
+		TextureRenderMesh* pMesh = reinterpret_cast<TextureRenderMesh*>(m_pMeshObj);
+		delete pMesh;
 		m_pMeshObj = nullptr;
 	}
 }

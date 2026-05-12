@@ -556,7 +556,7 @@ void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pM
 	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
 	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
 }
-#if 1
+#if 0
 void* D3D12Renderer::CreateBasicMeshObject()
 {
 	BasicMeshObject* pMeshObj = new BasicMeshObject;

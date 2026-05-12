@@ -2,12 +2,14 @@
 #include "Game.h"
 #include "D3D12Renderer.h"
 #include "GameObject.h"
+#include "CommonAssets.h"
 
 
 bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
 	m_pRenderer = std::make_unique<D3D12Renderer>();
 	m_pRenderer->Initialize(_hWnd, _bEnableDebugLayer, _bEnableGBV);
+	CreateCommonAssets(m_pRenderer.get());
 	m_hWnd = _hWnd;
 
 	// Create Font
@@ -24,16 +26,16 @@ bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV
 	m_pSpriteObjCommon = m_pRenderer->CreateSpriteObject();
 
 	{// Test - Create Game Objects
-		const ULONG GAME_OBJ_COUNT = 1000;
+		const ULONG GAME_OBJ_COUNT = 100;
 
 		for (DWORD i = 0; i < GAME_OBJ_COUNT; i++)
 		{
 			GameObject* pGameObj = CreateGameObject();
 			if (pGameObj)
 			{
-				float x = (float)((rand() % 21) - 10);	// -10m - 10m 
+				float x = (float)((rand() % 5) - 3);	// -3m - 3m 
 				float y = 0.0f;
-				float z = (float)((rand() % 21) - 10);	// -10m - 10m 
+				float z = (float)((rand() % 5) - 3);	// -3m - 3m 
 				pGameObj->SetGameObjectPosition(x, y, z);
 				float rad = (rand() % 181) * (3.1415f / 180.0f);
 				pGameObj->SetGameObjectRotationY(rad);
@@ -114,6 +116,26 @@ bool Game::UpdateWindowSize(ULONG _dwBackBufferWidth, ULONG _dwBackBufferHeight)
 	return m_pRenderer->UpdateWindowSize_Renderer(_dwBackBufferWidth, _dwBackBufferHeight);
 }
 
+void Game::OnRButtonDown(WPARAM _btnState, int _x, int _y)
+{
+	m_pRenderer->OnRButtonDown_Renderer(_btnState, _x, _y);
+}
+
+void Game::OnRButtonUp(WPARAM _btnState, int _x, int _y)
+{
+	m_pRenderer->OnRButtonUp_Renderer(_btnState, _x, _y);
+}
+
+void Game::OnMouseMove(WPARAM _btnState, int _x, int _y)
+{
+	m_pRenderer->OnMouseMove_Renderer(_btnState, _x, _y);
+}
+
+void Game::OnKeyboardInput()
+{
+	m_pRenderer->OnKeyboardInput_Renderer(m_GameTimer);
+}
+
 void Game::Render()
 {
 	m_pRenderer->BeginRender();
@@ -161,7 +183,25 @@ void Game::DeleteAllGameObjects()
 
 void Game::Cleanup_Game()
 {
+	m_pRenderer->FlushMultiRendering();
+
 	DeleteAllGameObjects();
+
+	if (m_pRenderer) {
+		if (m_pSpriteObjCommon) {
+			m_pRenderer->DeleteSpriteObject(m_pSpriteObjCommon);
+			m_pSpriteObjCommon = nullptr;
+		}
+
+		if (m_pTextTextureHandle) {
+			m_pRenderer->DeleteTexture(m_pTextTextureHandle);
+			m_pTextTextureHandle = nullptr;
+		}
+
+		DeleteCommonAssets(m_pRenderer.get());
+	}
+
+	m_pFontObj.reset();
 
 	if (m_pTextImage) {
 		delete[] m_pTextImage;
@@ -179,4 +219,5 @@ Game::Game() :
 
 Game::~Game()
 {
+	Cleanup_Game();
 }

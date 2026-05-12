@@ -30,7 +30,7 @@ protected:
 	void CleanupSharedResources();
 
 	virtual bool InitRootSignature();
-	virtual bool InitPipelineState();
+	virtual bool InitPipelineState() = 0;
 
 	void CleanUpAssets();
 private:

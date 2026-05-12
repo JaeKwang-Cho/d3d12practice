@@ -39,7 +39,7 @@ public:
 	void DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
 	
 	// mesh
-#if 1
+#if 0
 	void* CreateBasicMeshObject();
 	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
 	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);

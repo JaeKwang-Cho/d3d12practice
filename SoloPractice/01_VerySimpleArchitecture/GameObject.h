@@ -20,7 +20,6 @@ public:
 
 private:
 	void* CreateBoxMeshObject();
-	void* CreateQuadMeshObject();
 
 	void UpdateTransform();
 	void Cleanup_GameObject();

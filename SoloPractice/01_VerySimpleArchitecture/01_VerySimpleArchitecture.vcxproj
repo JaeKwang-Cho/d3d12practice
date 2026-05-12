@@ -144,7 +144,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="BasicMeshObject.h" />
+    <None Include="BasicMeshObject.h" />
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="FontManager.h" />
     <ClInclude Include="Game.h" />
@@ -180,7 +180,7 @@
     <None Include="vcpkg.json" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="BasicMeshObject.cpp" />
+    <None Include="BasicMeshObject.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="FontManager.cpp" />
     <ClCompile Include="Game.cpp" />

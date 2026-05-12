@@ -13,6 +13,10 @@ public:
 	bool Update(ULONGLONG _CurTick);
 	
 	bool UpdateWindowSize(ULONG _dwBackBufferWidth, ULONG _dwBackBufferHeight);
+	void OnRButtonDown(WPARAM _btnState, int _x, int _y);
+	void OnRButtonUp(WPARAM _btnState, int _x, int _y);
+	void OnMouseMove(WPARAM _btnState, int _x, int _y);
+	void OnKeyboardInput();
 
 	D3D12Renderer* INL_GetRenderer() { return m_pRenderer.get(); }
 

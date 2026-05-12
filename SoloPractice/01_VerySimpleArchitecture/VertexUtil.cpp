@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <cstdlib>
 #include <boost/functional/hash.hpp>
+#include "TextureRenderMesh.h"
 
 bool Float3ForKey::operator==(const Float3ForKey& _other) const
 {
@@ -161,6 +162,151 @@ DWORD CreateBoxMesh(ColorVertex** _ppOutVertexList, uint16_t* _pOutIndexList, DW
 void DeleteBoxMesh(ColorVertex* _pVertexList)
 {
 	delete[] _pVertexList;
+}
+
+const std::vector<ColorMeshData> CreateTileGrid(UINT _gridCellGapOffest)
+{
+	std::vector<ColorMeshData> meshData;
+	meshData.push_back(ColorMeshData());
+
+	// 간격이 너무 좁은것 같아서 넓혀주었다.
+	int vertexCount = 11;
+
+	// -x+, -y+ 번갈아 가면서 넣어주고
+	ColorMeshData& refMeshData = meshData[0];
+
+	refMeshData.Vertices.resize(vertexCount * 2);
+	refMeshData.Indices32.resize(vertexCount * 2);
+	for (int i = 0; i < vertexCount; i++)
+	{
+		int curIndex = i * 2;
+		refMeshData.Vertices[curIndex].position = XMFLOAT3(float(i - vertexCount / 2) * _gridCellGapOffest, 0.f, 0.f);
+		refMeshData.Vertices[curIndex].color = XMFLOAT4(DirectX::Colors::DarkRed);
+		refMeshData.Vertices[curIndex].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
+
+		refMeshData.Vertices[curIndex + 1].position = XMFLOAT3(0.f, 0.f, float(i - vertexCount / 2) * _gridCellGapOffest);
+		refMeshData.Vertices[curIndex + 1].color = XMFLOAT4(DirectX::Colors::DarkGreen);
+		refMeshData.Vertices[curIndex + 1].texCoord = XMFLOAT2(0.f, 0.f); // 텍스쳐는 입히지 않는다.
+
+		// 인덱스도 적당히 짝지어주는 거로 넘긴다.
+		refMeshData.Indices32[curIndex] = curIndex;
+		refMeshData.Indices32[curIndex + 1] = curIndex + 1;
+	}
+
+	return meshData;
+}
+
+void CreateCube(float _width, float _height, float _depth, TextureMeshData& _outTextureMeshData, std::vector<uint32_t>& _outAdjIndices, std::vector<SubmeshRange>& _outSubmeshRange)
+{
+	std::vector<XMFLOAT3> posL;
+	posL.resize(24);
+
+	float w2 = 0.5f * _width;
+	float h2 = 0.5f * _height;
+	float d2 = 0.5f * _depth;
+
+	_outTextureMeshData.Vertices.resize(24);
+
+	// 앞면
+	_outTextureMeshData.Vertices[0] = TextureVertex(-w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[1] = TextureVertex(-w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[2] = TextureVertex(+w2, +h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+	_outTextureMeshData.Vertices[3] = TextureVertex(+w2, -h2, -d2, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+	posL[0] = XMFLOAT3(-w2, -h2, -d2);
+	posL[1] = XMFLOAT3(-w2, +h2, -d2);
+	posL[2] = XMFLOAT3(+w2, +h2, -d2);
+	posL[3] = XMFLOAT3(+w2, -h2, -d2);
+
+	// 뒷면
+	_outTextureMeshData.Vertices[4] = TextureVertex(-w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+	_outTextureMeshData.Vertices[5] = TextureVertex(+w2, -h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[6] = TextureVertex(+w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[7] = TextureVertex(-w2, +h2, +d2, 0.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+	posL[4] = XMFLOAT3(-w2, -h2, +d2);
+	posL[5] = XMFLOAT3(+w2, -h2, +d2);
+	posL[6] = XMFLOAT3(+w2, +h2, +d2);
+	posL[7] = XMFLOAT3(-w2, +h2, +d2);
+
+	// 윗면
+	_outTextureMeshData.Vertices[8] = TextureVertex(-w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[9] = TextureVertex(-w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[10] = TextureVertex(+w2, +h2, +d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+	_outTextureMeshData.Vertices[11] = TextureVertex(+w2, +h2, -d2, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+
+	posL[8] = XMFLOAT3(-w2, +h2, -d2);
+	posL[9] = XMFLOAT3(-w2, +h2, +d2);
+	posL[10] = XMFLOAT3(+w2, +h2, +d2);
+	posL[11] = XMFLOAT3(+w2, +h2, -d2);
+
+	// 밑면
+	_outTextureMeshData.Vertices[12] = TextureVertex(-w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+	_outTextureMeshData.Vertices[13] = TextureVertex(+w2, -h2, -d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[14] = TextureVertex(+w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[15] = TextureVertex(-w2, -h2, +d2, 0.0f, -1.0f, 0.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f);
+
+	posL[12] = XMFLOAT3(-w2, -h2, -d2);
+	posL[13] = XMFLOAT3(+w2, -h2, -d2);
+	posL[14] = XMFLOAT3(+w2, -h2, +d2);
+	posL[15] = XMFLOAT3(-w2, -h2, +d2);
+
+	// 왼면
+	_outTextureMeshData.Vertices[16] = TextureVertex(-w2, -h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[17] = TextureVertex(-w2, +h2, +d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[18] = TextureVertex(-w2, +h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 0.0f);
+	_outTextureMeshData.Vertices[19] = TextureVertex(-w2, -h2, -d2, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, 1.0f, 1.0f);
+
+	posL[16] = XMFLOAT3(-w2, -h2, +d2);
+	posL[17] = XMFLOAT3(-w2, +h2, +d2);
+	posL[18] = XMFLOAT3(-w2, +h2, -d2);
+	posL[19] = XMFLOAT3(-w2, -h2, -d2);
+
+	// 오른면
+	_outTextureMeshData.Vertices[20] = TextureVertex(+w2, -h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f);
+	_outTextureMeshData.Vertices[21] = TextureVertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+	_outTextureMeshData.Vertices[22] = TextureVertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
+	_outTextureMeshData.Vertices[23] = TextureVertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+	posL[20] = XMFLOAT3(+w2, -h2, -d2);
+	posL[21] = XMFLOAT3(+w2, +h2, -d2);
+	posL[22] = XMFLOAT3(+w2, +h2, +d2);
+	posL[23] = XMFLOAT3(+w2, -h2, +d2);
+
+	_outTextureMeshData.Indices32.resize(36);
+
+	_outTextureMeshData.Indices32[0] = 0; _outTextureMeshData.Indices32[1] = 1; _outTextureMeshData.Indices32[2] = 2;
+	_outTextureMeshData.Indices32[3] = 0; _outTextureMeshData.Indices32[4] = 2; _outTextureMeshData.Indices32[5] = 3;
+
+	_outTextureMeshData.Indices32[6] = 4; _outTextureMeshData.Indices32[7] = 5; _outTextureMeshData.Indices32[8] = 6;
+	_outTextureMeshData.Indices32[9] = 4; _outTextureMeshData.Indices32[10] = 6; _outTextureMeshData.Indices32[11] = 7;
+
+	_outTextureMeshData.Indices32[12] = 8; _outTextureMeshData.Indices32[13] = 9; _outTextureMeshData.Indices32[14] = 10;
+	_outTextureMeshData.Indices32[15] = 8; _outTextureMeshData.Indices32[16] = 10; _outTextureMeshData.Indices32[17] = 11;
+
+	_outTextureMeshData.Indices32[18] = 12; _outTextureMeshData.Indices32[19] = 13; _outTextureMeshData.Indices32[20] = 14;
+	_outTextureMeshData.Indices32[21] = 12; _outTextureMeshData.Indices32[22] = 14; _outTextureMeshData.Indices32[23] = 15;
+
+	_outTextureMeshData.Indices32[24] = 16; _outTextureMeshData.Indices32[25] = 17; _outTextureMeshData.Indices32[26] = 18;
+	_outTextureMeshData.Indices32[27] = 16; _outTextureMeshData.Indices32[28] = 18; _outTextureMeshData.Indices32[29] = 19;
+
+	_outTextureMeshData.Indices32[30] = 20; _outTextureMeshData.Indices32[31] = 21; _outTextureMeshData.Indices32[32] = 22;
+	_outTextureMeshData.Indices32[33] = 20; _outTextureMeshData.Indices32[34] = 22; _outTextureMeshData.Indices32[35] = 23;
+
+	_outAdjIndices.clear();
+	GenerateAdjacencyIndices(posL, _outTextureMeshData.Indices32, _outAdjIndices);
+
+	_outSubmeshRange.clear();
+	_outSubmeshRange.reserve(6);
+	for (UINT i = 0; i < 6; i++)
+	{
+		SubmeshRange range = {};
+		range.startPosIndex = i * 4;
+		range.posIndexCount = 4;
+		range.startIndexIndex = i * 6;
+		range.indexIndexCount = 6;
+		_outSubmeshRange.push_back(range);
+	}
 }
 
 uint32_t FindOtherOneIndex(

@@ -518,7 +518,7 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 	std::string psoKey = g_PSOKeys[(UINT)E_PSO_KEYS_INDEX::OUTLINE];
 	pPipelineState = m_pRenderer->GetPSO(psoKey);
 	if (pPipelineState != nullptr) {
-		m_pPipelineState = pPipelineState;
+		m_pPipelineState_Outline = pPipelineState;
 		goto RETURN;
 	}
 	else {

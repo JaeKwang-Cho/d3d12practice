@@ -174,9 +174,6 @@
     <ClInclude Include="GameObject.h">
       <Filter>Game</Filter>
     </ClInclude>
-    <ClInclude Include="BasicMeshObject.h">
-      <Filter>[Deleted]\BasicMeshObject</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
@@ -204,6 +201,12 @@
     <None Include="vcpkg.json" />
     <None Include="vcpkg-configuration.json" />
     <None Include="ClassDiagram.cd" />
+    <None Include="BasicMeshObject.cpp">
+      <Filter>[Deleted]\BasicMeshObject</Filter>
+    </None>
+    <None Include="BasicMeshObject.h">
+      <Filter>[Deleted]\BasicMeshObject</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
@@ -264,9 +267,6 @@
     <ClCompile Include="GameTimer.cpp">
       <Filter>Engine\Timer</Filter>
     </ClCompile>
-    <ClCompile Include="ColorRenderMesh.cpp">
-      <Filter>RenderAssets\ColorRenderMesh</Filter>
-    </ClCompile>
     <ClCompile Include="TextureRenderMesh.cpp">
       <Filter>RenderAssets\TextureRenderMesh</Filter>
     </ClCompile>
@@ -287,8 +287,8 @@
     <ClCompile Include="GameObject.cpp">
       <Filter>Game</Filter>
     </ClCompile>
-    <ClCompile Include="BasicMeshObject.cpp">
-      <Filter>[Deleted]\BasicMeshObject</Filter>
+    <ClCompile Include="ColorRenderMesh.cpp">
+      <Filter>RenderAssets\ColorRenderMesh</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>
