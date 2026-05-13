@@ -10,7 +10,7 @@ bool GameObject::Initialize_GameObject(Game* _pGame)
 	m_pGame = _pGame;
 	m_pRenderer = m_pGame->INL_GetRenderer();
 
-	m_pMeshObj = CreateBoxMeshObject();
+	m_pMeshObj = static_cast<IRenderMesh*>(CreateBoxMeshObject());
 	if(m_pMeshObj == nullptr)
 	{
 		__debugbreak();
@@ -63,7 +63,7 @@ void GameObject::Render()
 {
 	if(m_pMeshObj)
 	{
-		m_pRenderer->DrawRenderMesh(m_pMeshObj, &m_matWorld, E_RENDER_MESH_TYPE::TEXTURE);
+		m_pRenderer->DrawRenderMesh(m_pMeshObj, &m_matWorld);
 		m_pRenderer->DrawOutlineMesh(m_pMeshObj, &m_matWorld);
 	}
 }

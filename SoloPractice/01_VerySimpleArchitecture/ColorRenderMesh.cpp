@@ -22,7 +22,7 @@ bool ColorRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLO
 	return bResult;
 }
 
-void ColorRenderMesh::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
+void ColorRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 

@@ -20,6 +20,8 @@
 #include "TextureManager.h"
 #include "Grid_RenderMesh.h"
 #include "VertexUtil.h"
+#include "RenderQueue.h"
+#include "IRenderMesh.h"
 
 #define PIXEL_STREAMING (0)
 
@@ -240,6 +242,10 @@ EXIT:
 	m_pTextureManager = std::make_unique<TextureManager>();
 	m_pTextureManager->Initalize(this);
 
+	// Render Queue
+	m_pRenderQueue = std::make_unique<RenderQueue>();
+	m_pRenderQueue->Initialize(this, 8192); // 8192개의 draw call이 한 프레임에 들어올 수 있다고 가정한다.
+
 	// Command List당 pool도 각각 만들어준다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		// Constant Buffer Pool
@@ -387,7 +393,9 @@ void D3D12Renderer::CopyRenderTarget()
 
 void D3D12Renderer::EndRender()
 {
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_dwCurContextIndex].Get();
+
+	m_pRenderQueue->ProcessRenderItems(pCommandList);
 
 	// 그릴 것을 다 그렸으니 이제 Render target의 상태를 ResourceBarrier 상태를 PRESENT로 바꾼다.
 	D3D12_RESOURCE_BARRIER trans_RT_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
@@ -397,8 +405,10 @@ void D3D12Renderer::EndRender()
 	pCommandList->Close();
 
 	// queue로 넘겨준다. (여기까지의 과정을 매 프레임마다 하는 것이다.)
-	ID3D12CommandList* ppCommandLists[] = { pCommandList.Get()};
+	ID3D12CommandList* ppCommandLists[] = { pCommandList};
 	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	m_pRenderQueue->ResetQueue();
 }
 
 void D3D12Renderer::Present()
@@ -517,7 +527,7 @@ bool D3D12Renderer::UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight)
 	return true;
 }
 
-void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType)
+void D3D12Renderer::DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType)
 {
 	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -540,35 +550,31 @@ void D3D12Renderer::DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYP
 	}
 }
 
-void D3D12Renderer::DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType)
+void D3D12Renderer::DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
 {
 	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
 
-	switch (_eRenderMeshType)
-	{
-	case E_RENDER_MESH_TYPE::COLOR:
-	{
-		ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
-		pMeshObj->Draw(pCommandList.Get(), pMatWorld);
-	}break;
-	case E_RENDER_MESH_TYPE::TEXTURE:
-	{		
-		TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
-		pMeshObj->Draw(pCommandList.Get(), pMatWorld);
+	RENDER_ITEM renderItem = {};
+	renderItem.Type = RENDER_ITEM_TYPE::MESH;
+	renderItem.MeshObjParam.pMesh = _pMeshObjectHandle;
+	renderItem.MeshObjParam.matWorld = *pMatWorld;
+	renderItem.MeshObjParam.Pass = RENDER_MESH_PASS::Default;
 
-	}break;
-	}
+	m_pRenderQueue->AddRenderItem(renderItem);
 }
-void D3D12Renderer::DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
+void D3D12Renderer::DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld)
 {
-	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	RENDER_ITEM item = {};
+	item.Type = RENDER_ITEM_TYPE::MESH;
+	item.MeshObjParam.pMesh = _pMeshObjectHandle;
+	item.MeshObjParam.matWorld = *_pMatWorld;
+	item.MeshObjParam.Pass = RENDER_MESH_PASS::Outline;
 
-	TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
-	pMeshObj->DrawOutline(pCommandList.Get(), pMatWorld);
+	m_pRenderQueue->AddRenderItem(item);
 }
 void D3D12Renderer::DrawGrid()
 {
-	DrawRenderMesh(m_pGridRenderMesh.get(), &m_matGridWorld, E_RENDER_MESH_TYPE::COLOR);
+	DrawRenderMesh(m_pGridRenderMesh.get(), &m_matGridWorld);
 }
 void D3D12Renderer::UpdateGridWorldMatrix(UINT _gridCellOffset)
 {
@@ -667,32 +673,47 @@ void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
 void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
 {
 	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
-	TEXTURE_HANDLE* pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle);
 
-	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
+	RENDER_ITEM item = {};
+	item.Type = RENDER_ITEM_TYPE::SPRITE;
+	item.pObjHandle = _pSpriteObjHandle;
+	item.SpriteParam.iPosX = _posX;
+	item.SpriteParam.iPosY = _posY;
+	item.SpriteParam.fScaleX = _scaleX;
+	item.SpriteParam.fScaleY = _scaleY;
 
-	XMFLOAT2 pos = { (float)_posX, (float)_posY };
-	XMFLOAT2 scale = { _scaleX, _scaleY };
-
-	if(pTexHandle->pUploadBuffer && pTexHandle->bUpdated)
-	{
-		UpdateTexture(m_pD3DDevice.Get(), pCommandList.Get(), pTexHandle->pTexResource.Get(), pTexHandle->pUploadBuffer.Get());
-		pTexHandle->bUpdated = false;
+	if (_pRect) {
+		item.SpriteParam.Rect = *_pRect;
+		item.SpriteParam.bUseRect = true;
+	}
+	else {
+		item.SpriteParam.Rect = {};
+		item.SpriteParam.bUseRect = false;
 	}
 
-	pSpriteObj->DrawWithTex(pCommandList, &pos, &scale, _pRect, _z, (TEXTURE_HANDLE*)_pTexHandle);
+	item.SpriteParam.pTexHandle = _pTexHandle;
+	item.SpriteParam.ZValue = _z;
+
+	m_pRenderQueue->AddRenderItem(item);
 }
 
 void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
 {
 	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
-
-	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
-
-	XMFLOAT2 pos = { (float)_posX, (float)_posY };
-	XMFLOAT2 scale = { _scaleX, _scaleY };
-
-	pSpriteObj->Draw(pCommandList, &pos, &scale, _z);
+	
+	RENDER_ITEM item = {};
+	item.Type = RENDER_ITEM_TYPE::SPRITE;
+	item.pObjHandle = _pSpriteObjHandle;
+	item.SpriteParam.iPosX = _posX;
+	item.SpriteParam.iPosY = _posY;
+	item.SpriteParam.fScaleX = _scaleX;
+	item.SpriteParam.fScaleY = _scaleY;
+	item.SpriteParam.bUseRect = false;
+	item.SpriteParam.Rect = {};
+	item.SpriteParam.pTexHandle = nullptr;
+	item.SpriteParam.ZValue = _z;
+	
+	m_pRenderQueue->AddRenderItem(item);
 }
 
 void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)

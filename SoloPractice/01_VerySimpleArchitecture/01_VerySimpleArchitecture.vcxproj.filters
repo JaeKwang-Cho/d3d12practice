@@ -34,9 +34,6 @@
     <Filter Include="Renderer\ConstantBufferManager">
       <UniqueIdentifier>{f50bc249-af19-48b6-a454-f67691b1ad51}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Renderer\SpriteObject">
-      <UniqueIdentifier>{06764044-8e36-44de-a4f5-922b1ed54bc4}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Renderer\PSOPool">
       <UniqueIdentifier>{d081e109-7eb8-4fdb-81a4-5bb38c5a6f2f}</UniqueIdentifier>
     </Filter>
@@ -51,15 +48,6 @@
     </Filter>
     <Filter Include="RenderAssets">
       <UniqueIdentifier>{33d3ac4f-f76a-45c0-b39b-5fcbbf198df9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="RenderAssets\ColorRenderMesh">
-      <UniqueIdentifier>{1f79a5c3-fa53-4c5c-9959-1dc12f0ba4e0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="RenderAssets\ColorRenderMesh\Grid">
-      <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="RenderAssets\TextureRenderMesh">
-      <UniqueIdentifier>{dd0d1fc3-f541-4e76-9e84-ba70613cc59e}</UniqueIdentifier>
     </Filter>
     <Filter Include="[Deleted]">
       <UniqueIdentifier>{92dd4bbe-d461-452f-8b24-5d75a06e0e30}</UniqueIdentifier>
@@ -87,6 +75,27 @@
     </Filter>
     <Filter Include="Game">
       <UniqueIdentifier>{e6cf3407-edbf-425d-bd99-843fa877f467}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="[Deleted]\Shaders">
+      <UniqueIdentifier>{9c303c17-6e8d-41d5-b75b-0bfeb0df3c8c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\RenderQueue">
+      <UniqueIdentifier>{bffa543d-180f-4605-bd30-66e8ea0eb865}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\SpriteObject">
+      <UniqueIdentifier>{06764044-8e36-44de-a4f5-922b1ed54bc4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\Mesh">
+      <UniqueIdentifier>{8945605d-501d-47a9-ab2e-c8fd685857c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\Mesh\ColorRenderMesh">
+      <UniqueIdentifier>{1f79a5c3-fa53-4c5c-9959-1dc12f0ba4e0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\Mesh\ColorRenderMesh\Grid">
+      <UniqueIdentifier>{10c37ae0-0f96-419b-ad3e-d5dc7b180df1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="RenderAssets\Mesh\TextureRenderMesh">
+      <UniqueIdentifier>{dd0d1fc3-f541-4e76-9e84-ba70613cc59e}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -131,7 +140,7 @@
       <Filter>Renderer\ConstantBufferManager</Filter>
     </ClInclude>
     <ClInclude Include="SpriteObject.h">
-      <Filter>Renderer\SpriteObject</Filter>
+      <Filter>RenderAssets\SpriteObject</Filter>
     </ClInclude>
     <ClInclude Include="D3D12PSOCache.h">
       <Filter>Renderer\PSOPool</Filter>
@@ -146,7 +155,7 @@
       <Filter>RenderAssets</Filter>
     </ClInclude>
     <ClInclude Include="Grid_RenderMesh.h">
-      <Filter>RenderAssets\ColorRenderMesh\Grid</Filter>
+      <Filter>RenderAssets\Mesh\ColorRenderMesh\Grid</Filter>
     </ClInclude>
     <ClInclude Include="FlyCamera.h">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
@@ -155,10 +164,10 @@
       <Filter>Engine\Timer</Filter>
     </ClInclude>
     <ClInclude Include="ColorRenderMesh.h">
-      <Filter>RenderAssets\ColorRenderMesh</Filter>
+      <Filter>RenderAssets\Mesh\ColorRenderMesh</Filter>
     </ClInclude>
     <ClInclude Include="TextureRenderMesh.h">
-      <Filter>RenderAssets\TextureRenderMesh</Filter>
+      <Filter>RenderAssets\Mesh\TextureRenderMesh</Filter>
     </ClInclude>
     <ClInclude Include="ScreenStreamer.h" />
     <ClInclude Include="StreamingHeader.h" />
@@ -174,15 +183,18 @@
     <ClInclude Include="GameObject.h">
       <Filter>Game</Filter>
     </ClInclude>
+    <ClInclude Include="RenderQueue.h">
+      <Filter>Renderer\RenderQueue</Filter>
+    </ClInclude>
+    <ClInclude Include="IRenderMesh.h">
+      <Filter>RenderAssets\Mesh</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Shaders\Default.hlsl">
       <Filter>Shaders</Filter>
     </None>
     <None Include="packages.config" />
-    <None Include="Shaders\Simple.hlsl">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="Shaders\Sprite.hlsl">
       <Filter>Shaders</Filter>
     </None>
@@ -206,6 +218,9 @@
     </None>
     <None Include="BasicMeshObject.h">
       <Filter>[Deleted]\BasicMeshObject</Filter>
+    </None>
+    <None Include="Shaders\Simple.hlsl">
+      <Filter>[Deleted]\Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
@@ -244,7 +259,7 @@
       <Filter>Renderer\ConstantBufferManager</Filter>
     </ClCompile>
     <ClCompile Include="SpriteObject.cpp">
-      <Filter>Renderer\SpriteObject</Filter>
+      <Filter>RenderAssets\SpriteObject</Filter>
     </ClCompile>
     <ClCompile Include="D3D12PSOCache.cpp">
       <Filter>Renderer\PSOPool</Filter>
@@ -259,7 +274,7 @@
       <Filter>RenderAssets</Filter>
     </ClCompile>
     <ClCompile Include="Grid_RenderMesh.cpp">
-      <Filter>RenderAssets\ColorRenderMesh\Grid</Filter>
+      <Filter>RenderAssets\Mesh\ColorRenderMesh\Grid</Filter>
     </ClCompile>
     <ClCompile Include="FlyCamera.cpp">
       <Filter>Renderer\D3D12Renderer\Camera</Filter>
@@ -268,7 +283,7 @@
       <Filter>Engine\Timer</Filter>
     </ClCompile>
     <ClCompile Include="TextureRenderMesh.cpp">
-      <Filter>RenderAssets\TextureRenderMesh</Filter>
+      <Filter>RenderAssets\Mesh\TextureRenderMesh</Filter>
     </ClCompile>
     <ClCompile Include="ScreenStreamer.cpp" />
     <ClCompile Include="StreamingHeader.cpp" />
@@ -288,7 +303,13 @@
       <Filter>Game</Filter>
     </ClCompile>
     <ClCompile Include="ColorRenderMesh.cpp">
-      <Filter>RenderAssets\ColorRenderMesh</Filter>
+      <Filter>RenderAssets\Mesh\ColorRenderMesh</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderQueue.cpp">
+      <Filter>Renderer\RenderQueue</Filter>
+    </ClCompile>
+    <ClCompile Include="IRenderMesh.cpp">
+      <Filter>RenderAssets\Mesh</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

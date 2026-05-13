@@ -151,6 +151,8 @@
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
+    <ClInclude Include="IRenderMesh.h" />
+    <ClInclude Include="RenderQueue.h" />
     <ClInclude Include="ScreenStreamer.h" />
     <ClInclude Include="StreamingHeader.h" />
     <ClInclude Include="TextureManager.h" />
@@ -187,6 +189,8 @@
     <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
+    <ClCompile Include="IRenderMesh.cpp" />
+    <ClCompile Include="RenderQueue.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />
     <ClCompile Include="StreamingHeader.cpp" />
     <ClCompile Include="TextureManager.cpp" />

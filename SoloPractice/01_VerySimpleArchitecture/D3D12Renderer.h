@@ -14,6 +14,8 @@ class FlyCamera;
 class ScreenCapturer;
 class FontManager;
 class TextureManager;
+class RenderQueue;
+class IRenderMesh;
 
 class D3D12Renderer
 {
@@ -34,11 +36,11 @@ public:
 	bool UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight);
 
 	// Render Mesh
-	void DeleteRenderMesh(void* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
-	void DrawRenderMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld, E_RENDER_MESH_TYPE _eRenderMeshType);
-	void DrawOutlineMesh(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
+	void DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
+	void DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld);
+	void DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld);
 
-	// Reder Grid
+	// Render Grid
 	void DrawGrid();
 	void UpdateGridWorldMatrix(UINT _gridCellOffset = 25);
 	
@@ -137,6 +139,8 @@ private:
 	std::unique_ptr<FontManager> m_pFontManager;
 	// Texture Manager
 	std::unique_ptr<TextureManager> m_pTextureManager;
+	// Render Queue
+	std::unique_ptr<RenderQueue> m_pRenderQueue;
 
 	UINT64 m_ui64FenceValue;
 	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.

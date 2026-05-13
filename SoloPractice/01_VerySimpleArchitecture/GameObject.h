@@ -2,6 +2,7 @@
 
 class Game;
 class D3D12Renderer;
+class IRenderMesh;
 
 class GameObject
 {
@@ -27,7 +28,7 @@ private:
 private:
 	Game* m_pGame;
 	D3D12Renderer* m_pRenderer;
-	void* m_pMeshObj;
+	IRenderMesh* m_pMeshObj;
 
 	XMVECTOR m_Scale;
 	XMVECTOR m_Pos;

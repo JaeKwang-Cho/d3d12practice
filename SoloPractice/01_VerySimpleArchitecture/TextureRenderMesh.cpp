@@ -22,7 +22,7 @@ bool TextureRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPO
 	return bResult;
 }
 
-void TextureRenderMesh::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -149,7 +149,7 @@ void TextureRenderMesh::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const X
 	}
 }
 
-void TextureRenderMesh::DrawOutline(D3D12GraphicsCommandList_ptr _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::DrawOutline(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
