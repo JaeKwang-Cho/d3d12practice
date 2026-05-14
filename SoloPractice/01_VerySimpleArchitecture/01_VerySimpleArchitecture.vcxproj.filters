@@ -97,6 +97,9 @@
     <Filter Include="RenderAssets\Mesh\TextureRenderMesh">
       <UniqueIdentifier>{dd0d1fc3-f541-4e76-9e84-ba70613cc59e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\CommandListPool">
+      <UniqueIdentifier>{4f159ed3-5b54-485f-8827-b800a942a0c4}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -188,6 +191,9 @@
     </ClInclude>
     <ClInclude Include="IRenderMesh.h">
       <Filter>RenderAssets\Mesh</Filter>
+    </ClInclude>
+    <ClInclude Include="CommandListPool.h">
+      <Filter>Renderer\CommandListPool</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -310,6 +316,9 @@
     </ClCompile>
     <ClCompile Include="IRenderMesh.cpp">
       <Filter>RenderAssets\Mesh</Filter>
+    </ClCompile>
+    <ClCompile Include="CommandListPool.cpp">
+      <Filter>Renderer\CommandListPool</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

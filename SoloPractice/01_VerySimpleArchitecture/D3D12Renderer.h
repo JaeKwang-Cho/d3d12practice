@@ -16,6 +16,9 @@ class FontManager;
 class TextureManager;
 class RenderQueue;
 class IRenderMesh;
+class CommandListPool;
+
+#define USE_MULTIPLE_COMMAND_LIST (1)
 
 class D3D12Renderer
 {
@@ -84,12 +87,13 @@ public:
 	void OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y);
 	void OnKeyboardInput_Renderer(const GameTimer& _gameTimer);
 
+	// 
+	ULONG GetCommandListCount();
+
 	void FlushMultiRendering();
 
 protected:
 private:
-	void CreateCommandList();
-
 	bool CreateDescriptorHeapForRTV();
 	bool CreateDescriptorHeapForDSV();
 	bool CreateDepthStencil(UINT _width, UINT _height);
@@ -119,8 +123,9 @@ private:
 	
 	// 중첩 렌더링을 위해 Command Allocator와 Command List를 여러개 가진다.
 	// 이러면 Fence가 좀더 여유로워 지고 GPU의 부하를 늘려줘서 프레임이 빨라진다.
-	D3D12CommandAllocator_ptr m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
-	D3D12GraphicsCommandList_ptr m_ppCommandList[MAX_PENDING_FRAME_COUNT];
+	//D3D12CommandAllocator_ptr m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
+	//D3D12GraphicsCommandList_ptr m_ppCommandList[MAX_PENDING_FRAME_COUNT];
+	std::unique_ptr<CommandListPool> m_ppCommandListPool[MAX_PENDING_FRAME_COUNT];
 	// Frame 별 한번씩 넘어가는 CBV이다.
 	D3D12Resource_ptr m_ppFrameUploadCBs[MAX_PENDING_FRAME_COUNT];
 	void* m_ppFrameSystemMemAddrs[MAX_PENDING_FRAME_COUNT];

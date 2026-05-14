@@ -145,6 +145,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <None Include="BasicMeshObject.h" />
+    <ClInclude Include="CommandListPool.h" />
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="FontManager.h" />
     <ClInclude Include="Game.h" />
@@ -183,6 +184,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="BasicMeshObject.cpp" />
+    <ClCompile Include="CommandListPool.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="FontManager.cpp" />
     <ClCompile Include="Game.cpp" />

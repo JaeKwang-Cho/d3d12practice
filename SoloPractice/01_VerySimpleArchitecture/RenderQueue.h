@@ -45,6 +45,7 @@ struct RENDER_ITEM
 };
 
 class D3D12Renderer;
+class CommandListPool;
 
 class RenderQueue
 {
@@ -52,6 +53,7 @@ public:
 	bool Initialize(D3D12Renderer* _pRenderer, ULONG _ulMaxBufferSize);
 	bool AddRenderItem(const RENDER_ITEM& _RenderItem);
 	ULONG ProcessRenderItems(D3D12GraphicsCommandList_raw _pCommandList);
+	ULONG ProcessRenderItems(CommandListPool* _pCommandListPool, D3D12CommandQueue_raw _pCommandQueue, ULONG _ulProcessCountPerCommandList, D3D12_CPU_DESCRIPTOR_HANDLE _rtv, D3D12_CPU_DESCRIPTOR_HANDLE _dsv, const D3D12_VIEWPORT* _pViewport, const D3D12_RECT* _pScissorRect);
 
 	void ResetQueue();
 
@@ -59,6 +61,7 @@ public:
 	virtual ~RenderQueue();
 
 private:
+	void ProcessRenderItem_ITL(D3D12GraphicsCommandList_raw _pCommandList, const RENDER_ITEM* _pRenderItem);
 	const RENDER_ITEM* DispatchRenderItem();
 	void CleanupRenderItems();
 

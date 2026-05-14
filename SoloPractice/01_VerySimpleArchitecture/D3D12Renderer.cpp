@@ -22,6 +22,7 @@
 #include "VertexUtil.h"
 #include "RenderQueue.h"
 #include "IRenderMesh.h"
+#include "CommandListPool.h"
 
 #define PIXEL_STREAMING (0)
 
@@ -221,9 +222,6 @@ EXIT:
 	CreateDescriptorHeapForDSV();
 	CreateDepthStencil(m_dwWidth, m_dwHeight);
 
-	// #10 Command List를 만든다.
-	CreateCommandList();
-
 	// #11 fence를 정의한다.
 	// synchronization objects가 필요한 이유는, d3d12는 GPU에서 리소스를 사용하기 전에
 	// 그것을 해제해 버릴 수 있다. 그래서 이렇게 fence를 쳐줘서 없애기 전에 확인 해준다.
@@ -255,6 +253,10 @@ EXIT:
 		// Descriptor Pool
 		m_ppDescriptorPool[i] = std::make_unique<DescriptorPool>();
 		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
+
+		// Command List Pool
+		m_ppCommandListPool[i] = std::make_unique<CommandListPool>();
+		m_ppCommandListPool[i]->Initialize(m_pD3DDevice.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT, 256);
 	}
 	// SingleDescriptorAllocator
 	m_pSingleDescriptorAllocator = std::make_unique<SingleDescriptorAllocator>();
@@ -324,10 +326,9 @@ void D3D12Renderer::BeginRender()
 	// 화면 클리어 및 이번 프레임 렌더링을 위한 자료구조 초기화
 
 	// 현재 Rendering을 할 Command Allocator와 List에 대해서 초기화를 진행한다.
+	/*
 	D3D12CommandAllocator_ptr pCommandAllocator = m_ppCommandAllocator[m_dwCurContextIndex];
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
-
-	if (FAILED(pCommandAllocator->Reset())) {
+	ifMicrosoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex]; (FAILED(pCommandAllocator->Reset())) {
 		__debugbreak();
 	}
 	// 당장은 PSO가 없기 때문에 nullptr으로 초기화 한다.
@@ -335,13 +336,18 @@ void D3D12Renderer::BeginRender()
 		__debugbreak();
 	}
 
-	// 현재 백버퍼 인덱스에 맞는 RTV를 얻어온다.
-	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
-	// 그리고 RT Resource 위에 그릴 수 있게, PRESENT에서 RENDER_TARGET으로 바꿔준다.
+	*/
+	// pool 에서 가져오기
+	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex].get();
+	D3D12GraphicsCommandList_raw pCommandList = pCommandListPool->GetCurrentCommandList();
+
+	//RT Resource 위에 그릴 수 있게, PRESENT에서 RENDER_TARGET으로 바꿔준다.
 	// (이것 역시 완전 비공기 API인 D3D12를 위해 Resource를 보호하는 방법이다.)
 	D3D12_RESOURCE_BARRIER trans_PRESENT_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	pCommandList->ResourceBarrier(1, &trans_PRESENT_RT);
 
+	// 현재 백버퍼 인덱스에 맞는 RTV를 얻어온다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
 	// DSV도 얻어온다.
 	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -351,12 +357,10 @@ void D3D12Renderer::BeginRender()
 	// DSV도 적절히 초기화 해준다.
 	pCommandList->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.f, 0, 0, nullptr);
 
-	// viewport, scissor rect, render target을 설정해줘야
-	// 그 위에 뭔가를 그릴 수 있다.
-	pCommandList->RSSetViewports(1, &m_Viewport);
-	pCommandList->RSSetScissorRects(1, &m_ScissorRect);
-	// 이제 z버퍼를 함께 넣어준다.
-	pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
+	// 즉시 실행
+	pCommandListPool->CloseAndExecuteCurrentCommandList(m_pCommandQueue.Get());
+
+	DoFence();
 }
 
 void D3D12Renderer::CopyRenderTarget()
@@ -393,20 +397,26 @@ void D3D12Renderer::CopyRenderTarget()
 
 void D3D12Renderer::EndRender()
 {
-	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_dwCurContextIndex].Get();
+	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex].get();
 
-	m_pRenderQueue->ProcessRenderItems(pCommandList);
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
+
+#ifdef USE_MULTIPLE_COMMAND_LIST
+	m_pRenderQueue->ProcessRenderItems(pCommandListPool, m_pCommandQueue.Get(), 400, rtvHandle, dsvHandle, &m_Viewport, &m_ScissorRect);
+#else
+	m_pRenderQueue->ProcessRenderItems(pCommandListPool, m_pCommandQueue.Get(), (ULONG)-1, rtvHandle, dsvHandle, &m_Viewport, &m_ScissorRect);
+#endif
 
 	// 그릴 것을 다 그렸으니 이제 Render target의 상태를 ResourceBarrier 상태를 PRESENT로 바꾼다.
 	D3D12_RESOURCE_BARRIER trans_RT_PRESENT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+
+	D3D12GraphicsCommandList_raw pCommandList = pCommandListPool->GetCurrentCommandList();
+	pCommandList = pCommandListPool->GetCurrentCommandList();
 	pCommandList->ResourceBarrier(1, &trans_RT_PRESENT);
 
-	// 마지막에 close를 걸고
-	pCommandList->Close();
-
-	// queue로 넘겨준다. (여기까지의 과정을 매 프레임마다 하는 것이다.)
-	ID3D12CommandList* ppCommandLists[] = { pCommandList};
-	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	pCommandListPool->CloseAndExecuteCurrentCommandList(m_pCommandQueue.Get());
 
 	m_pRenderQueue->ResetQueue();
 }
@@ -460,6 +470,7 @@ void D3D12Renderer::Present()
 	// 한 프레임이 끝났으니 0으로 초기화 한다.
 	m_ppConstantBufferManager[dwNextContextIndex]->Reset();
 	m_ppDescriptorPool[dwNextContextIndex]->Reset();
+	m_ppCommandListPool[dwNextContextIndex]->ResetCommandListPool();
 	m_dwCurContextIndex = dwNextContextIndex;
  }
 
@@ -670,8 +681,6 @@ void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
 
 void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
 {
-	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
-
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
 	item.SpriteParam.pSprite = _pSpriteObjHandle;
@@ -697,8 +706,6 @@ void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int 
 
 void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
 {
-	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
-	
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
 	item.SpriteParam.pSprite = _pSpriteObjHandle;
@@ -887,34 +894,20 @@ void D3D12Renderer::OnKeyboardInput_Renderer(const GameTimer& _gameTimer)
 		m_flyCamera->Ascend(_gameTimer.GetDeltaTime() * -15.f);
 }
 
+ULONG D3D12Renderer::GetCommandListCount()
+{
+	ULONG ulCommandListCount = 0;
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		ulCommandListCount += m_ppCommandListPool[i]->GetTotalCommandListCount();
+	}
+	return ulCommandListCount;
+}
+
 void D3D12Renderer::FlushMultiRendering()
 {
 	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
-	}
-}
-
-void D3D12Renderer::CreateCommandList()
-{
-	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		D3D12CommandAllocator_ptr pCommandAllocator = nullptr;
-		D3D12GraphicsCommandList_ptr pCommandList = nullptr;
-
-		// command list는 command allocator와 command list로 나뉘어져 있다.
-		if (FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(pCommandAllocator.GetAddressOf())))) {
-			__debugbreak();
-		}
-		pCommandAllocator->SetName(L"Command Allocator");
-		if (FAILED(m_pD3DDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pCommandAllocator.Get(), nullptr, IID_PPV_ARGS(pCommandList.GetAddressOf())))) {
-			__debugbreak();
-		}
-		pCommandList->SetName(L"Command List");
-		// 일단 처음에는 close를 해준다.
-		pCommandList->Close();
-
-		m_ppCommandAllocator[i] = pCommandAllocator;
-		m_ppCommandList[i] = pCommandList;
 	}
 }
 
@@ -1180,10 +1173,10 @@ void D3D12Renderer::ReleaseAllTextureHandles()
 }
 
 D3D12Renderer::D3D12Renderer()
-	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), m_ppCommandAllocator{},
+	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), 
 	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, 
 	m_pSingleDescriptorAllocator(nullptr), m_pD3D12PSOCache(nullptr),
-	m_ppCommandList{}, m_ppFrameUploadCBs{}, m_ppFrameSystemMemAddrs{},
+	m_ppFrameUploadCBs{}, m_ppFrameSystemMemAddrs{},
 	m_ui64FenceValue(0), m_pui64LastFenceValue{},
 	m_FeatureLevel(D3D_FEATURE_LEVEL_11_0),
 	m_AdaptorDesc{}, m_pSwapChain(nullptr), m_pRenderTargets{}, m_pDepthStencil(nullptr),
