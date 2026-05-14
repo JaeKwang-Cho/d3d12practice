@@ -40,7 +40,7 @@ ULONG RenderQueue::ProcessRenderItems(D3D12GraphicsCommandList_raw _pCommandList
 		switch (pRenderItem->Type) {
 			case RENDER_ITEM_TYPE::MESH:
 			{
-				IRenderMesh* pMesh = static_cast<IRenderMesh*>(pRenderItem->pObjHandle);
+				IRenderMesh* pMesh = static_cast<IRenderMesh*>(pRenderItem->MeshObjParam.pMesh);
 				switch (pRenderItem->MeshObjParam.Pass) {
 					case RENDER_MESH_PASS::Default:
 						pMesh->Draw(_pCommandList, &pRenderItem->MeshObjParam.matWorld);
@@ -56,7 +56,7 @@ ULONG RenderQueue::ProcessRenderItems(D3D12GraphicsCommandList_raw _pCommandList
 			}break;
 			case RENDER_ITEM_TYPE::SPRITE:
 			{
-				SpriteObject* pSprite = static_cast<SpriteObject*>(pRenderItem->pObjHandle);
+				SpriteObject* pSprite = static_cast<SpriteObject*>(pRenderItem->SpriteParam.pSprite);
 
 				XMFLOAT2 Pos = {
 						static_cast<float>(pRenderItem->SpriteParam.iPosX),

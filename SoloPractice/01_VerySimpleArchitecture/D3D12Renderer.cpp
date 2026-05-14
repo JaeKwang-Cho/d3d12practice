@@ -552,8 +552,6 @@ void D3D12Renderer::DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle, E_RENDER_M
 
 void D3D12Renderer::DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
 {
-	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
-
 	RENDER_ITEM renderItem = {};
 	renderItem.Type = RENDER_ITEM_TYPE::MESH;
 	renderItem.MeshObjParam.pMesh = _pMeshObjectHandle;
@@ -676,7 +674,7 @@ void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int 
 
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
-	item.pObjHandle = _pSpriteObjHandle;
+	item.SpriteParam.pSprite = _pSpriteObjHandle;
 	item.SpriteParam.iPosX = _posX;
 	item.SpriteParam.iPosY = _posY;
 	item.SpriteParam.fScaleX = _scaleX;
@@ -703,7 +701,7 @@ void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, 
 	
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
-	item.pObjHandle = _pSpriteObjHandle;
+	item.SpriteParam.pSprite = _pSpriteObjHandle;
 	item.SpriteParam.iPosX = _posX;
 	item.SpriteParam.iPosY = _posY;
 	item.SpriteParam.fScaleX = _scaleX;

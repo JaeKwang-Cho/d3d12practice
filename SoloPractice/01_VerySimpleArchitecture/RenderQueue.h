@@ -31,13 +31,13 @@ struct RENDER_SPRITE_PARAM
 	bool bUseRect;
 
 	float ZValue;
+	void* pSprite;
 	void* pTexHandle;
 };
 
 struct RENDER_ITEM
 {	
 	RENDER_ITEM_TYPE Type;
-	void* pObjHandle;
 	union {
 		RENDER_MESH_OBJ_PARAM MeshObjParam;
 		RENDER_SPRITE_PARAM SpriteParam;

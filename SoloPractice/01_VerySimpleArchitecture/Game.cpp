@@ -34,8 +34,8 @@ bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV
 			if (pGameObj)
 			{
 				float x = (float)((rand() % 13) - 7);	// -7m - 5m 
-				float y = 0.0f;
-				float z = (float)((rand() % 13) - 7);	// -3m - 3m 
+				float y = (float)((rand() % 7)	- 3);	// -3m - 3m
+				float z = (float)((rand() % 13) - 7);	// -7m - 5m
 				pGameObj->SetGameObjectPosition(x, y, z);
 				float rad = (rand() % 181) * (3.1415f / 180.0f);
 				pGameObj->SetGameObjectRotationY(rad);
@@ -51,8 +51,6 @@ bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV
 
 void Game::Run()
 {
-	m_FrameCount++;
-
 	ULONGLONG CurTick = GetTickCount64();
 
 	Update(CurTick);
@@ -139,6 +137,8 @@ void Game::OnKeyboardInput()
 
 void Game::Render()
 {
+	m_FrameCount++;
+
 	m_pRenderer->BeginRender();
 	// Render Game Objects
 	for (auto& pair : m_GameObjects)
