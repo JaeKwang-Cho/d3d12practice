@@ -22,13 +22,13 @@ bool TextureRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPO
 	return bResult;
 }
 
-void TextureRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
@@ -40,7 +40,7 @@ void TextureRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const X
 	}
 
 	// 모델별로 넘어가는 CB
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT, _ulThreadIndex);
 	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
 	if (!pCB) {
 		__debugbreak();
@@ -84,7 +84,7 @@ void TextureRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const X
 
 		// Material
 		// 머테리얼은 부위마다 다를 수 있고, 시간에 따라 바뀔 수도 있다.
-		ConstantBufferPool* pMatCBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::MATERIAL);
+		ConstantBufferPool* pMatCBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::MATERIAL, _ulThreadIndex);
 
 		CB_CONTAINER* pMatCB = pMatCBufferPool->Alloc();
 		if (!pMatCB) {
@@ -149,13 +149,13 @@ void TextureRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const X
 	}
 }
 
-void TextureRenderMesh::DrawOutline(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
+void TextureRenderMesh::DrawOutline(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
@@ -167,7 +167,7 @@ void TextureRenderMesh::DrawOutline(D3D12GraphicsCommandList_raw _pCommandList, 
 	}
 
 	// 모델별로 넘어가는 CB
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT, _ulThreadIndex);
 
 	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
 	if (!pCB) {

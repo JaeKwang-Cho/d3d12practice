@@ -96,7 +96,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MSG msg = {};
 
 	g_pGame = new Game;
-	g_pGame->Initialize_Game(g_hWnd, true, true);
+	//g_pGame->Initialize_Game(g_hWnd, true, true);
+    g_pGame->Initialize_Game(g_hWnd, false, false);
 
     // 기본으로 PeekMessage를 사용
     while (msg.message != WM_QUIT) {

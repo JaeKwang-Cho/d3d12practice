@@ -31,20 +31,7 @@ EXIT:
 	return bResult;
 }
 
-ULONG RenderQueue::ProcessRenderItems(D3D12GraphicsCommandList_raw _pCommandList)
-{
-	D3D12Device_raw pDevice = m_pRenderer->INL_GetD3DDevice();
-
-	ULONG uiCurrItemCount = 0;
-	const RENDER_ITEM* pRenderItem = nullptr;
-	while (pRenderItem = DispatchRenderItem()) {
-		ProcessRenderItem_ITL(_pCommandList, pRenderItem);
-		uiCurrItemCount++;
-	}
-	return uiCurrItemCount;
-}
-
-ULONG RenderQueue::ProcessRenderItems(CommandListPool* _pCommandListPool, D3D12CommandQueue_raw _pCommandQueue, ULONG _ulProcessCountPerCommandList, D3D12_CPU_DESCRIPTOR_HANDLE _rtv, D3D12_CPU_DESCRIPTOR_HANDLE _dsv, const D3D12_VIEWPORT* _pViewport, const D3D12_RECT* _pScissorRect)
+ULONG RenderQueue::ProcessRenderItems(ULONG _ulThreadIndex, CommandListPool* _pCommandListPool, D3D12CommandQueue_raw _pCommandQueue, ULONG _ulProcessCountPerCommandList, D3D12_CPU_DESCRIPTOR_HANDLE _rtv, D3D12_CPU_DESCRIPTOR_HANDLE _dsv, const D3D12_VIEWPORT* _pViewport, const D3D12_RECT* _pScissorRect)
 {
 	D3D12Device_raw pDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -66,11 +53,11 @@ ULONG RenderQueue::ProcessRenderItems(CommandListPool* _pCommandListPool, D3D12C
 		// 이제 z버퍼를 함께 넣어준다.
 		pCommandList->OMSetRenderTargets(1, &_rtv, FALSE, &_dsv);
 
-		ProcessRenderItem_ITL(pCommandList, pRenderItem);
+		ProcessRenderItem_ITL(_ulThreadIndex, pCommandList, pRenderItem);
 
 		uiProcessedItemCount++;
 		uiProcessedItemCountPerCommandList++;
-		if(uiProcessedItemCountPerCommandList >= _ulProcessCountPerCommandList)
+		if (uiProcessedItemCountPerCommandList >= _ulProcessCountPerCommandList)
 		{
 			_pCommandListPool->CloseCurrentCommandList();
 			ppCommandList[ulCommandListCount] = pCommandList;
@@ -112,7 +99,7 @@ RenderQueue::~RenderQueue()
 	CleanupRenderItems();
 }
 
-void RenderQueue::ProcessRenderItem_ITL(D3D12GraphicsCommandList_raw _pCommandList, const RENDER_ITEM* _pRenderItem)
+void RenderQueue::ProcessRenderItem_ITL(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const RENDER_ITEM* _pRenderItem)
 {
 	D3D12Device_raw pDevice = m_pRenderer->INL_GetD3DDevice();
 
@@ -122,11 +109,11 @@ void RenderQueue::ProcessRenderItem_ITL(D3D12GraphicsCommandList_raw _pCommandLi
 		IRenderMesh* pMesh = static_cast<IRenderMesh*>(_pRenderItem->MeshObjParam.pMesh);
 		switch (_pRenderItem->MeshObjParam.Pass) {
 		case RENDER_MESH_PASS::Default:
-			pMesh->Draw(_pCommandList, &_pRenderItem->MeshObjParam.matWorld);
+			pMesh->Draw(_ulThreadIndex, _pCommandList, &_pRenderItem->MeshObjParam.matWorld);
 			break;
 		case RENDER_MESH_PASS::Outline:
 			if (pMesh->SupportsOutline()) {
-				pMesh->DrawOutline(_pCommandList, &_pRenderItem->MeshObjParam.matWorld);
+				pMesh->DrawOutline(_ulThreadIndex, _pCommandList, &_pRenderItem->MeshObjParam.matWorld);
 			}
 			break;
 		default:
@@ -162,10 +149,10 @@ void RenderQueue::ProcessRenderItem_ITL(D3D12GraphicsCommandList_raw _pCommandLi
 				pTexHandle->bUpdated = false;
 			}
 
-			pSprite->DrawWithTex(_pCommandList, &Pos, &Scale, pRect, Z, pTexHandle);
+			pSprite->DrawWithTex(_ulThreadIndex	, _pCommandList, &Pos, &Scale, pRect, Z, pTexHandle);
 		}
 		else {
-			pSprite->Draw(_pCommandList, &Pos, &Scale, Z);
+			pSprite->Draw(_ulThreadIndex, _pCommandList, &Pos, &Scale, Z);
 		}
 	}break;
 	default:

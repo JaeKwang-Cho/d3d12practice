@@ -37,8 +37,8 @@ void BasicMeshObject::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMM
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT, TODO);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool();
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};

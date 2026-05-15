@@ -26,16 +26,16 @@ bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV
 	m_pSpriteObjCommon = m_pRenderer->CreateSpriteObject();
 
 	{// Test - Create Game Objects
-		const ULONG GAME_OBJ_COUNT = 100;
+		const ULONG GAME_OBJ_COUNT = 1000;
 
 		for (DWORD i = 0; i < GAME_OBJ_COUNT; i++)
 		{
 			GameObject* pGameObj = CreateGameObject();
 			if (pGameObj)
 			{
-				float x = (float)((rand() % 13) - 7);	// -7m - 5m 
-				float y = (float)((rand() % 7)	- 3);	// -3m - 3m
-				float z = (float)((rand() % 13) - 7);	// -7m - 5m
+				float x = (float)((rand() % 29) - 7);	// -7m - 5m 
+				float y = (float)((rand() % 13)	- 3);	// -3m - 3m
+				float z = (float)((rand() % 29) - 7);	// -7m - 5m
 				pGameObj->SetGameObjectPosition(x, y, z);
 				float rad = (rand() % 181) * (3.1415f / 180.0f);
 				pGameObj->SetGameObjectRotationY(rad);

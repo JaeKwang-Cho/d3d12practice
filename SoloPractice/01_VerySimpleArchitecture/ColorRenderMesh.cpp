@@ -22,14 +22,14 @@ bool ColorRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLO
 	return bResult;
 }
 
-void ColorRenderMesh::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
+void ColorRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT);
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT, _ulThreadIndex);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};

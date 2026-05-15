@@ -67,14 +67,14 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFil
 	return bResult;
 }
 
-void SpriteObject::DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
+void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::SPRITE);
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_DescriptorPool();
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::SPRITE, _ulThreadIndex);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	// 텍스쳐 정보를 받는다.
@@ -152,10 +152,10 @@ void SpriteObject::DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const
 	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 }
 
-void SpriteObject::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
+void SpriteObject::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
 {
 	XMFLOAT2 scale = { m_Scale.x * _pScale->x,  m_Scale.y * _pScale->y };
-	DrawWithTex(_pCommandList, _pPos, &scale, &m_Rect, _z, m_pTexHandle);
+	DrawWithTex(_ulThreadIndex, _pCommandList, _pPos, &scale, &m_Rect, _z, m_pTexHandle);
 }
 
 bool SpriteObject::InitCommonResources()

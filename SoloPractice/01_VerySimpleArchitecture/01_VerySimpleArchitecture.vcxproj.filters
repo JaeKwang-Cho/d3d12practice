@@ -100,6 +100,9 @@
     <Filter Include="Renderer\CommandListPool">
       <UniqueIdentifier>{4f159ed3-5b54-485f-8827-b800a942a0c4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\RenderThread">
+      <UniqueIdentifier>{38e4b964-4ab1-418e-8100-8d60e8e0feeb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -194,6 +197,9 @@
     </ClInclude>
     <ClInclude Include="CommandListPool.h">
       <Filter>Renderer\CommandListPool</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderThread.h">
+      <Filter>Renderer\RenderThread</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -319,6 +325,9 @@
     </ClCompile>
     <ClCompile Include="CommandListPool.cpp">
       <Filter>Renderer\CommandListPool</Filter>
+    </ClCompile>
+    <ClCompile Include="RenderThread.cpp">
+      <Filter>Renderer\RenderThread</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

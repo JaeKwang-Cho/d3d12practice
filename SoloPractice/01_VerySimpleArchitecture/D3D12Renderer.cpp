@@ -2,11 +2,10 @@
 
 #include "pch.h"
 #include "D3D12Renderer.h"
-#include <dxgidebug.h>
 #include "D3DUtil.h"
 #include "BasicMeshObject.h"
 #include "D3D12ResourceManager.h"
-#include "ConstantBufferPool.h"
+#include "RenderThread.h"
 #include "DescriptorPool.h"
 #include "SingleDescriptorAllocator.h"
 #include "ConstantBufferManager.h"
@@ -117,7 +116,7 @@ EXIT:
 	// d3ddevice를 생성하고
 	if (!m_pD3DDevice) {
 		__debugbreak();
-		goto RETURN;
+		return false;
 	}
 	m_pD3DDevice->SetName(L"device");
 	m_AdaptorDesc = AdaptorDesc;
@@ -139,7 +138,7 @@ EXIT:
 		hr = m_pD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_pCommandQueue));
 		if (FAILED(hr)) {
 			__debugbreak();
-			goto RETURN;
+			return false;
 		}
 	}
 	m_pCommandQueue->SetName(L"Command Queue");
@@ -240,23 +239,61 @@ EXIT:
 	m_pTextureManager = std::make_unique<TextureManager>();
 	m_pTextureManager->Initalize(this);
 
+#if USE_MULTI_THREAD_RENDERING
+	ULONG dwPhysicalCoreCount = 0;
+	{ // GetLogicalProcessorInformationEx 함수를 이용해서 물리 코어의 개수를 구한다.
+		DWORD len = 0;
+		GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &len);
+
+		SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* buffer =
+			(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)malloc(len);
+
+		if (!GetLogicalProcessorInformationEx(RelationProcessorCore, buffer, &len)) {
+			free(buffer);
+		}
+
+		BYTE* ptr = (BYTE*)buffer;
+		BYTE* end = ptr + len;
+
+		while (ptr < end) {
+			SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX* info =
+				(SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX*)ptr;
+
+			if (info->Relationship == RelationProcessorCore)
+				dwPhysicalCoreCount++;
+
+			ptr += info->Size;
+		}
+		free(buffer);
+	}
+	m_ulRenderThreadCount = dwPhysicalCoreCount;
+	if (m_ulRenderThreadCount > MAX_RENDER_THREAD_COUNT)
+		m_ulRenderThreadCount = MAX_RENDER_THREAD_COUNT;
+
+	InitRenderThreadPool();
+#else
+	m_ulRenderThreadCount = 1;
+#endif
+
 	// Render Queue
-	m_pRenderQueue = std::make_unique<RenderQueue>();
-	m_pRenderQueue->Initialize(this, 8192); // 8192개의 draw call이 한 프레임에 들어올 수 있다고 가정한다.
+	for (ULONG i = 0; i < m_ulRenderThreadCount; i++) {
+		m_pRenderQueue[i] = std::make_unique<RenderQueue>();
+		m_pRenderQueue[i]->Initialize(this, 8192); // 8192개의 draw call이 한 프레임에 들어올 수 있다고 가정한다.
+	}
 
 	// Command List당 pool도 각각 만들어준다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		// Constant Buffer Pool
-		m_ppConstantBufferManager[i] = std::make_unique<ConstantBufferManager>();
-		m_ppConstantBufferManager[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME);
-
-		// Descriptor Pool
-		m_ppDescriptorPool[i] = std::make_unique<DescriptorPool>();
-		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
-
-		// Command List Pool
-		m_ppCommandListPool[i] = std::make_unique<CommandListPool>();
-		m_ppCommandListPool[i]->Initialize(m_pD3DDevice.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT, 256);
+		for (ULONG j = 0; j < m_ulRenderThreadCount; j++) {
+			// Constant Buffer Pool
+			m_ppConstantBufferManager[i][j] = std::make_unique<ConstantBufferManager>();
+			m_ppConstantBufferManager[i][j]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME);
+			// Descriptor Pool
+			m_ppDescriptorPool[i][j] = std::make_unique<DescriptorPool>();
+			m_ppDescriptorPool[i][j]->Initialize(m_pD3DDevice, MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW); // draw call 한 번당 Descriptor 하나가 넘어간다.
+			// Command List Pool
+			m_ppCommandListPool[i][j] = std::make_unique<CommandListPool>();
+			m_ppCommandListPool[i][j]->Initialize(m_pD3DDevice.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT, 256);
+		}
 	}
 	// SingleDescriptorAllocator
 	m_pSingleDescriptorAllocator = std::make_unique<SingleDescriptorAllocator>();
@@ -287,7 +324,6 @@ EXIT:
 #endif
 
 	bResult = true;
-RETURN:
 	/*
 	if (pDebugController)
 	{
@@ -338,7 +374,7 @@ void D3D12Renderer::BeginRender()
 
 	*/
 	// pool 에서 가져오기
-	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex].get();
+	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex][0].get();
 	D3D12GraphicsCommandList_raw pCommandList = pCommandListPool->GetCurrentCommandList();
 
 	//RT Resource 위에 그릴 수 있게, PRESENT에서 RENDER_TARGET으로 바꿔준다.
@@ -397,16 +433,28 @@ void D3D12Renderer::CopyRenderTarget()
 
 void D3D12Renderer::EndRender()
 {
-	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex].get();
+	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex][0].get();
 
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
 	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
 
-#ifdef USE_MULTIPLE_COMMAND_LIST
-	m_pRenderQueue->ProcessRenderItems(pCommandListPool, m_pCommandQueue.Get(), 400, rtvHandle, dsvHandle, &m_Viewport, &m_ScissorRect);
+#ifdef USE_MULTI_THREAD_RENDERING
+	//  Tell each render thread to process its render items and wait for them to finish.
+	for(ULONG i = 1; i < m_ulRenderThreadCount; i++)
+	{
+		m_RenderThreadDescs[i].ProcessSignal.release();
+	}
+	ProcessByThread(0);
+	for(ULONG i = 1; i < m_ulRenderThreadCount; i++)
+	{
+		m_RenderThreadDescs[i].FinishSignal.acquire();
+	}
+
+	// Wait for all render threads to finish processing their render items before we present the frame.
+
 #else
-	m_pRenderQueue->ProcessRenderItems(pCommandListPool, m_pCommandQueue.Get(), (ULONG)-1, rtvHandle, dsvHandle, &m_Viewport, &m_ScissorRect);
+	ProcessByThread(0);
 #endif
 
 	// 그릴 것을 다 그렸으니 이제 Render target의 상태를 ResourceBarrier 상태를 PRESENT로 바꾼다.
@@ -418,7 +466,10 @@ void D3D12Renderer::EndRender()
 
 	pCommandListPool->CloseAndExecuteCurrentCommandList(m_pCommandQueue.Get());
 
-	m_pRenderQueue->ResetQueue();
+	for(ULONG i = 0; i< m_ulRenderThreadCount; i++)
+	{
+		m_pRenderQueue[i]->ResetQueue();
+	}
 }
 
 void D3D12Renderer::Present()
@@ -468,9 +519,12 @@ void D3D12Renderer::Present()
 #endif
 
 	// 한 프레임이 끝났으니 0으로 초기화 한다.
-	m_ppConstantBufferManager[dwNextContextIndex]->Reset();
-	m_ppDescriptorPool[dwNextContextIndex]->Reset();
-	m_ppCommandListPool[dwNextContextIndex]->ResetCommandListPool();
+	for(ULONG i = 0; i < m_ulRenderThreadCount; i++)
+	{
+		m_ppConstantBufferManager[dwNextContextIndex][i]->Reset();
+		m_ppDescriptorPool[dwNextContextIndex][i]->Reset();
+		m_ppCommandListPool[dwNextContextIndex][i]->ResetCommandListPool();
+	}
 	m_dwCurContextIndex = dwNextContextIndex;
  }
 
@@ -569,7 +623,7 @@ void D3D12Renderer::DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATR
 	renderItem.MeshObjParam.matWorld = *pMatWorld;
 	renderItem.MeshObjParam.Pass = RENDER_MESH_PASS::Default;
 
-	m_pRenderQueue->AddRenderItem(renderItem);
+	AddItemToRenderQueue(renderItem);
 }
 void D3D12Renderer::DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld)
 {
@@ -579,7 +633,7 @@ void D3D12Renderer::DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const XMMAT
 	item.MeshObjParam.matWorld = *_pMatWorld;
 	item.MeshObjParam.Pass = RENDER_MESH_PASS::Outline;
 
-	m_pRenderQueue->AddRenderItem(item);
+	AddItemToRenderQueue(item);
 }
 void D3D12Renderer::DrawGrid()
 {
@@ -701,7 +755,7 @@ void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int 
 	item.SpriteParam.pTexHandle = _pTexHandle;
 	item.SpriteParam.ZValue = _z;
 
-	m_pRenderQueue->AddRenderItem(item);
+	AddItemToRenderQueue(item);
 }
 
 void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
@@ -718,7 +772,7 @@ void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, 
 	item.SpriteParam.pTexHandle = nullptr;
 	item.SpriteParam.ZValue = _z;
 	
-	m_pRenderQueue->AddRenderItem(item);
+	AddItemToRenderQueue(item);
 }
 
 void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)
@@ -898,7 +952,10 @@ ULONG D3D12Renderer::GetCommandListCount()
 {
 	ULONG ulCommandListCount = 0;
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		ulCommandListCount += m_ppCommandListPool[i]->GetTotalCommandListCount();
+		for (DWORD j = 0; j < m_ulRenderThreadCount; j++) {
+			ulCommandListCount += m_ppCommandListPool[i][j]->GetTotalCommandListCount();
+		}
+		
 	}
 	return ulCommandListCount;
 }
@@ -1121,15 +1178,13 @@ void D3D12Renderer::CleanUpRenderer()
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
+	CleanUpRenderThreadPool();
+
 	ReleaseAllTextureHandles();
 
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		if (m_ppConstantBufferManager[i]) {
-			m_ppConstantBufferManager[i].reset();
-		}
-
-		if (m_ppDescriptorPool[i]) {
-			m_ppDescriptorPool[i].reset();
+		for (DWORD j = 0; j < m_ulRenderThreadCount; j++) {
+			// unique ptr이니까 소멸자에게 맡긴다.
 		}
 
 		if (m_ppFrameUploadCBs[i]) {
@@ -1172,6 +1227,79 @@ void D3D12Renderer::ReleaseAllTextureHandles()
 	m_pTextureManager.reset();
 }
 
+void D3D12Renderer::ProcessByThread(ULONG _ulThreadIndex)
+{
+	if (_ulThreadIndex >= m_ulRenderThreadCount) {
+#if _DEBUG
+		__debugbreak();
+#endif
+		return;
+	}
+
+	RenderQueue* pRenderQueue = m_pRenderQueue[_ulThreadIndex].get();
+	CommandListPool* pCommandListPool = m_ppCommandListPool[m_dwCurContextIndex][_ulThreadIndex].get();
+
+	if(!pRenderQueue || !pCommandListPool)
+	{
+		if (_ulThreadIndex != 0) {
+			m_RenderThreadDescs[_ulThreadIndex].FinishSignal.release();
+		}
+#if _DEBUG
+		__debugbreak();
+#endif
+		return;
+	}
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
+
+	pRenderQueue->ProcessRenderItems(_ulThreadIndex, pCommandListPool, m_pCommandQueue.Get(), 400, rtvHandle, dsvHandle,  &m_Viewport, &m_ScissorRect);
+
+	if(_ulThreadIndex != 0)
+	{
+		m_RenderThreadDescs[_ulThreadIndex].FinishSignal.release();
+	}
+}
+
+
+bool D3D12Renderer::InitRenderThreadPool()
+{
+	m_ulCurThreadIndex = 0;
+
+	for(ULONG i =0; i < m_ulRenderThreadCount; i++)
+	{
+		m_RenderThreadDescs[i].Renderer = this;
+		m_RenderThreadDescs[i].uiThreadIndex = i;
+	}
+
+	// 0번은 메인 스레드 관리 한다.
+	for(ULONG i = 1; i < m_ulRenderThreadCount; i++)
+	{
+		m_RenderThreadDescs[i].Thread = std::jthread(RenderThreadMain, &m_RenderThreadDescs[i]);
+	}
+
+	return true;
+}
+
+void D3D12Renderer::CleanUpRenderThreadPool()
+{
+	for(ULONG i = 0; i < m_ulRenderThreadCount; i++)
+	{
+		if (m_RenderThreadDescs[i].Thread.joinable())
+		{
+			m_RenderThreadDescs[i].Thread.request_stop();
+			m_RenderThreadDescs[i].ProcessSignal.release();
+			m_RenderThreadDescs[i].Thread.join();
+		}
+	}
+}
+
+void D3D12Renderer::AddItemToRenderQueue(const RENDER_ITEM& _RenderItem)
+{
+	m_pRenderQueue[m_ulCurThreadIndex]->AddRenderItem(_RenderItem);
+	m_ulCurThreadIndex = (m_ulCurThreadIndex + 1) % m_ulRenderThreadCount;
+}
+
 D3D12Renderer::D3D12Renderer()
 	: m_hWnd(nullptr), m_pD3DDevice(nullptr), m_pCommandQueue(nullptr), 
 	m_pResourceManager(nullptr), m_ppConstantBufferManager{}, m_ppDescriptorPool{}, 
@@ -1186,7 +1314,10 @@ D3D12Renderer::D3D12Renderer()
 	m_hFenceEvent(nullptr), m_pFence(nullptr), m_dwCurContextIndex(0),
 	m_Viewport{}, m_ScissorRect{},m_dwWidth(0),m_dwHeight(0),
 	m_flyCamera(nullptr), m_LastMousePos{},
-	m_pScreenStreamer(nullptr), bTryPixelStreaming(false), bCheckUpdateTexture(false)
+	m_pScreenStreamer(nullptr), bTryPixelStreaming(false), bCheckUpdateTexture(false),
+	m_pTextureManager(nullptr), m_pFontManager(nullptr), m_pGridRenderMesh(nullptr), 
+	m_matGridWorld{}, m_pRenderQueue{}, m_ulRenderThreadCount(0), m_ulCurThreadIndex(0),
+	m_RenderThreadDescs{}, m_ppCommandListPool{}
 {
 }
 
@@ -1200,16 +1331,16 @@ D3D12ResourceManager* D3D12Renderer::INL_GetResourceManager()
 	return m_pResourceManager.get();
 }
 
-ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type)
+ConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type, ULONG _ulThreadIndex)
 {
-	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex].get();
+	ConstantBufferManager* pConstBufferManager = m_ppConstantBufferManager[m_dwCurContextIndex][_ulThreadIndex].get();
 	ConstantBufferPool* pConstBufferPool = pConstBufferManager->GetConstantBufferPool(_type);
 	return pConstBufferPool;
 }
 
-DescriptorPool* D3D12Renderer::INL_DescriptorPool()
+DescriptorPool* D3D12Renderer::INL_GetDescriptorPool(ULONG _ulThreadIndex)
 {
-	return m_ppDescriptorPool[m_dwCurContextIndex].get();
+	return m_ppDescriptorPool[m_dwCurContextIndex][_ulThreadIndex].get();
 }
 
 SingleDescriptorAllocator* D3D12Renderer::INL_GetSingleDescriptorAllocator()

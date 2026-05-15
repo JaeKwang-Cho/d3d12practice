@@ -154,6 +154,7 @@
     <ClInclude Include="Grid_RenderMesh.h" />
     <ClInclude Include="IRenderMesh.h" />
     <ClInclude Include="RenderQueue.h" />
+    <ClInclude Include="RenderThread.h" />
     <ClInclude Include="ScreenStreamer.h" />
     <ClInclude Include="StreamingHeader.h" />
     <ClInclude Include="TextureManager.h" />
@@ -193,6 +194,7 @@
     <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="IRenderMesh.cpp" />
     <ClCompile Include="RenderQueue.cpp" />
+    <ClCompile Include="RenderThread.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />
     <ClCompile Include="StreamingHeader.cpp" />
     <ClCompile Include="TextureManager.cpp" />

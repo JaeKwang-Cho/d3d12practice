@@ -30,8 +30,8 @@ protected:
 
 public:
 	bool Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	virtual void Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
-	virtual void DrawOutline(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
+	virtual void Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
+	virtual void DrawOutline(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
 
 	void CreateRenderAssets(std::vector<TextureMeshData>& _ppMeshData, const UINT _meshDataCount);
 	[[deprecated("Use CreateRenderAssetsFromSingleMesh(...) instead.")]]

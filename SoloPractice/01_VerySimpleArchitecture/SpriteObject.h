@@ -29,8 +29,8 @@ private:
 public:
 	bool Initialize(D3D12Renderer* _pRenderer);
 	bool Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFileName, const RECT* _pRect);
-	void DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle);
-	void Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z);
+	void DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle);
+	void Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z);
 protected:
 private:
 	bool InitCommonResources();

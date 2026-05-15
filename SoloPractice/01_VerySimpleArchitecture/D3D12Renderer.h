@@ -3,6 +3,7 @@
 #pragma once
 
 #include <unordered_set>
+#include "RenderThread.h"
 
 class D3D12ResourceManager;
 class ConstantBufferPool;
@@ -17,14 +18,16 @@ class TextureManager;
 class RenderQueue;
 class IRenderMesh;
 class CommandListPool;
+struct RENDER_ITEM;
 
-#define USE_MULTIPLE_COMMAND_LIST (1)
+#define USE_MULTI_THREAD_RENDERING (1)
 
 class D3D12Renderer
 {
 public:
-	static const UINT MAX_DRAW_COUNT_PER_FRAME = 1024; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
-	static const UINT MAX_DESCRIPRTOR_COUNT = 4096; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
+	static const UINT MAX_DRAW_COUNT_PER_FRAME = 9192; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
+	static const UINT MAX_DESCRIPRTOR_COUNT = 9192; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
+	static const UINT MAX_RENDER_THREAD_COUNT = 8;
 public:
 	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
 
@@ -87,8 +90,9 @@ public:
 	void OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y);
 	void OnKeyboardInput_Renderer(const GameTimer& _gameTimer);
 
-	// 
 	ULONG GetCommandListCount();
+	// For Multi-Threaded Rendering
+	void ProcessByThread(ULONG _ulThreadIndex);
 
 	void FlushMultiRendering();
 
@@ -113,6 +117,11 @@ private:
 
 	void ReleaseAllTextureHandles();
 
+	// For Multi-Threaded Rendering
+	bool InitRenderThreadPool();
+	void CleanUpRenderThreadPool();
+	void AddItemToRenderQueue(const RENDER_ITEM& _RenderItem);
+
 public:
 
 protected:
@@ -121,11 +130,16 @@ private:
 	D3D12Device_ptr m_pD3DDevice; // 나중에 다 typedef로 바꾸기
 	D3D12CommandQueue_ptr m_pCommandQueue;
 	
-	// 중첩 렌더링을 위해 Command Allocator와 Command List를 여러개 가진다.
-	// 이러면 Fence가 좀더 여유로워 지고 GPU의 부하를 늘려줘서 프레임이 빨라진다.
-	//D3D12CommandAllocator_ptr m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT];
-	//D3D12GraphicsCommandList_ptr m_ppCommandList[MAX_PENDING_FRAME_COUNT];
-	std::unique_ptr<CommandListPool> m_ppCommandListPool[MAX_PENDING_FRAME_COUNT];
+	// For Multi-Threaded Rendering
+	std::unique_ptr<CommandListPool> m_ppCommandListPool[MAX_PENDING_FRAME_COUNT][MAX_RENDER_THREAD_COUNT];
+	std::unique_ptr<DescriptorPool> m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT][MAX_RENDER_THREAD_COUNT];
+	// 얘도 Render Pipeline에 bind되어서 쓰이는 애들이다. CommandList만 분리해서는 절대 안된다.
+	std::unique_ptr<ConstantBufferManager> m_ppConstantBufferManager[MAX_PENDING_FRAME_COUNT][MAX_RENDER_THREAD_COUNT]; // 이제 pool에서 바로 빼오는 것이 아니라 manager를 통해서 가져온다.
+	std::unique_ptr<RenderQueue> m_pRenderQueue[MAX_RENDER_THREAD_COUNT];// Render Queue
+	RENDER_THREAD_DESC m_RenderThreadDescs[MAX_RENDER_THREAD_COUNT];
+	ULONG m_ulRenderThreadCount;
+	ULONG m_ulCurThreadIndex;
+
 	// Frame 별 한번씩 넘어가는 CBV이다.
 	D3D12Resource_ptr m_ppFrameUploadCBs[MAX_PENDING_FRAME_COUNT];
 	void* m_ppFrameSystemMemAddrs[MAX_PENDING_FRAME_COUNT];
@@ -133,9 +147,8 @@ private:
 	// Resource를 GPU에 올려주는 친구
 	std::unique_ptr<D3D12ResourceManager> m_pResourceManager;
 	// CBV pool이랑 DescriptorPool 도 CommandList 마다 하나씩 만든다.
-	// 얘도 Render Pipeline에 bind되어서 쓰이는 애들이다. CommandList만 분리해서는 절대 안된다.
-	std::unique_ptr<ConstantBufferManager> m_ppConstantBufferManager[MAX_PENDING_FRAME_COUNT]; // 이제 pool에서 바로 빼오는 것이 아니라 manager를 통해서 가져온다.
-	std::unique_ptr<DescriptorPool> m_ppDescriptorPool[MAX_PENDING_FRAME_COUNT];
+
+	
 	// Descriptor(View)를 모아서 관리해주는 친구
 	std::unique_ptr<SingleDescriptorAllocator>	m_pSingleDescriptorAllocator;
 	// PSO를 캐싱해주는 친구
@@ -144,8 +157,7 @@ private:
 	std::unique_ptr<FontManager> m_pFontManager;
 	// Texture Manager
 	std::unique_ptr<TextureManager> m_pTextureManager;
-	// Render Queue
-	std::unique_ptr<RenderQueue> m_pRenderQueue;
+
 
 	UINT64 m_ui64FenceValue;
 	// CommandList 마다 기다리기를 바라는 Fence Value를 저장한다.
@@ -201,17 +213,17 @@ public:
 	D3D12Renderer();
 	virtual ~D3D12Renderer();
 
-	D3D12Device_raw INL_GetD3DDevice() { return m_pD3DDevice.Get(); }
+	D3D12Device_raw INL_GetD3DDevice() const { return m_pD3DDevice.Get(); }
 	D3D12ResourceManager* INL_GetResourceManager();
-	ConstantBufferPool* INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type);
-	DescriptorPool* INL_DescriptorPool();
-	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
+	ConstantBufferPool* INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE _type, ULONG _ulThreadIndex);
+	DescriptorPool* INL_GetDescriptorPool(ULONG _ulThreadIndex);
+	UINT INL_GetSrvDescriptorSize() const { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator();
 	D3D12PSOCache* INL_GetD3D12PSOCache();
 	void GetViewProjMatrix(XMMATRIX* _pOutMatView, XMMATRIX* _pOutMatProj);
 	DWORD INL_GetScreenWidth() const { return m_dwWidth; }
 	DWORD INL_GetScreenHeight() const { return m_dwHeight; }
-	D3D12Resource_raw INL_GetFrameCBResource() { return m_ppFrameUploadCBs[m_dwCurContextIndex].Get(); }
+	D3D12Resource_raw INL_GetFrameCBResource() const { return m_ppFrameUploadCBs[m_dwCurContextIndex].Get(); }
 	float INL_GetDPI() const { return m_fDPI; }
 
 
