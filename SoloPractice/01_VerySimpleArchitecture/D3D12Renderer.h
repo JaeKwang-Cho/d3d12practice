@@ -4,6 +4,7 @@
 
 #include <unordered_set>
 #include "RenderThread.h"
+#include "IRenderer.h"
 
 class D3D12ResourceManager;
 class ConstantBufferPool;
@@ -22,73 +23,72 @@ struct RENDER_ITEM;
 
 #define USE_MULTI_THREAD_RENDERING (1)
 
-class D3D12Renderer
+class D3D12Renderer : public IRenderer
 {
 public:
 	static const UINT MAX_DRAW_COUNT_PER_FRAME = 9192; // 한 프레임당 하나의 모델에 대해서 최대 그려질 횟수를 지정한다.
 	static const UINT MAX_DESCRIPRTOR_COUNT = 9192; // Shader Resource View로서 Bind될 친구들의 최대 개수를 지정한다.
 	static const UINT MAX_RENDER_THREAD_COUNT = 8;
 public:
-	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
+	virtual void SetAssetRootPath(const WCHAR* _wchAssetRootPath) override;
+	virtual void SetShaderRootPath(const WCHAR* _wchShaderRootPath) override;
 
-	void Update(const GameTimer& _gameTimer);
-	void TryPixelStreaming() { bTryPixelStreaming = true; };
+	virtual bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV) override;
 
-	void BeginRender();
-	void CopyRenderTarget();
-	void EndRender();
-	void Present();
+	virtual void Update(const GameTimer& _gameTimer) override;
+	virtual void BeginRender() override;
+	virtual void EndRender() override;
+	virtual void Present() override;
 
-	bool UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight);
+	virtual bool UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight) override;
 
-	// Render Mesh
-	void DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType);
-	void DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld);
-	void DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* _pMatWorld);
+	// Mesh
+	virtual IRenderMesh* CreateTextureRenderMesh(
+		const TextureMeshData& _mesh,
+		const std::vector<std::uint32_t>& _adjIndices,
+		const std::vector<SubmeshRange>& _ranges) override;
+	virtual void DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle) override;
+	virtual void BindTextureToMesh(IRenderMesh* _pMeshObjectHandle, TEXTURE_HANDLE* _pTexHandle, UINT _subRenderAssetIndex) override;
+	virtual void SetMeshMaterial(IRenderMesh* _pMeshObjectHandle, const CONSTANT_BUFFER_MATERIAL& _MaterialData, UINT _subRenderAssetIndex) override;
+	virtual void DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const DirectX::XMMATRIX* _pMatWorld) override;
+	virtual void DrawOutlineMesh(IRenderMesh* _pMeshObjectHandle, const DirectX::XMMATRIX* _pMatWorld) override;
 
-	// Render Grid
-	void DrawGrid();
-	void UpdateGridWorldMatrix(UINT _gridCellOffset = 25);
-	
-	// mesh
-#if 0
-	void* CreateBasicMeshObject();
-	void DeleteBasicMeshObject(void* _pMeshObjectHandle);
-	void RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld);
+	// Sprite
+	virtual SPRITE_HANDLE* CreateSpriteObject() override;
+	virtual SPRITE_HANDLE* CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height) ;
+	virtual void DeleteSpriteObject(SPRITE_HANDLE* _pSpriteObjHandle) override;
+	virtual void RenderSpriteWithTex(SPRITE_HANDLE* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle) override;
+	virtual void RenderSprite(SPRITE_HANDLE* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z) override;
 
-	bool BeginCreateMesh(void* _pMeshObjHandle, const ColorVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount);
-	bool InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName);
-	void EndCreateMesh(void* _pMeshObjHandle);
-#endif
-	// sprite
-	void* CreateSpriteObject();
-	void* CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height);
-	void DeleteSpriteObject(void* _pSpriteObjHandle);
-	void RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle);
-	void RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z);
-	void UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight);
-
-	// texture
-	void* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b);
-	void* CreateTextureFromFile(const WCHAR* _wchFileName);
-	void* CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight);
-	void DeleteTexture(void* _pTexHandle);
+	// Texture
+	virtual TEXTURE_HANDLE* CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b) override;
+	virtual TEXTURE_HANDLE* CreateTextureFromFile(const WCHAR* _wchFileName) override;
+	virtual TEXTURE_HANDLE* CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight) override;
+	virtual void UpdateTextureWithImage(TEXTURE_HANDLE* _pTexHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight) override;
+	virtual void DeleteTexture(TEXTURE_HANDLE* _pTexHandle) override;
 
 	// Font
-	std::unique_ptr<FONT_HANDLE> CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize);
-	bool WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen);
+	virtual FONT_HANDLE* CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize) override;
+	virtual void DeleteFontObject(FONT_HANDLE* _pFontHandle) override;
+	virtual bool WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, FONT_HANDLE* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen) override;
+
+	// Input
+	virtual void OnRButtonDown_Renderer(WPARAM _btnState, int _x, int _y) override;
+	virtual void OnRButtonUp_Renderer(WPARAM _btnState, int _x, int _y) override;
+	virtual void OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y) override;
+	virtual void OnKeyboardInput_Renderer(const GameTimer& _gameTimer) override;
+
+	// Grid
+	virtual void DrawGrid() override;
+	virtual void UpdateGridWorldMatrix(UINT _gridCellOffset = 25) override;
+
+public:
+	std::wstring ResolveAssetPath(const WCHAR* _wchPath) const;
+	std::wstring ResolveShaderPath(const WCHAR* _wchPath) const;
 
 	// PSO
 	D3D12PipelineState_raw GetPSO(std::string _strPSOName);
 	bool CachePSO(std::string _strPSOName, D3D12PipelineState_raw _pPSODesc);
-
-	// Camera
-
-	// Input
-	void OnRButtonDown_Renderer(WPARAM _btnState, int _x, int _y);
-	void OnRButtonUp_Renderer(WPARAM _btnState, int _x, int _y);
-	void OnMouseMove_Renderer(WPARAM _btnState, int _x, int _y);
-	void OnKeyboardInput_Renderer(const GameTimer& _gameTimer);
 
 	ULONG GetCommandListCount();
 	// For Multi-Threaded Rendering
@@ -209,6 +209,13 @@ private:
 
 	std::unordered_set<TEXTURE_HANDLE*> m_TextureHandles;
 
+	// Default Assets
+	TEXTURE_HANDLE* m_pDefaultWhiteTexture = nullptr;
+	CONSTANT_BUFFER_MATERIAL m_DefaultMaterial;
+
+	std::wstring m_strAssetRootPath;
+	std::wstring m_strShaderRootPath;
+
 public:
 	D3D12Renderer();
 	virtual ~D3D12Renderer();
@@ -226,6 +233,8 @@ public:
 	D3D12Resource_raw INL_GetFrameCBResource() const { return m_ppFrameUploadCBs[m_dwCurContextIndex].Get(); }
 	float INL_GetDPI() const { return m_fDPI; }
 
+	TEXTURE_HANDLE* INL_GetDefaultWhiteTexture() const { return m_pDefaultWhiteTexture; }
+	CONSTANT_BUFFER_MATERIAL INL_GetDefaultMaterial() const { return m_DefaultMaterial; }
 
 	XMFLOAT3 GetCameraWorldPos() const;
 };

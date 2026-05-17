@@ -1,16 +1,15 @@
 #include "pch.h"
 #include "GameObject.h"
 #include "Game.h"
-#include "D3D12Renderer.h"
-#include "VertexUtil.h"
-#include "TextureRenderMesh.h"
+#include "IRenderer.h"
+#include "MeshGenerator.h"
 
 bool GameObject::Initialize_GameObject(Game* _pGame)
 {
 	m_pGame = _pGame;
 	m_pRenderer = m_pGame->INL_GetRenderer();
 
-	m_pMeshObj = static_cast<IRenderMesh*>(CreateBoxMeshObject());
+	m_pMeshObj = CreateBoxMeshObject();
 	if(m_pMeshObj == nullptr)
 	{
 		__debugbreak();
@@ -68,44 +67,41 @@ void GameObject::Render()
 	}
 }
 
-void* GameObject::CreateBoxMeshObject()
+IRenderMesh* GameObject::CreateBoxMeshObject()
 {
-	TextureRenderMesh* pNewBox = nullptr;
-	// ±âº» Box
 	TextureMeshData meshData;
-	std::vector<uint32_t> AdjIndices;
-	std::vector<SubmeshRange> Ranges;
+	std::vector<std::uint32_t> adjIndices;
+	std::vector<SubmeshRange> ranges;
 
-	CreateCube(1.f, 1.f, 1.f, meshData, AdjIndices, Ranges);
+	CreateCube(1.f, 1.f, 1.f, meshData, adjIndices, ranges);
 
-	pNewBox = new TextureRenderMesh;
-	pNewBox->Initialize(m_pRenderer);
-
-	if(!pNewBox->CreateRenderAssetsFromSingleMesh(meshData, AdjIndices, Ranges))
+	IRenderMesh* pMeshObj = m_pRenderer->CreateTextureRenderMesh(meshData, adjIndices, ranges);
+	if (pMeshObj == nullptr)
 	{
-		delete pNewBox;
 		__debugbreak();
 		return nullptr;
 	}
 
-	const WCHAR* wchTexFileNameList[6] = {
-		L"../../Assets/tex_00.dds",
-		L"../../Assets/tex_01.dds",
-		L"../../Assets/tex_02.dds",
-		L"../../Assets/tex_03.dds",
-		L"../../Assets/tex_04.dds",
-		L"../../Assets/tex_05.dds"
+	const WCHAR* wchTexFileNameList[6] =
+	{
+		L"tex_00.dds",
+		L"tex_01.dds",
+		L"tex_02.dds",
+		L"tex_03.dds",
+		L"tex_04.dds",
+		L"tex_05.dds"
 	};
 
 	for (UINT i = 0; i < 6; i++)
 	{
 		TEXTURE_HANDLE* pTexture = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(wchTexFileNameList[i]));
-		pNewBox->BindTextureAssets(pTexture, i);
-		CONSTANT_BUFFER_MATERIAL whiteMat = CONSTANT_BUFFER_MATERIAL(XMFLOAT4(1.f, 1.f, 1.f, 1.f));
-		pNewBox->SetMaterial(whiteMat, i);
+		m_pRenderer->BindTextureToMesh(pMeshObj, pTexture, i);
+
+		CONSTANT_BUFFER_MATERIAL whiteMat(DirectX::XMFLOAT4(1.f, 1.f, 1.f, 1.f));
+		m_pRenderer->SetMeshMaterial(pMeshObj, whiteMat, i);
 	}
 
-	return pNewBox;
+	return pMeshObj;
 }
 
 void GameObject::UpdateTransform()
@@ -127,8 +123,7 @@ GameObject::GameObject() :
 void GameObject::Cleanup_GameObject()
 {
 	if (m_pMeshObj) {
-		TextureRenderMesh* pMesh = reinterpret_cast<TextureRenderMesh*>(m_pMeshObj);
-		delete pMesh;
+		m_pRenderer->DeleteRenderMesh(m_pMeshObj);
 		m_pMeshObj = nullptr;
 	}
 }

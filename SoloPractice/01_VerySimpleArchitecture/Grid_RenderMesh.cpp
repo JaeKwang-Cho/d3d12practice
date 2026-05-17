@@ -34,26 +34,25 @@ bool Grid_RenderMesh::InitPipelineState()
 #endif
 		HRESULT hr;
 
+		std::wstring strShaderFilePath = m_pRenderer->ResolveShaderPath(L"GridTile.hlsl");
+
 		// vertex shader를 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\GridTile.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(strShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
 		}
 		// Geometry shader 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\GridTile.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "GS", "gs_5_1", compileFlags, 0, pGeoShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(strShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "GS", "gs_5_1", compileFlags, 0, pGeoShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
 		}
 		// pixel shader도 컴파일 한다.
-		hr = D3DCompileFromFile(L".\\Shaders\\GridTile.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(strShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
-			// 메모 : 왜 때문인지 D3DCompiler_47.dll 로드 오류가 뜬다.
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();

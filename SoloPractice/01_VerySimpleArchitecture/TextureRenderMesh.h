@@ -11,14 +11,6 @@ enum class E_TEX_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ
 	END
 };
 
-struct SubmeshRange
-{
-	UINT startPosIndex;
-	UINT posIndexCount;
-	UINT startIndexIndex;
-	UINT indexIndexCount;
-};
-
 class TextureRenderMesh : public IRenderMesh
 {
 public:

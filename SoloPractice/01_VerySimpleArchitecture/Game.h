@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include "IRenderer.h"
 
 class D3D12Renderer;
 class GameObject;
@@ -8,7 +9,7 @@ class GameTimer;
 class Game
 {
 public:
-	bool Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV);
+	bool Initialize_Game(HWND _hWnd, std::unique_ptr<IRenderer> _pRenderer, bool _bEnableDebugLayer = false, bool _bEnableGBV = false);
 	void Run();
 	bool Update(ULONGLONG _CurTick);
 	
@@ -18,7 +19,7 @@ public:
 	void OnMouseMove(WPARAM _btnState, int _x, int _y);
 	void OnKeyboardInput();
 
-	D3D12Renderer* INL_GetRenderer() { return m_pRenderer.get(); }
+	IRenderer* INL_GetRenderer() { return m_pRenderer.get(); }
 
 	Game();
 	virtual ~Game();
@@ -32,15 +33,15 @@ private:
 	void Cleanup_Game();
 
 private:
-	std::unique_ptr<D3D12Renderer> m_pRenderer;
+	std::unique_ptr<IRenderer> m_pRenderer;
 	HWND m_hWnd;
-	void* m_pSpriteObjCommon;
+	SPRITE_HANDLE* m_pSpriteObjCommon;
  
 	BYTE* m_pTextImage;
 	UINT m_TextImageWidth;
 	UINT m_TextImageHeight;
-	void* m_pTextTextureHandle;
-	std::unique_ptr<FONT_HANDLE> m_pFontObj;
+	TEXTURE_HANDLE* m_pTextTextureHandle;
+	FONT_HANDLE* m_pFontObj;
 
 	GameTimer m_GameTimer;
 

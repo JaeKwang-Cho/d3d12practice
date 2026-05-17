@@ -67,6 +67,8 @@ void ColorRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _p
 	{
 		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
 		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
+		TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE = m_pRenderer->INL_GetDefaultWhiteTexture();
+
 		if (pTexHandle)
 		{
 			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);

@@ -14,7 +14,7 @@ bool FontManager::Initialize(D3D12Renderer* _pRenderer, D3D12CommandQueue_raw _p
     return true;
 }
 
-std::unique_ptr<FONT_HANDLE> FontManager::CreateFontObject_ITL(const WCHAR* _wchFontFamilyName, float _fFondSize)
+FONT_HANDLE* FontManager::CreateFontObject_ITL(const WCHAR* _wchFontFamilyName, float _fFondSize)
 {
 	Microsoft::WRL::ComPtr<IDWriteTextFormat3> pTextFormat = nullptr;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> pTextFormatBase = nullptr;
@@ -48,8 +48,7 @@ std::unique_ptr<FONT_HANDLE> FontManager::CreateFontObject_ITL(const WCHAR* _wch
         }
     }
 
-	std::unique_ptr<FONT_HANDLE> pFontHandle = std::make_unique<FONT_HANDLE>();
-    memset(pFontHandle.get(), 0, sizeof(FONT_HANDLE));
+	FONT_HANDLE* pFontHandle = new FONT_HANDLE;
 	wcsncpy_s(pFontHandle->wchFontFamilyName, _wchFontFamilyName, sizeof(pFontHandle->wchFontFamilyName) / sizeof(WCHAR));
 	pFontHandle->fFontSize = _fFondSize;
 
@@ -68,7 +67,12 @@ std::unique_ptr<FONT_HANDLE> FontManager::CreateFontObject_ITL(const WCHAR* _wch
 
 	pFontHandle->pTextFormat = pTextFormat.Detach();
 
-	return std::move(pFontHandle);
+	return pFontHandle;
+}
+
+void FontManager::DeleteFontObject_ITL(FONT_HANDLE* _pFontHandle)
+{
+	delete _pFontHandle;
 }
 
 bool FontManager::WriteTextToBitmap_ITL(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, FONT_HANDLE* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen)

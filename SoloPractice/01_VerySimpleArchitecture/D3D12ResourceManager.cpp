@@ -6,7 +6,6 @@
 #include "DirectXTexHeader.h"
 #include "DDSTextureLoader12.h"
 #include "WICTextureLoader12.h"
-#include "CommonAssets.h"
 
 bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 {

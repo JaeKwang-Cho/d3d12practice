@@ -146,13 +146,16 @@
   <ItemGroup>
     <None Include="BasicMeshObject.h" />
     <ClInclude Include="CommandListPool.h" />
+    <ClInclude Include="IRenderer_typedef.h" />
     <ClInclude Include="FlyCamera.h" />
     <ClInclude Include="FontManager.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="GameObject.h" />
     <ClInclude Include="GameTimer.h" />
     <ClInclude Include="Grid_RenderMesh.h" />
+    <ClInclude Include="IRenderer.h" />
     <ClInclude Include="IRenderMesh.h" />
+    <ClInclude Include="MeshGenerator.h" />
     <ClInclude Include="RenderQueue.h" />
     <ClInclude Include="RenderThread.h" />
     <ClInclude Include="ScreenStreamer.h" />
@@ -161,7 +164,6 @@
     <ClInclude Include="TextureRenderMesh.h" />
     <ClInclude Include="WICTextureLoader12.h" />
     <ClInclude Include="ColorRenderMesh.h" />
-    <ClInclude Include="CommonAssets.h" />
     <ClInclude Include="ConstantBufferManager.h" />
     <ClInclude Include="ConstantBufferPool.h" />
     <ClInclude Include="D3D12PSOCache.h" />
@@ -186,6 +188,7 @@
   <ItemGroup>
     <None Include="BasicMeshObject.cpp" />
     <ClCompile Include="CommandListPool.cpp" />
+    <ClCompile Include="D3D12Renderer_factory.cpp" />
     <ClCompile Include="FlyCamera.cpp" />
     <ClCompile Include="FontManager.cpp" />
     <ClCompile Include="Game.cpp" />
@@ -193,6 +196,7 @@
     <ClCompile Include="GameTimer.cpp" />
     <ClCompile Include="Grid_RenderMesh.cpp" />
     <ClCompile Include="IRenderMesh.cpp" />
+    <ClCompile Include="MeshGenerator.cpp" />
     <ClCompile Include="RenderQueue.cpp" />
     <ClCompile Include="RenderThread.cpp" />
     <ClCompile Include="ScreenStreamer.cpp" />
@@ -202,7 +206,6 @@
     <ClCompile Include="typedef.cpp" />
     <ClCompile Include="WICTextureLoader12.cpp" />
     <ClCompile Include="ColorRenderMesh.cpp" />
-    <ClCompile Include="CommonAssets.cpp" />
     <ClCompile Include="ConstantBufferManager.cpp" />
     <ClCompile Include="ConstantBufferPool.cpp" />
     <ClCompile Include="D3D12PSOCache.cpp" />

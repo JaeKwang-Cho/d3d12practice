@@ -21,7 +21,8 @@ class FontManager
 {
 public:
 	bool Initialize(D3D12Renderer* _pRenderer, D3D12CommandQueue_raw _pCommandQueue, UINT _Width, UINT _Height, bool _bEnableDebugLayer);
-	std::unique_ptr<FONT_HANDLE> CreateFontObject_ITL(const WCHAR* _wchFontFamilyName, float _fFondSize);
+	FONT_HANDLE* CreateFontObject_ITL(const WCHAR* _wchFontFamilyName, float _fFondSize);
+	void DeleteFontObject_ITL(FONT_HANDLE* _pFontHandle);
 
 	bool WriteTextToBitmap_ITL(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, FONT_HANDLE* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen);
 

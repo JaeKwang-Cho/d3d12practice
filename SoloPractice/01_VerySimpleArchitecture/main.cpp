@@ -4,6 +4,7 @@
 #include "pch.h"
 #include <windowsx.h>
 #include <shellapi.h>// 파일 드래그앤드롭
+#include <filesystem>
 
 // COM
 #include <combaseapi.h>
@@ -13,7 +14,7 @@
 
 // Game
 #include "Game.h"
-
+#include "IRenderer.h"
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -65,6 +66,13 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 // 초기화 함수
 bool InitWindow(HINSTANCE _hInstance);
 
+static std::filesystem::path GetExeDirectory()
+{
+    WCHAR wchModuleFileName[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, wchModuleFileName, MAX_PATH);
+    return std::filesystem::path(wchModuleFileName).parent_path();
+}
+
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
                      _In_ LPWSTR    lpCmdLine,
@@ -95,9 +103,28 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
    
     MSG msg = {};
 
-	g_pGame = new Game;
-	//g_pGame->Initialize_Game(g_hWnd, true, true);
-    g_pGame->Initialize_Game(g_hWnd, false, false);
+    g_pGame = new Game;
+    std::unique_ptr<IRenderer> pRenderer = CreateRenderer();
+    if (!pRenderer)
+    {
+        __debugbreak();
+        return FALSE;
+    }
+
+    std::filesystem::path exeDir = GetExeDirectory();
+    std::filesystem::path assetRootPath = (exeDir / L"../../Assets").lexically_normal();
+    std::filesystem::path shaderRootPath = (exeDir / L"Shaders").lexically_normal();
+
+    pRenderer->SetAssetRootPath(assetRootPath.c_str());
+    pRenderer->SetShaderRootPath(shaderRootPath.c_str());
+
+    if (!pRenderer->Initialize(g_hWnd, false, false))
+    {
+        __debugbreak();
+        return FALSE;
+    }
+
+    g_pGame->Initialize_Game(g_hWnd, std::move(pRenderer));
 
     // 기본으로 PeekMessage를 사용
     while (msg.message != WM_QUIT) {

@@ -103,6 +103,9 @@
     <Filter Include="Renderer\RenderThread">
       <UniqueIdentifier>{38e4b964-4ab1-418e-8100-8d60e8e0feeb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer_Interfaces">
+      <UniqueIdentifier>{cb568d11-4e20-47f9-9f04-5cd9fe9716f9}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -157,9 +160,6 @@
     <ClInclude Include="WICTextureLoader12.h">
       <Filter>Engine\Timer\DirectXTex\WICLoader</Filter>
     </ClInclude>
-    <ClInclude Include="CommonAssets.h">
-      <Filter>RenderAssets</Filter>
-    </ClInclude>
     <ClInclude Include="Grid_RenderMesh.h">
       <Filter>RenderAssets\Mesh\ColorRenderMesh\Grid</Filter>
     </ClInclude>
@@ -200,6 +200,15 @@
     </ClInclude>
     <ClInclude Include="RenderThread.h">
       <Filter>Renderer\RenderThread</Filter>
+    </ClInclude>
+    <ClInclude Include="IRenderer.h">
+      <Filter>Renderer_Interfaces</Filter>
+    </ClInclude>
+    <ClInclude Include="IRenderer_typedef.h">
+      <Filter>Renderer_Interfaces</Filter>
+    </ClInclude>
+    <ClInclude Include="MeshGenerator.h">
+      <Filter>Renderer_Interfaces</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -282,9 +291,6 @@
     <ClCompile Include="WICTextureLoader12.cpp">
       <Filter>Engine\Timer\DirectXTex\WICLoader</Filter>
     </ClCompile>
-    <ClCompile Include="CommonAssets.cpp">
-      <Filter>RenderAssets</Filter>
-    </ClCompile>
     <ClCompile Include="Grid_RenderMesh.cpp">
       <Filter>RenderAssets\Mesh\ColorRenderMesh\Grid</Filter>
     </ClCompile>
@@ -328,6 +334,12 @@
     </ClCompile>
     <ClCompile Include="RenderThread.cpp">
       <Filter>Renderer\RenderThread</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D12Renderer_factory.cpp">
+      <Filter>Renderer\D3D12Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="MeshGenerator.cpp">
+      <Filter>Renderer_Interfaces</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

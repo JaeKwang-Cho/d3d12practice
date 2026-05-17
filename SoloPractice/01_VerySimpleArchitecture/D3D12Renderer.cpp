@@ -22,8 +22,69 @@
 #include "RenderQueue.h"
 #include "IRenderMesh.h"
 #include "CommandListPool.h"
+#include <filesystem>
 
 #define PIXEL_STREAMING (0)
+
+namespace
+{
+	std::wstring NormalizeAbsolutePath(const WCHAR* _wchPath)
+	{
+		if (_wchPath == nullptr || _wchPath[0] == L'\0')
+		{
+			return std::wstring();
+		}
+
+		std::filesystem::path path(_wchPath);
+		if (!path.is_absolute())
+		{
+			path = std::filesystem::absolute(path);
+		}
+
+		return path.lexically_normal().wstring();
+	}
+
+	std::wstring ResolvePathWithRoot(const std::wstring& _strRootPath, const WCHAR* _wchPath)
+	{
+		if (_wchPath == nullptr || _wchPath[0] == L'\0')
+		{
+			return std::wstring();
+		}
+
+		std::filesystem::path path(_wchPath);
+		if (path.is_absolute())
+		{
+			return path.lexically_normal().wstring();
+		}
+
+		if (!_strRootPath.empty())
+		{
+			return (std::filesystem::path(_strRootPath) / path).lexically_normal().wstring();
+		}
+
+		return std::filesystem::absolute(path).lexically_normal().wstring();
+	}
+}
+
+void D3D12Renderer::SetAssetRootPath(const WCHAR* _wchAssetRootPath)
+{
+	m_strAssetRootPath = NormalizeAbsolutePath(_wchAssetRootPath);
+}
+
+void D3D12Renderer::SetShaderRootPath(const WCHAR* _wchShaderRootPath)
+{
+	m_strShaderRootPath = NormalizeAbsolutePath(_wchShaderRootPath);
+}
+
+std::wstring D3D12Renderer::ResolveAssetPath(const WCHAR* _wchPath) const
+{
+	return ResolvePathWithRoot(m_strAssetRootPath, _wchPath);
+}
+
+std::wstring D3D12Renderer::ResolveShaderPath(const WCHAR* _wchPath) const
+{
+	return ResolvePathWithRoot(m_strShaderRootPath, _wchPath);
+}
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
@@ -173,10 +234,10 @@ EXIT:
 
 		Microsoft::WRL::ComPtr<IDXGISwapChain1> pSwapChain1 = nullptr;
 		// DXGI와 윈도우 핸들을 가지고 swapchain을 만든다.
-		if (FAILED(pFactory->CreateSwapChainForHwnd(
+		hr = pFactory->CreateSwapChainForHwnd(
 			m_pCommandQueue.Get(), _hWnd, &swapChainDesc, &fsSwapChainDesc,
-			nullptr, pSwapChain1.GetAddressOf()
-		))) 
+			nullptr, pSwapChain1.GetAddressOf());
+		if (FAILED(hr))
 		{
 			__debugbreak();
 		}
@@ -317,6 +378,13 @@ EXIT:
 		m_pGridRenderMesh->CreateRenderAssets(gridData, 1);
 	}
 
+	// Init Common Resources
+	{
+		//m_pDefaultWhiteTexture = CreateTextureFromFile(L"../../Assets/white.png");
+		m_pDefaultWhiteTexture = CreateTextureFromFile(L"white.png");
+		m_DefaultMaterial = CONSTANT_BUFFER_MATERIAL();
+	}
+
 #if PIXEL_STREAMING
 	// ScreenCapturer
 	m_pScreenStreamer = std::make_unique<ScreenCapturer>();
@@ -397,38 +465,6 @@ void D3D12Renderer::BeginRender()
 	pCommandListPool->CloseAndExecuteCurrentCommandList(m_pCommandQueue.Get());
 
 	DoFence();
-}
-
-void D3D12Renderer::CopyRenderTarget()
-{
-#if PIXEL_STREAMING
-	if (bTryPixelStreaming == false && m_pScreenStreamer->CheckSendable() == false)
-	{
-		bCheckUpdateTexture = false;
-		return;
-	}
-
-	Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> pCommandList = m_ppCommandList[m_dwCurContextIndex];
-	// 전전 프레임을 작업한 command list는 현재 세팅된 commandlist이다.
-	// (프레임이 3개고, 커맨드리스트가 2개이기 때문)
-	WaitForFenceValue(m_pui64LastFenceValue[m_dwCurContextIndex]);
-
-	D3D12_RESOURCE_BARRIER trans_RT_SRC = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
-	pCommandList->ResourceBarrier(1, &trans_RT_SRC);
-
-	const CD3DX12_TEXTURE_COPY_LOCATION copyDest(m_pScreenStreamer->GetTextureToPaste().Get(), m_pScreenStreamer->GetFootPrint());
-	// 요거를 
-	//const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[m_uiRenderTargetIndex].Get(), 0);
-	// 이렇게 intermediate buffer에 대해 readback을 시도해보자.
-	UINT uiIntermediateTextureIndex = (m_uiRenderTargetIndex - 1 + SWAP_CHAIN_FRAME_COUNT) % SWAP_CHAIN_FRAME_COUNT;
-	const CD3DX12_TEXTURE_COPY_LOCATION copySrc(m_pRenderTargets[uiIntermediateTextureIndex].Get(), 0);
-
-	pCommandList->CopyTextureRegion(&copyDest, 0, 0, 0, &copySrc, nullptr);
-
-	D3D12_RESOURCE_BARRIER trans_SRC_RT = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	pCommandList->ResourceBarrier(1, &trans_SRC_RT);
-	bCheckUpdateTexture = true;
-#endif
 }
 
 void D3D12Renderer::EndRender()
@@ -592,27 +628,71 @@ bool D3D12Renderer::UpdateWindowSize_Renderer(DWORD _dwWidth, DWORD _dwHeight)
 	return true;
 }
 
-void D3D12Renderer::DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle, E_RENDER_MESH_TYPE _eRenderMeshType)
+IRenderMesh* D3D12Renderer::CreateTextureRenderMesh(const TextureMeshData& _mesh, const std::vector<std::uint32_t>& _adjIndices, const std::vector<SubmeshRange>& _ranges)
 {
-	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
-	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+	TextureRenderMesh* pMeshObj = new TextureRenderMesh;
+	if (!pMeshObj->Initialize(this))
+	{
+		delete pMeshObj;
+		__debugbreak();
+		return nullptr;
+	}
+
+	if (!pMeshObj->CreateRenderAssetsFromSingleMesh(_mesh, _adjIndices, _ranges))
+	{
+		delete pMeshObj;
+		__debugbreak();
+		return nullptr;
+	}
+
+	return pMeshObj;
+}
+
+void D3D12Renderer::DeleteRenderMesh(IRenderMesh* _pMeshObjectHandle)
+{
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++)
+	{
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
 
-	switch (_eRenderMeshType)
-	{
-	case E_RENDER_MESH_TYPE::COLOR:
-	{
-		ColorRenderMesh* pMeshObj = reinterpret_cast<ColorRenderMesh*>(_pMeshObjectHandle);
-		delete pMeshObj;
-	}break;
-	case E_RENDER_MESH_TYPE::TEXTURE:
-	{		
-		TextureRenderMesh* pMeshObj = reinterpret_cast<TextureRenderMesh*>(_pMeshObjectHandle);
-		delete pMeshObj;
+	delete _pMeshObjectHandle;
+}
 
-	}break;
+void D3D12Renderer::BindTextureToMesh(IRenderMesh* _pMeshObjectHandle, TEXTURE_HANDLE* _pTexHandle, UINT _subRenderAssetIndex)
+{
+	if (_pMeshObjectHandle == nullptr || _pTexHandle == nullptr)
+	{
+		__debugbreak();
+		return;
 	}
+
+	TextureRenderMesh* pMeshObj = dynamic_cast<TextureRenderMesh*>(_pMeshObjectHandle);
+	if (pMeshObj == nullptr)
+	{
+		__debugbreak();
+		return;
+	}
+
+	pMeshObj->BindTextureAssets(_pTexHandle, _subRenderAssetIndex);
+}
+
+void D3D12Renderer::SetMeshMaterial(IRenderMesh* _pMeshObjectHandle, const CONSTANT_BUFFER_MATERIAL& _MaterialData, UINT _subRenderAssetIndex)
+{
+	if (_pMeshObjectHandle == nullptr)
+	{
+		__debugbreak();
+		return;
+	}
+
+	TextureRenderMesh* pMeshObj = dynamic_cast<TextureRenderMesh*>(_pMeshObjectHandle);
+	if (pMeshObj == nullptr)
+	{
+		__debugbreak();
+		return;
+	}
+
+	CONSTANT_BUFFER_MATERIAL material = _MaterialData;
+	pMeshObj->SetMaterial(material, _subRenderAssetIndex);
 }
 
 void D3D12Renderer::DrawRenderMesh(IRenderMesh* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
@@ -648,96 +728,68 @@ void D3D12Renderer::UpdateGridWorldMatrix(UINT _gridCellOffset)
 
 	m_matGridWorld = XMMatrixTranslation(xSnapped, 0.f, zSnapped);
 }
-#if 0
-void* D3D12Renderer::CreateBasicMeshObject()
+
+SPRITE_HANDLE* D3D12Renderer::CreateSpriteObject()
 {
-	BasicMeshObject* pMeshObj = new BasicMeshObject;
-	pMeshObj->Initialize(this);
+	SPRITE_HANDLE* pSpriteHandle = new SPRITE_HANDLE;
+	pSpriteHandle->pSpriteObject = new SpriteObject;
 
-	// 지금은 BasicMeshObject 클래스 내부에서 Mesh 정보를 생성하지 않고,
-	// 밖에서 입력 받는다.
-
-	return pMeshObj;
-}
-
-void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjectHandle)
-{
-	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
-	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
-		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	if (!pSpriteHandle->pSpriteObject->Initialize(this))
+	{
+		delete pSpriteHandle->pSpriteObject;
+		pSpriteHandle->pSpriteObject = nullptr;
+		delete pSpriteHandle;
+		__debugbreak();
+		return nullptr;
 	}
 
-	// 이렇게 형변환을 해야 문제가 안 생긴다. (메모리 크기 + 소멸자 호출)
-	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
-	delete pMeshObj;
+	return pSpriteHandle;
 }
-
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjectHandle, const XMMATRIX* pMatWorld)
+SPRITE_HANDLE* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height)
 {
-	D3D12GraphicsCommandList_ptr pCommandList = m_ppCommandList[m_dwCurContextIndex];
+	SPRITE_HANDLE* pSpriteHandle = new SPRITE_HANDLE;
+	pSpriteHandle->pSpriteObject = new SpriteObject;
 
-	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjectHandle);
-	pMeshObj->Draw(pCommandList.Get(), pMatWorld);
-}
-
-bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const ColorVertex* _pVertexList, DWORD _dwVertexCount, DWORD _dwTriGroupCount)
-{
-	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
-	bool bResult = pMeshObj->BeginCreateMesh(_pVertexList, _dwVertexCount, _dwTriGroupCount);
-	return bResult;
-}
-
-bool D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const uint16_t* _pIndexList, DWORD _dwTriCount, const WCHAR* _wchTexFileName)
-{
-	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
-	bool bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _dwTriCount, _wchTexFileName);
-	return bResult;
-}
-
-void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
-{
-	BasicMeshObject* pMeshObj = (BasicMeshObject*)_pMeshObjHandle;
-	pMeshObj->EndCreateMesh();
-}
-#endif
-
-void* D3D12Renderer::CreateSpriteObject()
-{
-	SpriteObject* pSpriteObj = new SpriteObject;
-	pSpriteObj->Initialize(this);
-
-	return (void*)pSpriteObj;
-}
-void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _posX, int _posY, int _width, int _height)
-{
-	SpriteObject* pSpriteObj = new SpriteObject;
-
-	RECT rect;
+	RECT rect = {};
 	rect.left = _posX;
 	rect.top = _posY;
 	rect.right = _width;
 	rect.bottom = _height;
-	pSpriteObj->Initialize(this, _wchTexFileName, &rect);
 
-	return (void*)pSpriteObj;
+	if (!pSpriteHandle->pSpriteObject->Initialize(this, _wchTexFileName, &rect))
+	{
+		delete pSpriteHandle->pSpriteObject;
+		pSpriteHandle->pSpriteObject = nullptr;
+		delete pSpriteHandle;
+		__debugbreak();
+		return nullptr;
+	}
+
+	return pSpriteHandle;
 }
 
-void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
+void D3D12Renderer::DeleteSpriteObject(SPRITE_HANDLE* _pSpriteObjHandle)
 {
-	// 혹시나 작업중인 멀티렌더링 작업을 기다린다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		WaitForFenceValue(m_pui64LastFenceValue[i]);
 	}
-	SpriteObject* pSpriteObj = (SpriteObject*)_pSpriteObjHandle;
 
-	delete pSpriteObj;
+	if (_pSpriteObjHandle == nullptr)
+	{
+		return;
+	}
+
+	delete _pSpriteObjHandle->pSpriteObject;
+	_pSpriteObjHandle->pSpriteObject = nullptr;
+
+	delete _pSpriteObjHandle;
 }
 
-void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, void* _pTexHandle)
+void D3D12Renderer::RenderSpriteWithTex(SPRITE_HANDLE* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
 {
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
-	item.SpriteParam.pSprite = _pSpriteObjHandle;
+	item.SpriteParam.pSprite = _pSpriteObjHandle->pSpriteObject;
 	item.SpriteParam.iPosX = _posX;
 	item.SpriteParam.iPosY = _posY;
 	item.SpriteParam.fScaleX = _scaleX;
@@ -758,11 +810,11 @@ void D3D12Renderer::RenderSpriteWithTex(void* _pSpriteObjHandle, int _posX, int 
 	AddItemToRenderQueue(item);
 }
 
-void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
+void D3D12Renderer::RenderSprite(SPRITE_HANDLE* _pSpriteObjHandle, int _posX, int _posY, float _scaleX, float _scaleY, float _z)
 {
 	RENDER_ITEM item = {};
 	item.Type = RENDER_ITEM_TYPE::SPRITE;
-	item.SpriteParam.pSprite = _pSpriteObjHandle;
+	item.SpriteParam.pSprite = _pSpriteObjHandle->pSpriteObject;
 	item.SpriteParam.iPosX = _posX;
 	item.SpriteParam.iPosY = _posY;
 	item.SpriteParam.fScaleX = _scaleX;
@@ -775,9 +827,9 @@ void D3D12Renderer::RenderSprite(void* _pSpriteObjHandle, int _posX, int _posY, 
 	AddItemToRenderQueue(item);
 }
 
-void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)
+void D3D12Renderer::UpdateTextureWithImage(TEXTURE_HANDLE* _pTexHandle, const BYTE* _pSrcBytes, UINT _SrcWidth, UINT _SrcHeight)
 {
-	TEXTURE_HANDLE* pTexHandle = (TEXTURE_HANDLE*)_pTextHandle;
+	TEXTURE_HANDLE* pTexHandle = _pTexHandle;
 	D3D12Resource_ptr pDestTexResource = pTexHandle->pTexResource;
 	D3D12Resource_ptr pUploadBuffer = pTexHandle->pUploadBuffer;
 
@@ -817,7 +869,7 @@ void D3D12Renderer::UpdateTextureWithImage(void* _pTextHandle, const BYTE* _pSrc
 	pTexHandle->bUpdated = true;
 }
 
-void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
+TEXTURE_HANDLE* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r, BYTE _g, BYTE _b)
 {
 	DXGI_FORMAT texFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
@@ -855,17 +907,17 @@ void* D3D12Renderer::CreateTileTexture(UINT _texWidth, UINT _texHeight, BYTE _r,
 	return pTexHandle;
 }
 
-void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
+TEXTURE_HANDLE* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
 {
-	return m_pTextureManager->CreateTextureFromFile_ITL(_wchFileName);
+	return m_pTextureManager->CreateTextureFromFile_ITL(ResolveAssetPath(_wchFileName).c_str());
 }
 
-void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
+TEXTURE_HANDLE* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
 {
 	return m_pTextureManager->CreateDynamicTexture_ITL(_TexWidth, _TexHeight);
 }
 
-void D3D12Renderer::DeleteTexture(void* _pTexHandle)
+void D3D12Renderer::DeleteTexture(TEXTURE_HANDLE* _pTexHandle)
 {
 	// 뭔가 삭제할때는 이렇게 GPU 작업이 끝나기를 기다려야 한다.
 	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
@@ -875,13 +927,21 @@ void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 	m_pTextureManager->DeleteTexture_ITL((TEXTURE_HANDLE*)_pTexHandle);
 }
 
-std::unique_ptr<FONT_HANDLE> D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
+FONT_HANDLE* D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
 {
-	std::unique_ptr<FONT_HANDLE> pFontHandle = m_pFontManager->CreateFontObject_ITL(_wchFontFamilyName, _fFontSize);
-	return std::move(pFontHandle);
+	FONT_HANDLE* pFontHandle = m_pFontManager->CreateFontObject_ITL(_wchFontFamilyName, _fFontSize);
+	return pFontHandle;
 }
 
-bool D3D12Renderer::WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen)
+void D3D12Renderer::DeleteFontObject(FONT_HANDLE* _pFontHandle)
+{
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64LastFenceValue[i]);
+	}
+	m_pFontManager->DeleteFontObject_ITL((FONT_HANDLE*)_pFontHandle);
+}
+
+bool D3D12Renderer::WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, FONT_HANDLE* _pFontHandle, const WCHAR* _wchString, DWORD _dwLen)
 {
 	bool bResult = m_pFontManager->WriteTextToBitmap_ITL(_pDestImage, _DestWidth, _DestHeight, _DestPitch, _piOutWidth, _piOutHeight, (FONT_HANDLE*)_pFontHandle, _wchString, _dwLen);
 	return bResult;
@@ -1193,6 +1253,7 @@ void D3D12Renderer::CleanUpRenderer()
 		}
 		m_ppFrameSystemMemAddrs[i] = nullptr;
 	}
+
 	if (m_pResourceManager) {
 		m_pResourceManager.reset();
 	}
@@ -1317,7 +1378,7 @@ D3D12Renderer::D3D12Renderer()
 	m_pScreenStreamer(nullptr), bTryPixelStreaming(false), bCheckUpdateTexture(false),
 	m_pTextureManager(nullptr), m_pFontManager(nullptr), m_pGridRenderMesh(nullptr), 
 	m_matGridWorld{}, m_pRenderQueue{}, m_ulRenderThreadCount(0), m_ulCurThreadIndex(0),
-	m_RenderThreadDescs{}, m_ppCommandListPool{}
+	m_RenderThreadDescs{}, m_ppCommandListPool{}, m_strAssetRootPath(), m_strShaderRootPath()
 {
 }
 

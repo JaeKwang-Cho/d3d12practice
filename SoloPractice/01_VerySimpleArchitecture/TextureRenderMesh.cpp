@@ -69,6 +69,8 @@ void TextureRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw 
 	for (UINT i = 0; i < m_subRenderGeoCount; i++)
 	{
 		SubRenderGeometry* pSubRenderGeo = m_subRenderGeometries[i];
+		TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE = m_pRenderer->INL_GetDefaultWhiteTexture();
+		CONSTANT_BUFFER_MATERIAL DEFAULT_MATERIAL = m_pRenderer->INL_GetDefaultMaterial();
 
 		// Texture
 		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
@@ -78,7 +80,7 @@ void TextureRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw 
 		}
 		else
 		{
-			pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			pD3DDevice->CopyDescriptorsSimple(1, dest,  DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 		}
 		dest.Offset(1, srvDescriptorSize);
 
@@ -192,6 +194,8 @@ void TextureRenderMesh::DrawOutline(ULONG _ulThreadIndex, D3D12GraphicsCommandLi
 
 	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
 	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
+
+	TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE = m_pRenderer->INL_GetDefaultWhiteTexture();
 
 	// Texture를 넘겨주는 것
 	TEXTURE_HANDLE* pTexHandle = m_pOutlineRenderGeo->pTexHandle;
@@ -454,14 +458,16 @@ bool TextureRenderMesh::InitPipelineState()
 		HRESULT hr;
 
 		// vertex shader를 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		std::wstring strDefaultShaderFilePath = m_pRenderer->ResolveShaderPath(L"Default.hlsl");
+
+		hr = D3DCompileFromFile(strDefaultShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
 		}
-		// pixel shader도 컴파일 한다.
-		hr = D3DCompileFromFile(L".\\Shaders\\Default.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+
+		hr = D3DCompileFromFile(strDefaultShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
@@ -538,21 +544,23 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		HRESULT hr;
 
 		// vertex shader를 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		std::wstring strOutlineShaderFilePath = m_pRenderer->ResolveShaderPath(L"Outline.hlsl");
+
+		hr = D3DCompileFromFile(strOutlineShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "VS", "vs_5_1", compileFlags, 0, pVertexShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
 		}
 		// Geometry shader 컴파일하고
-		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "GS", "gs_5_1", compileFlags, 0, pGeoShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(strOutlineShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "GS", "gs_5_1", compileFlags, 0, pGeoShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
 			__debugbreak();
 		}
 		// pixel shader도 컴파일 한다.
-		hr = D3DCompileFromFile(L".\\Shaders\\Outline.hlsl", nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
+		hr = D3DCompileFromFile(strOutlineShaderFilePath.c_str(), nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE, "PS", "ps_5_1", compileFlags, 0, pPixelShaderBlob.GetAddressOf(), pErrorBlob.GetAddressOf());
 		if (FAILED(hr)) {
 			if (pErrorBlob != nullptr)
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());

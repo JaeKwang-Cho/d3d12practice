@@ -1,7 +1,7 @@
 #pragma once
 
 class Game;
-class D3D12Renderer;
+class IRenderer;
 class IRenderMesh;
 
 class GameObject
@@ -20,14 +20,14 @@ public:
 	virtual ~GameObject();
 
 private:
-	void* CreateBoxMeshObject();
+	IRenderMesh* CreateBoxMeshObject();
 
 	void UpdateTransform();
 	void Cleanup_GameObject();
 
 private:
 	Game* m_pGame;
-	D3D12Renderer* m_pRenderer;
+	IRenderer* m_pRenderer;
 	IRenderMesh* m_pMeshObj;
 
 	XMVECTOR m_Scale;

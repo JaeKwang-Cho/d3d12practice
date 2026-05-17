@@ -1,15 +1,11 @@
 #include "pch.h"
 #include "Game.h"
-#include "D3D12Renderer.h"
 #include "GameObject.h"
-#include "CommonAssets.h"
 
 
-bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
+bool Game::Initialize_Game(HWND _hWnd, std::unique_ptr<IRenderer> _pRenderer, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
-	m_pRenderer = std::make_unique<D3D12Renderer>();
-	m_pRenderer->Initialize(_hWnd, _bEnableDebugLayer, _bEnableGBV);
-	CreateCommonAssets(m_pRenderer.get());
+	m_pRenderer = std::move(_pRenderer);
 	m_hWnd = _hWnd;
 
 	// Create Font
@@ -98,7 +94,7 @@ bool Game::Update(ULONGLONG _CurTick)
 
 	if (wcscmp(m_wchText, wchText) != 0) {
 		memset(m_pTextImage, 0, m_TextImageWidth * m_TextImageHeight * 4);
-		m_pRenderer->WriteTextToBitmap(m_pTextImage, m_TextImageWidth, m_TextImageHeight, m_TextImageWidth * 4, &iTextWidth, &iTextHeight, m_pFontObj.get(), wchText, dwTextLen);
+		m_pRenderer->WriteTextToBitmap(m_pTextImage, m_TextImageWidth, m_TextImageHeight, m_TextImageWidth * 4, &iTextWidth, &iTextHeight, m_pFontObj, wchText, dwTextLen);
 		m_pRenderer->UpdateTextureWithImage(m_pTextTextureHandle, m_pTextImage, m_TextImageWidth, m_TextImageHeight);
 		wcsncpy_s(m_wchText, wchText, dwTextLen);
 	}
@@ -187,27 +183,36 @@ void Game::DeleteAllGameObjects()
 
 void Game::Cleanup_Game()
 {
-	m_pRenderer->FlushMultiRendering();
+	if (m_pRenderer)
+	{
+		m_pRenderer->FlushMultiRendering();
+	}
 
 	DeleteAllGameObjects();
 
-	if (m_pRenderer) {
-		if (m_pSpriteObjCommon) {
+	if (m_pRenderer)
+	{
+		if (m_pSpriteObjCommon)
+		{
 			m_pRenderer->DeleteSpriteObject(m_pSpriteObjCommon);
 			m_pSpriteObjCommon = nullptr;
 		}
 
-		if (m_pTextTextureHandle) {
+		if (m_pTextTextureHandle)
+		{
 			m_pRenderer->DeleteTexture(m_pTextTextureHandle);
 			m_pTextTextureHandle = nullptr;
 		}
 
-		DeleteCommonAssets(m_pRenderer.get());
+		if (m_pFontObj)
+		{
+			m_pRenderer->DeleteFontObject(m_pFontObj);
+			m_pFontObj = nullptr;
+		}
 	}
 
-	m_pFontObj.reset();
-
-	if (m_pTextImage) {
+	if (m_pTextImage)
+	{
 		delete[] m_pTextImage;
 		m_pTextImage = nullptr;
 	}
