@@ -1,0 +1,260 @@
+#include "pch.h"
+#include "ColorRenderMesh.h"
+#include "D3D12Renderer.h"
+#include "D3D12ResourceManager.h"
+#include "D3DUtil.h"
+#include "ConstantBufferPool.h"
+#include "DescriptorPool.h"
+
+
+Microsoft::WRL::ComPtr<ID3D12RootSignature> ColorRenderMesh::m_pRootSignature = nullptr;
+DWORD ColorRenderMesh::m_dwInitRefCount = 0;
+
+bool ColorRenderMesh::Initialize(D3D12Renderer* _pRenderer, D3D_PRIMITIVE_TOPOLOGY _primitiveTopoloy)
+{
+	m_pRenderer = _pRenderer;
+	m_PrimitiveTopoloy = _primitiveTopoloy;
+
+	bool bResult = InitCommonResources();
+
+	// 일단은 인스턴스마다 PSO를 갖도록 한다.
+	bResult = InitPipelineState();
+	return bResult;
+}
+
+void ColorRenderMesh::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
+{
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+
+	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
+	// Renderer가 관리하는 Pool
+	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::DEFAULT, _ulThreadIndex);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
+	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
+
+	// 일단은 subRenderGeoCount + 1만큼 pool에서 할당 받는다. CB 한개 + SubRenderGeoCount 만큼 가진 Texture 개수
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, m_subRenderGeoCount + 1)) {
+		__debugbreak();
+	}
+
+	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
+	if (!pCB) {
+		__debugbreak();
+	}
+
+	CONSTANT_BUFFER_OBJECT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_OBJECT*>(pCB->pSystemMemAddr);
+	// CB 값을 업데이트 하고
+	XMMATRIX viewMat;
+	XMMATRIX projMat;
+	m_pRenderer->GetViewProjMatrix(&viewMat, &projMat);
+
+	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
+
+
+	// 초기화 할 때 정한 Texture와 업데이트한 CB를 넘길, Descriptor Table을 구성한다.
+
+	// Object 마다 넘어가는 CB는 CopyDescriptorSimple을 이용해서, 현재 Constant Buffer View를 현재 할당된 Descriptor Heap 위치에 있는 Descriptor에 복사한다.
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dest(cpuDescriptorTable, static_cast<INT>(E_COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	pD3DDevice->CopyDescriptorsSimple(1, dest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); // CPU 코드에서는 CPU Handle에 write만 가능하다.
+
+	// pool에서 allocation 받았기 때문에 선형인 Heap위에 있기에 
+	dest.Offset(1, srvDescriptorSize); // 이렇게 같은 핸들을 offset을 이용해 다음 자리를 구하면 된다.
+
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
+	{
+		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
+		TEXTURE_HANDLE* pTexHandle = pSubRenderGeo->pTexHandle;
+		TEXTURE_HANDLE* DEFAULT_WHITE_TEXTURE = m_pRenderer->INL_GetDefaultWhiteTexture();
+
+		if (pTexHandle)
+		{
+			pD3DDevice->CopyDescriptorsSimple(1, dest, pTexHandle->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		}
+		else 
+		{
+			pD3DDevice->CopyDescriptorsSimple(1, dest, DEFAULT_WHITE_TEXTURE->srv, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		}
+		dest.Offset(1, srvDescriptorSize);
+	}
+
+	// 루트 시그니처를 설정하고
+	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
+	// pool에 있는 Heap으로 설정한다.
+	_pCommandList->SetDescriptorHeaps(1, pPoolDescriptorHeap.GetAddressOf());
+
+	// 일단 테이블 번호에 맞춰서 0번으로 CBV를 넘겨준다. 지금은 1개만 넘겨준다.
+	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable);
+
+	// FrameCB도 넘겨준다.
+	_pCommandList->SetGraphicsRootConstantBufferView(2, m_pRenderer->INL_GetFrameCBResource()->GetGPUVirtualAddress());
+
+	_pCommandList->SetPipelineState(m_pPipelineState.Get());
+	_pCommandList->IASetPrimitiveTopology(m_PrimitiveTopoloy);
+
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) 
+	{
+		SubRenderGeometry* pSubRenderGeo = subRenderGeometries[i];
+		CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTexture(gpuDescriptorTable, (UINT)E_COLOR_RENDERASSET_DESCRIPTOR_INDEX_PER_OBJ::TEX, srvDescriptorSize);
+		if (pSubRenderGeo) {
+			_pCommandList->IASetVertexBuffers(0, 1, &pSubRenderGeo->VertexBufferView);
+			_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTexture);
+
+			_pCommandList->IASetIndexBuffer(&pSubRenderGeo->IndexBufferView);
+			_pCommandList->DrawIndexedInstanced(pSubRenderGeo->indexCount, 1, pSubRenderGeo->startIndexLocation, pSubRenderGeo->baseVertexLocation, 0);
+		}
+		gpuDescriptorTableForTexture.Offset(1, srvDescriptorSize);
+	}
+}
+
+void ColorRenderMesh::CreateRenderAssets(std::vector<ColorMeshData>& _ppMeshData, const UINT _meshDataCount)
+{
+	if (_meshDataCount > MAX_SUB_RENDER_GEO_COUNT) {
+		__debugbreak();
+		return;
+	}
+
+	m_subRenderGeoCount = _meshDataCount;
+
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
+		subRenderGeometries[i] = new SubRenderGeometry;
+		ColorMeshData& pCurMeshData = _ppMeshData[i];
+
+		// TextureVertex Buffer 먼저 생성한다.
+		if (FAILED(pResourceManager->CreateVertexBuffer(
+			sizeof(ColorVertex), static_cast<UINT>(pCurMeshData.Vertices.size()), 
+			&(subRenderGeometries[i]->VertexBufferView),
+			&(subRenderGeometries[i]->pVertexBuffer), 
+			(void*)pCurMeshData.Vertices.data()
+		)))
+		{
+			__debugbreak();
+		}
+
+		// Index Buffer도 생성한다.
+		if (FAILED(pResourceManager->CreateIndexBuffer(
+			static_cast<UINT>(pCurMeshData.Indices32.size()),
+			&(subRenderGeometries[i]->IndexBufferView),
+			&(subRenderGeometries[i]->pIndexBuffer),
+			(void*)(pCurMeshData.GetIndices16().data())
+		)))
+		{
+			__debugbreak();
+		}
+		subRenderGeometries[i]->indexCount = static_cast<UINT>(pCurMeshData.Indices32.size());
+		subRenderGeometries[i]->startIndexLocation = 0;
+		subRenderGeometries[i]->baseVertexLocation = 0;
+	}
+}
+
+void ColorRenderMesh::BindTextureAssets(TEXTURE_HANDLE* _pTexHandle, const UINT _subRenderAssetIndex)
+{
+	if (m_subRenderGeoCount <= _subRenderAssetIndex) 
+	{
+		__debugbreak();
+	}
+	subRenderGeometries[_subRenderAssetIndex]->pTexHandle = _pTexHandle;
+}
+
+bool ColorRenderMesh::InitCommonResources()
+{
+	// root signature을 싱글톤으로 사용한다.
+	if (m_dwInitRefCount > 0) {
+		goto EXIST;
+	}
+
+	InitRootSignature();
+
+EXIST:
+	m_dwInitRefCount++;
+	return true;
+}
+
+void ColorRenderMesh::CleanupSharedResources()
+{
+	if (!m_dwInitRefCount) {
+		return;
+	}
+
+	DWORD refCount = --m_dwInitRefCount;
+	// 아직 참조하는 Object가 있다면 삭제하지 않기
+	if (!refCount) {
+		// 얘네는 data section에 있는 애들이라 직접 해제를 해줘야 한다.
+		m_pRootSignature = nullptr;
+		//m_pPipelineState = nullptr;
+	}
+}
+
+bool ColorRenderMesh::InitRootSignature()
+{
+	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+
+	// 일단 CB 하나 SRV 하나 넘어가는거로 한다.
+	Microsoft::WRL::ComPtr<ID3DBlob> pSignatureBlob = nullptr;
+	Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
+
+
+	CD3DX12_DESCRIPTOR_RANGE rangePerObj[1] = {};
+	rangePerObj[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_CBV, 1, 0); // b0 :  Object 마다 넘기는 Constant Buffer View
+
+	CD3DX12_DESCRIPTOR_RANGE rangePerSub[1] = {};
+	rangePerSub[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // t0 :  일단은 Sub - Object 마다 넘기는 SRV(texture)
+
+	// table 0번과 1번에 저장한다.
+	CD3DX12_ROOT_PARAMETER rootParameters[3] = {};
+	rootParameters[0].InitAsDescriptorTable(_countof(rangePerObj), rangePerObj, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[1].InitAsDescriptorTable(_countof(rangePerSub), rangePerSub, D3D12_SHADER_VISIBILITY_ALL);
+	rootParameters[2].InitAsConstantBufferView(0, 1, D3D12_SHADER_VISIBILITY_ALL); // b0 / space 1 : Frame 마다 넘기는 Constant Buffer View
+
+
+	// Texture Sample을 할때 사용하는 Sampler를
+	// static sampler로 Root Signature와 함께 넘겨준다.
+	D3D12_STATIC_SAMPLER_DESC sampler = {};
+	SetDefaultSamplerDesc(&sampler, 0); // s0 : sampler
+	sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
+
+	// 이제 Table Entry와 Sampler를 넘겨주면서 Root Signature를 만든다.
+	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+	rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 1, &sampler,
+		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+	// Serialize 한 다음
+	if (FAILED(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, pSignatureBlob.GetAddressOf(), pErrorBlob.GetAddressOf()))) {
+		OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
+		__debugbreak();
+	}
+	// Root signature를 만든다.
+	if (FAILED(pD3DDevice->CreateRootSignature(0, pSignatureBlob->GetBufferPointer(), pSignatureBlob->GetBufferSize(), IID_PPV_ARGS(m_pRootSignature.GetAddressOf())))) {
+		__debugbreak();
+	}
+
+	return true;
+}
+
+void ColorRenderMesh::CleanUpAssets()
+{
+	for (UINT i = 0; i < m_subRenderGeoCount; i++) {
+		if (subRenderGeometries[i]) {
+			delete subRenderGeometries[i];
+			subRenderGeometries[i] = nullptr;
+		}
+	}
+	CleanupSharedResources();
+}
+
+ColorRenderMesh::ColorRenderMesh()
+	:m_pRenderer(nullptr), m_PrimitiveTopoloy(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST), 
+	subRenderGeometries{nullptr, },
+	m_subRenderGeoCount(0), m_pPipelineState(nullptr)
+{
+}
+
+ColorRenderMesh::~ColorRenderMesh()
+{
+	CleanUpAssets();
+}
