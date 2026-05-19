@@ -3,9 +3,44 @@
 #include "GameObject.h"
 
 
-bool Game::Initialize_Game(HWND _hWnd, std::unique_ptr<IRenderer> _pRenderer, bool _bEnableDebugLayer, bool _bEnableGBV)
+bool Game::Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV)
 {
-	m_pRenderer = std::move(_pRenderer);
+	const WCHAR* wchRendererFileName = nullptr;
+
+#ifdef _DEBUG
+	wchRendererFileName = L"../DLL/Renderer_D3D12_x64_debug.dll";
+#else	
+	wchRendererFileName = L"../DLL/Renderer_D3D12_x64_release.dll";
+#endif
+
+	WCHAR	wchErrTxt[128] = {};
+	DWORD	dwErrCode = 0;
+
+
+	m_hRendererDLL = LoadLibrary(wchRendererFileName);
+	if (!m_hRendererDLL)
+	{
+		dwErrCode = GetLastError();
+		swprintf_s(wchErrTxt, L"Fail to LoadLibrary(%s) - Error Code: %u", wchRendererFileName, dwErrCode);
+		MessageBox(_hWnd, wchErrTxt, L"Error", MB_OK);
+		__debugbreak();
+	}
+	CREATE_INSTANCE_FUNC	pCreateFunc = (CREATE_INSTANCE_FUNC)GetProcAddress(m_hRendererDLL, "DllCreateInstance");
+	pCreateFunc(&m_pRenderer);
+
+	std::filesystem::path exeDir = GetExeDirectory();
+	std::filesystem::path assetRootPath = (exeDir / L"../../Assets").lexically_normal();
+	std::filesystem::path shaderRootPath = (exeDir / L"../Shaders").lexically_normal();
+
+	m_pRenderer->SetAssetRootPath(assetRootPath.c_str());
+	m_pRenderer->SetShaderRootPath(shaderRootPath.c_str());
+
+	if (!m_pRenderer->Initialize(_hWnd, false, false))
+	{
+		__debugbreak();
+		return FALSE;
+	}
+
 	m_hWnd = _hWnd;
 
 	// Create Font

@@ -1,9 +1,12 @@
 #pragma once
 
 #include <Windows.h>
-#include <DirectXMath.h>
 #include <cstdint>
 #include <vector>
+#include "GameTimer.h"
+#include <DirectXMath.h>
+
+using namespace DirectX;
 
 struct TEXTURE_HANDLE;
 struct FONT_HANDLE;
@@ -109,3 +112,7 @@ struct CONSTANT_BUFFER_MATERIAL
 	{
 	}
 };
+
+#define DEFULAT_LOCALE_NAME		L"ko-kr"
+
+HRESULT typedef (__stdcall* CREATE_INSTANCE_FUNC)(void* ppv);

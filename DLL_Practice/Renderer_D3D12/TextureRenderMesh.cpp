@@ -453,7 +453,7 @@ bool TextureRenderMesh::InitPipelineState()
 		// 쉐이더를 컴파일 할때, 최적화를 안하고 디버깅하기 편하도록 하는 것이다.
 		UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #else
-		UINT compileFlas = 0;
+		UINT compileFlags = 0;
 #endif
 		HRESULT hr;
 
@@ -539,7 +539,7 @@ bool TextureRenderMesh::InitPipelineState_Outline()
 		// 쉐이더를 컴파일 할때, 최적화를 안하고 디버깅하기 편하도록 하는 것이다.
 		UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
 #else
-		UINT compileFlas = 0;
+		UINT compileFlags = 0;
 #endif
 		HRESULT hr;
 

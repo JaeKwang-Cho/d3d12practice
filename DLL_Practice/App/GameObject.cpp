@@ -1,8 +1,6 @@
 #include "pch.h"
 #include "GameObject.h"
 #include "Game.h"
-#include "IRenderer.h"
-#include "MeshGenerator.h"
 
 bool GameObject::Initialize_GameObject(Game* _pGame)
 {

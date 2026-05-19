@@ -1,6 +1,5 @@
 #pragma once
 #include <map>
-#include "IRenderer.h"
 
 class D3D12Renderer;
 class GameObject;
@@ -9,7 +8,7 @@ class GameTimer;
 class Game
 {
 public:
-	bool Initialize_Game(HWND _hWnd, std::unique_ptr<IRenderer> _pRenderer, bool _bEnableDebugLayer = false, bool _bEnableGBV = false);
+	bool Initialize_Game(HWND _hWnd, bool _bEnableDebugLayer = false, bool _bEnableGBV = false);
 	void Run();
 	bool Update(ULONGLONG _CurTick);
 	
@@ -33,6 +32,7 @@ private:
 	void Cleanup_Game();
 
 private:
+	HMODULE m_hRendererDLL = nullptr;
 	std::unique_ptr<IRenderer> m_pRenderer;
 	HWND m_hWnd;
 	SPRITE_HANDLE* m_pSpriteObjCommon;

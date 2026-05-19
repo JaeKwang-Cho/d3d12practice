@@ -85,9 +85,6 @@
     <Filter Include="Manager\TextureManager">
       <UniqueIdentifier>{d74094ef-5303-4d10-af3d-d9c9e5855357}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Manager\GameTimer">
-      <UniqueIdentifier>{b19cf9ee-faab-4b22-83d8-f760c2b1a253}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Manager\PSOPool">
       <UniqueIdentifier>{36929694-857f-4376-92a6-9eb7c1b77d24}</UniqueIdentifier>
     </Filter>
@@ -147,9 +144,6 @@
     <ClInclude Include="typedef.h">
       <Filter>pch</Filter>
     </ClInclude>
-    <ClInclude Include="GameTimer.h">
-      <Filter>Manager\GameTimer</Filter>
-    </ClInclude>
     <ClInclude Include="CommandListPool.h">
       <Filter>Manager\CommandListPool</Filter>
     </ClInclude>
@@ -189,6 +183,9 @@
     <ClInclude Include="FlyCamera.h">
       <Filter>Manager\Camera</Filter>
     </ClInclude>
+    <ClInclude Include="..\Common\GameTimer.h">
+      <Filter>Engine Interface</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -202,9 +199,6 @@
     </ClCompile>
     <ClCompile Include="WICTextureLoader12.cpp">
       <Filter>DirectXTex\WICLoader</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Common\MeshGenerator.cpp">
-      <Filter>Engine Interface</Filter>
     </ClCompile>
     <ClCompile Include="SpriteObject.cpp">
       <Filter>RenderObject\SpriteObject</Filter>
@@ -238,9 +232,6 @@
     </ClCompile>
     <ClCompile Include="typedef.cpp">
       <Filter>pch</Filter>
-    </ClCompile>
-    <ClCompile Include="GameTimer.cpp">
-      <Filter>Manager\GameTimer</Filter>
     </ClCompile>
     <ClCompile Include="CommandListPool.cpp">
       <Filter>Manager\CommandListPool</Filter>
@@ -281,6 +272,12 @@
     <ClCompile Include="FlyCamera.cpp">
       <Filter>Manager\Camera</Filter>
     </ClCompile>
+    <ClCompile Include="MeshGenerator.cpp">
+      <Filter>Engine Interface</Filter>
+    </ClCompile>
+    <ClCompile Include="GameTimer.cpp">
+      <Filter>Engine Interface</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -301,6 +298,9 @@
     </None>
     <None Include="..\Shaders\Sprite.hlsl">
       <Filter>Shaders</Filter>
+    </None>
+    <None Include="RendererD3D12.def">
+      <Filter>MainEntry</Filter>
     </None>
   </ItemGroup>
 </Project>

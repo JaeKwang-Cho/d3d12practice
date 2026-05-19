@@ -56,7 +56,7 @@ using Microsoft::WRL::ComPtr;
 #include "PSOKeys.h"
 
 // Timer
-#include "GameTimer.h"
+#include "../Common/GameTimer.h"
 
 // Virtual Interfaces
 #include "../Common/IRenderer.h"

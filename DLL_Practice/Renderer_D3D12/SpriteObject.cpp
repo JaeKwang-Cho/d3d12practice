@@ -246,7 +246,8 @@ bool SpriteObject::InitPipelineState()
 		UINT compileFlags = 0;
 #endif
 		// 스프라이트 전용 쉐이더를 컴파일 한다.
-		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
+		std::wstring strSpriteShaderFilePath = m_pRenderer->ResolveShaderPath(L"Sprite.hlsl");
+		if (FAILED(D3DCompileFromFile(strSpriteShaderFilePath.c_str(), nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
 		{
 			if (pErrorBlob != nullptr) {
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
@@ -254,7 +255,7 @@ bool SpriteObject::InitPipelineState()
 			__debugbreak();
 		}
 
-		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
+		if (FAILED(D3DCompileFromFile(strSpriteShaderFilePath.c_str(), nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
 		{
 			if (pErrorBlob != nullptr) {
 				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());

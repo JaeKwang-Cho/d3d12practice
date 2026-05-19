@@ -1,5 +1,5 @@
 #include "pch.h"
-#include "MeshGenerator.h"
+#include "../Common/MeshGenerator.h"
 #include <unordered_map>
 #include <cstdlib>
 #include <boost/functional/hash.hpp>
