@@ -143,15 +143,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\Utils\D3DUtil.cpp">
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../DXRPractice/pch.h</PrecompiledHeaderFile>
-    </ClCompile>
+    <ClCompile Include="..\D3D_Utils\D3DUtil.cpp" />
+    <ClCompile Include="..\D3D_Utils\ShaderUtil.cpp" />
     <ClCompile Include="..\Utils\IndexCreator.cpp">
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../DXRPractice/pch.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
-    <ClCompile Include="..\Utils\ShaderUtil.cpp">
-      <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../DXRPractice/pch.h</PrecompiledHeaderFile>
-    </ClCompile>
+    <ClCompile Include="..\Utils\WriteDebugString.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp">
@@ -165,9 +162,10 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\Utils\D3DUtil.h" />
+    <ClInclude Include="..\D3D_Utils\D3DUtil.h" />
+    <ClInclude Include="..\D3D_Utils\ShaderUtil.h" />
     <ClInclude Include="..\Utils\IndexCreator.h" />
-    <ClInclude Include="..\Utils\ShaderUtil.h" />
+    <ClInclude Include="..\Utils\WriteDebugString.h" />
     <ClInclude Include="D3D12Renderer.h" />
     <ClInclude Include="D3D12_SmartPointer_typedef.h" />
     <ClInclude Include="pch.h" />

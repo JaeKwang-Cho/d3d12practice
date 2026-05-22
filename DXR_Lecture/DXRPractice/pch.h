@@ -54,6 +54,7 @@ using Microsoft::WRL::ComPtr;
 using namespace std;
 
 #include "D3D12_SmartPointer_typedef.h"
-#include "../Utils/D3DUtil.h"
 #include "../Utils/IndexCreator.h"
-#include "../Utils/ShaderUtil.h"
+#include "../Utils/WriteDebugString.h"
+#include "../D3D_Utils/D3DUtil.h"
+#include "../D3D_Utils/ShaderUtil.h"

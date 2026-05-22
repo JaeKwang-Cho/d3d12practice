@@ -43,13 +43,7 @@
     <ClCompile Include="D3D12Renderer.cpp">
       <Filter>Renderer\D3D12Renderer</Filter>
     </ClCompile>
-    <ClCompile Include="..\Utils\D3DUtil.cpp">
-      <Filter>Utils</Filter>
-    </ClCompile>
     <ClCompile Include="..\Utils\IndexCreator.cpp">
-      <Filter>Utils</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Utils\ShaderUtil.cpp">
       <Filter>Utils</Filter>
     </ClCompile>
     <ClCompile Include="RayTracingManager.cpp">
@@ -60,6 +54,15 @@
     </ClCompile>
     <ClCompile Include="ShaderTable.cpp">
       <Filter>Renderer\ShaderTable</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Utils\WriteDebugString.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\D3D_Utils\D3DUtil.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\D3D_Utils\ShaderUtil.cpp">
+      <Filter>Utils</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -82,13 +85,7 @@
       <Filter>typedef</Filter>
     </ClInclude>
     <ClInclude Include="ShaderUtil.h" />
-    <ClInclude Include="..\Utils\D3DUtil.h">
-      <Filter>Utils</Filter>
-    </ClInclude>
     <ClInclude Include="..\Utils\IndexCreator.h">
-      <Filter>Utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Utils\ShaderUtil.h">
       <Filter>Utils</Filter>
     </ClInclude>
     <ClInclude Include="RayTracingManager.h">
@@ -102,6 +99,15 @@
     </ClInclude>
     <ClInclude Include="ShaderTable_Common.h">
       <Filter>Renderer\ShaderTable</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Utils\WriteDebugString.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\D3D_Utils\D3DUtil.h">
+      <Filter>Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\D3D_Utils\ShaderUtil.h">
+      <Filter>Utils</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

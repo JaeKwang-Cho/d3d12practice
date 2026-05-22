@@ -1,7 +1,10 @@
 // IndexCreator.cpp from "megayuchi"
 
-#include "../DXRPractice/pch.h"
+#include "pch.h"
 #include "IndexCreator.h"
+#ifdef __INTELLISENSE__
+#include "../DXRPractice/pch.h"
+#endif
 
 bool IndexCreator::Initialize(DWORD _dwNum)
 {
