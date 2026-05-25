@@ -31,7 +31,7 @@ private:
 	void WaitForFenceValue();
 	void CleanUpFence();
 
-	void Cleanup();
+	void CleanupRenderer();
 
 public:
 

@@ -77,7 +77,7 @@ void D3D12Renderer::CleanUpFence()
 {
 }
 
-void D3D12Renderer::Cleanup()
+void D3D12Renderer::CleanupRenderer()
 {
 }
 
