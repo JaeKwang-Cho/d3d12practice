@@ -8,7 +8,7 @@
 struct SHADER_HANDLE
 {
 	DWORD dwFlags;
-	DWORD dwCodeSize;
+	ULONGLONG ullCodeSize;
 	DWORD dwShaderNameLen;
 	WCHAR wchShaderName[MAX_SHADER_NAME_BUFFER_LEN];
 	DWORD pCodeBuffer[1];
@@ -30,12 +30,12 @@ private:
 
 private:
 	HMODULE m_hDXL = nullptr;
-	IDxcUtils* m_pDxcUtils = nullptr;
-	IDxcCompiler3* m_pDxcCompiler = nullptr;
-	IDxcIncludeHandler* m_pDxcIncludeHandler = nullptr;
+	Microsoft::WRL::ComPtr<IDxcUtils> m_pDxcUtils = nullptr;
+	Microsoft::WRL::ComPtr<IDxcCompiler3> m_pDxcCompiler = nullptr;
+	Microsoft::WRL::ComPtr<IDxcIncludeHandler> m_pDxcIncludeHandler = nullptr;
 
 	bool m_bDisableOptimize = false;
-	WCHAR m_wchDefaultShaderPath[_MAX_PATH] = {};
+	WCHAR m_wchDefaultShaderPath[MAX_PATH] = {};
 
 public:
 	ShaderManager();

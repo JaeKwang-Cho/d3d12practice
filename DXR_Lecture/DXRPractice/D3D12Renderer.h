@@ -51,11 +51,12 @@ private:
 	std::unique_ptr<RayTracingManager> m_pRayTracingManager = nullptr;
 
 	D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;
-	DXGI_ADAPTER_DESC m_adapterDesc = {};
+	DXGI_ADAPTER_DESC3 m_adapterDesc = {};
 
 	// SwapChain도 Render가 관리한다.
 	DXGISwapChain_ptr m_pSwapChain = nullptr;
 	D3D12_VIEWPORT m_viewport = {};
+	D3D12_RECT m_scissorRect = {};
 	ULONG m_ulWidth = 0;
 	ULONG m_ulHeight = 0;
 

@@ -5,24 +5,313 @@
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath)
 {
-	return false;
+	HRESULT hr = E_FAIL;
+	// debug layer를 켜는데 사용하는 interface
+	Microsoft::WRL::ComPtr<ID3D12Debug6> pDebugController = nullptr;
+	// DXGI 개체를 생성하는 interface
+	Microsoft::WRL::ComPtr<IDXGIFactory7> pFactory = nullptr;
+	// display subsystem의 스펙을 알아내는 interface
+	Microsoft::WRL::ComPtr<IDXGIAdapter4> pAdaptor = nullptr;
+
+	DXGI_ADAPTER_DESC3 AdaptorDesc = {};
+
+	DWORD dwCreateFlags = 0;
+	DWORD dwCreateFactoryFlags = 0;
+
+	// #1 GPU 디버그 레이어 설정
+	if (_bEnableDebugLayer) {
+		// 원래는 엄청 복잡한 모양으로 interface를 얻기가 어려웠는데,
+		// 아래 헬퍼함수로 엄청 편해졌다고 한다.
+		hr = D3D12GetDebugInterface(IID_PPV_ARGS(&pDebugController));
+		if (SUCCEEDED(hr)) {
+			pDebugController->EnableDebugLayer();
+		}
+
+		// #2 GBV(GPU based Validation) 설정
+		// 아래는 DXGI에 대해서 디버깅 플래그를 설정해주는 것이다.
+		dwCreateFactoryFlags = DXGI_CREATE_FACTORY_DEBUG;
+		// D3D12는 CPU 타임라인과, GPU 타임라인이 다르다.
+		// (driver에서 돌아가는 것, shader에서 돌아가는 것이 다르다.)
+
+		// 어쨌든 여기서 하는건, GPU에서 뭔가 문제가 생겨서 터질때 잡아준다는 것이다.
+		if (_bEnableGBV) {
+			// debug6라는 query interface를 가져온다.
+			Microsoft::WRL::ComPtr<ID3D12Debug6> pDebugController6 = nullptr;
+			if (S_OK == pDebugController->QueryInterface(IID_PPV_ARGS(pDebugController6.GetAddressOf()))) {
+				// 그 interface로 GBV를 켜준다.
+				pDebugController6->SetEnableGPUBasedValidation(TRUE);
+				pDebugController6->SetEnableAutoName(TRUE);
+			}
+		}
+	}
+
+	// #3 DXGIFactory 생성
+	// 옛날 DirectX는 두개(d3d + dxgi)가 하나에 있었는데, 그걸 2개로 분리했다.
+
+	// dxgi를 사용하는 이유는 double-buffering을 하기 위함이다.
+	CreateDXGIFactory2(dwCreateFactoryFlags, IID_PPV_ARGS(&pFactory));
+
+	// GPU가 가지고 있는 기능들의 수준을 나타내는 것
+	// (예전에는 GPU가 DirectX 표준에 맞춰서 기능을 제공하지 않았다. 그래서 모든 기능을 다 확인해야했다.)
+	D3D_FEATURE_LEVEL featureLevels[] =
+	{
+		D3D_FEATURE_LEVEL_12_2,
+		D3D_FEATURE_LEVEL_12_1, // 여기부터 레이트레이싱을 지원한다.
+		D3D_FEATURE_LEVEL_12_0,
+		D3D_FEATURE_LEVEL_11_1,
+		D3D_FEATURE_LEVEL_11_0, // 기본 기능은 여기로도 충분하다.
+	};
+
+	DWORD FeatureLevelNum = _countof(featureLevels);
+
+	// #4 GPU feature level에 맞는 D3DDevice 생성
+	for (DWORD flIndex = 0; flIndex < FeatureLevelNum; flIndex++) {
+		UINT adaptorIndex = 0;
+		// DXGI가 가진 기능중에 그래픽 카드를 연결하는 기능도 있다.
+		// DXGIFactory에서 어뎁터를 얻어와서
+		IDXGIAdapter1** pTempAdaptor = reinterpret_cast<IDXGIAdapter1**>(pAdaptor.GetAddressOf());
+		while (DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adaptorIndex, pTempAdaptor)) {
+			pAdaptor->GetDesc3(&AdaptorDesc);
+			// 그래픽 카드들을 확인해보면서 피쳐 레벨을 확인하는 것이다.
+			// GPU에다가 D3DDevice를 생성해보고 성공하면 해당 feature level을 가지고 있는 것이다.
+			if (SUCCEEDED(D3D12CreateDevice(pAdaptor.Get(), featureLevels[flIndex], IID_PPV_ARGS(&m_pD3DDevice)))) {
+				goto EXIT;
+			}
+			// 형변환을 해서 그런가.. 스마트 포인터로 해제가 안된다.
+			(*pTempAdaptor)->Release();
+			(*pTempAdaptor) = nullptr;
+			adaptorIndex++;
+		}
+	}
+EXIT:
+	// d3ddevice를 생성하고
+	if (!m_pD3DDevice) {
+		__debugbreak();
+		return false;
+	}
+	m_pD3DDevice->SetName(L"device");
+	m_adapterDesc = AdaptorDesc;
+
+	// 참고 : goto 아래에 이렇게 바디를 새로 만드는 이유는 goto 때문에, 분기가 될때는 바디가 있어야 변수를 초기화 할 수 있다. -> "컨트롤 전송"
+
+	// d3d debug 추가 설정을 할 수 있다.
+	if (pDebugController) {
+		// D3DUtil.h
+		SetDebugLayerInfo(m_pD3DDevice.Get());
+	}
+
+	// #5 매 프레임 마다 작성한 Command List가 올라갈 Command Queue를 생성
+	{
+		D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+		queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+		queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+
+		hr = m_pD3DDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&m_pCommandQueue));
+		if (FAILED(hr)) {
+			__debugbreak();
+			return false;
+		}
+	}
+	m_pCommandQueue->SetName(L"Command Queue");
+	// #6 RTV와 depth-stencil 전용 Descriptor Heap을 생성한다.
+	CreateDescriptorHeapForRTV();
+	CreateDescriptorHeapForDSV();
+
+	// #7 swap chain과 그에 필요한 ID3DResource를 만든다.
+	// swapchain 속성을 지정하고
+	{
+		RECT rect;
+		GetClientRect(_hWnd, &rect);
+		UINT uiWndWidth = rect.right - rect.left;
+		UINT uiWndHeight = rect.bottom - rect.top;
+
+		DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+		swapChainDesc.Width = uiWndWidth;
+		swapChainDesc.Height = uiWndHeight;
+		swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+		swapChainDesc.BufferCount = SWAP_CHAIN_FRAME_COUNT;
+		swapChainDesc.SampleDesc.Count = 1;
+		swapChainDesc.SampleDesc.Quality = 0;
+		swapChainDesc.Scaling = DXGI_SCALING_NONE;
+		swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+		swapChainDesc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+		swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING; // 티어링 현상을 막지 않는다.
+
+		m_uiSwapChainFlags = swapChainDesc.Flags;
+
+		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fsSwapChainDesc = {};
+		fsSwapChainDesc.Windowed = TRUE;
+
+		Microsoft::WRL::ComPtr<IDXGISwapChain1> pSwapChain1 = nullptr;
+		// DXGI와 윈도우 핸들을 가지고 swapchain을 만든다.
+		hr = pFactory->CreateSwapChainForHwnd(
+			m_pCommandQueue.Get(), _hWnd, &swapChainDesc, &fsSwapChainDesc,
+			nullptr, pSwapChain1.GetAddressOf());
+		if (FAILED(hr))
+		{
+			__debugbreak();
+		}
+		pSwapChain1->QueryInterface(IID_PPV_ARGS(&m_pSwapChain));
+		m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+		// Window에 맞춰서 Viewport와 Scissor Rect를 정의한다.
+		m_viewport.Width = static_cast<float>(uiWndWidth);
+		m_viewport.Height = static_cast<float>(uiWndHeight);
+		m_viewport.MinDepth = 0.f;
+		m_viewport.MaxDepth = 1.f;
+
+		m_scissorRect.left = 0;
+		m_scissorRect.right = uiWndWidth;
+		m_scissorRect.top = 0;
+		m_scissorRect.bottom = uiWndHeight;
+		// 맴버도 채운다.
+		m_ulWidth = static_cast<ULONG>(uiWndWidth);
+		m_ulHeight = static_cast<ULONG>(uiWndHeight);
+	}
+
+	// #8 각각의 Frame에 대해 Frame Resource를 만든다.
+	{
+		CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart());
+
+		for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+			// Descriptor Heap에 Render Target 역할을 하는 SwapChain의 프론트 버퍼를
+			// ID3D12Resource으로 가져와서
+			m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pRenderTargets[i].GetAddressOf()));
+			// 그리고 그것을 가리키는 view(일종의 포인터)를 설정함으로 렌더타겟으로 쓸 수 있게 한다.
+			m_pD3DDevice->CreateRenderTargetView(m_pRenderTargets[i].Get(), nullptr, rtvHandle);
+			// RTV Heap handle을 다음으로 옮겨 백 버퍼도 똑같이 설정한다.
+			rtvHandle.Offset(1, m_rtvDescriptorSize);
+
+			m_pRenderTargets[i]->SetName(L"Render Target Resource");
+		}
+	}
+	
+	// #9
+	CreateCommandList();
+
+
+	// #10 fence를 정의한다.
+	// synchronization objects가 필요한 이유는, d3d12는 GPU에서 리소스를 사용하기 전에
+	// 그것을 해제해 버릴 수 있다. 그래서 이렇게 fence를 쳐줘서 없애기 전에 확인 해준다.
+	// d3d12는 완전 비둥기(asynchronous) api다.
+	CreateFence();
+
+	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
+
+	// for ray tracing
+	m_pRayTracingManager = std::make_unique<RayTracingManager>();
+	m_pRayTracingManager->Initialize(this, m_ulWidth, m_ulHeight);
+
+	return true;
 }
 
 void D3D12Renderer::BeginRender()
 {
+	if(FAILED(m_pCommandAllocator->Reset())) {
+		__debugbreak();
+	}
+	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+		__debugbreak();
+	}
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
+
+	auto barrier_PresentToRT = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
+		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	m_pCommandList->ResourceBarrier(1, &barrier_PresentToRT);
+
+	m_pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::SteelBlue, 0, nullptr);
+
+	m_pCommandList->RSSetViewports(1, &m_viewport);
+	m_pCommandList->RSSetScissorRects(1, &m_scissorRect);
+	m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 }
 
 void D3D12Renderer::EndRender()
 {
+	// === Geometry Rendering ===
+	
+	// ==========================
+
+	// === Ray Tracing Rendering ===
+	m_pRayTracingManager->DoRayTracing(m_pCommandList.Get());
+	// =============================
+
+	D3D12Resource_raw pRayTracingOutputResource = m_pRayTracingManager->INL_GetOutputResource();
+
+	D3D12_RESOURCE_BARRIER preCopyBarrier[2];
+	preCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
+		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
+	preCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	m_pCommandList->ResourceBarrier(ARRAYSIZE(preCopyBarrier), preCopyBarrier);
+
+	m_pCommandList->CopyResource(m_pRenderTargets[m_uiRenderTargetIndex].Get(), pRayTracingOutputResource);
+
+	D3D12_RESOURCE_BARRIER postCopyBarrier[2];
+	postCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
+		D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	postCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+
+	m_pCommandList->ResourceBarrier(ARRAYSIZE(postCopyBarrier), postCopyBarrier);
+
+	m_pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get()};
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
 }
 
 void D3D12Renderer::Present()
 {
+	UINT uiSyncInterval = 0; // VSync Off / 1이면 VSync On
+	UINT uiPresentFlags = 0;
+	
+	if (!uiSyncInterval) {
+		uiPresentFlags = DXGI_PRESENT_ALLOW_TEARING;
+	}
+
+	HRESULT hr = m_pSwapChain->Present(uiSyncInterval, uiPresentFlags);
+
+	if (DXGI_ERROR_DEVICE_REMOVED == hr) {
+		__debugbreak();
+	}
+	
+	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	DoFence();
+
+	WaitForFenceValue();
 }
 
 bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _Height)
 {
-	return false;
+	if (!(_width * _Height))
+		return false;
+	if(m_ulHeight == _width && m_ulHeight == _Height)
+		return false;
+
+	CleanupDepthStencilBuffer();
+
+	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+	HRESULT hr = m_pSwapChain->GetDesc1(&swapChainDesc);
+	if (FAILED(hr)) {
+		__debugbreak();
+		return false;
+	}
+
+	for(UINT n = 0; n < SWAP_CHAIN_FRAME_COUNT; n++) {
+		m_pRenderTargets[n].Reset();
+	}
+
+	if(FAILED(m_pSwapChain->ResizeBuffers(SWAP_CHAIN_FRAME_COUNT, _width, _Height, DXGI_FORMAT_R8G8B8A8_UNORM, m_uiSwapChainFlags))) {
+		__debugbreak();
+		return false;
+	}
+	static_assert(false && "여기서 부터 구현 시작");
 }
 
 void D3D12Renderer::CreateCommandList()
@@ -66,11 +355,21 @@ void D3D12Renderer::CreateFence()
 
 UINT64 D3D12Renderer::DoFence()
 {
-	return UINT64();
+	m_ui64FenceValue++;
+	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
+	return m_ui64FenceValue;
 }
 
 void D3D12Renderer::WaitForFenceValue()
 {
+	const UINT64 ExpectedFenceValue = m_ui64FenceValue;
+
+	// Wait until the previous frame is finished.
+	if (m_pFence->GetCompletedValue() < ExpectedFenceValue)
+	{
+		m_pFence->SetEventOnCompletion(ExpectedFenceValue, m_hFenceEvent);
+		WaitForSingleObject(m_hFenceEvent, INFINITE);
+	}
 }
 
 void D3D12Renderer::CleanUpFence()

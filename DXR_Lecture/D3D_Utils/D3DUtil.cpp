@@ -99,6 +99,62 @@ void SetDefaultSamplerDesc(D3D12_STATIC_SAMPLER_DESC* _pOutSamplerDesc, UINT _Re
 	_pOutSamplerDesc->ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 }
 
+void SetSamplerDesc_Wrap(D3D12_STATIC_SAMPLER_DESC* _pOutSamperDesc, UINT _RegisterIndex)
+{
+	SetDefaultSamplerDesc(_pOutSamperDesc, _RegisterIndex);
+	
+	_pOutSamperDesc->AddressU = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	_pOutSamperDesc->AddressV = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+	_pOutSamperDesc->AddressW = D3D12_TEXTURE_ADDRESS_MODE_WRAP;
+}	
+
+void SetSamplerDesc_Clamp(D3D12_STATIC_SAMPLER_DESC* _pOutSamperDesc, UINT _RegisterIndex)
+{
+	SetDefaultSamplerDesc(_pOutSamperDesc, _RegisterIndex);
+
+	_pOutSamperDesc->AddressU = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	_pOutSamperDesc->AddressV = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+	_pOutSamperDesc->AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+}
+
+void SetSamplerDesc_Border(D3D12_STATIC_SAMPLER_DESC* _pOutSamperDesc, UINT _RegisterIndex)
+{
+	SetDefaultSamplerDesc(_pOutSamperDesc, _RegisterIndex);
+
+	_pOutSamperDesc->AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	_pOutSamperDesc->AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+	_pOutSamperDesc->AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
+}
+
+void SetSamplerDesc_Mirror(D3D12_STATIC_SAMPLER_DESC* _pOutSamperDesc, UINT _RegisterIndex)
+{
+	SetDefaultSamplerDesc(_pOutSamperDesc, _RegisterIndex);
+
+	_pOutSamperDesc->AddressU = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+	_pOutSamperDesc->AddressV = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+	_pOutSamperDesc->AddressW = D3D12_TEXTURE_ADDRESS_MODE_MIRROR;
+}
+
+void SerializeAndCreateRaytracingRootSignature(ID3D12Device* _pDevice, D3D12_ROOT_SIGNATURE_DESC* _pDesc, D3D12RootSignature_raw* _ppOutRootSig)
+{
+	Microsoft::WRL::ComPtr<ID3DBlob> pSignature = nullptr;
+	Microsoft::WRL::ComPtr<ID3DBlob> pError = nullptr;
+	
+	HRESULT hr = D3D12SerializeRootSignature(_pDesc, D3D_ROOT_SIGNATURE_VERSION_1, &pSignature, &pError);
+	if (FAILED(hr)) {
+		if (pError) {
+			WriteDebugStringA(DEBUG_OUTPUT_TYPE::DEBUG_CONSOLE_TYPE, "%s\n", static_cast<const char*>(pError->GetBufferPointer()));
+		}
+		__debugbreak();
+		return;
+	}
+	hr = _pDevice->CreateRootSignature(1, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(_ppOutRootSig));
+	if (FAILED(hr)) {
+		__debugbreak();
+		return;
+	}
+}
+
 HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer)
 {
 	HRESULT hr = S_OK;
@@ -133,6 +189,38 @@ HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, 
 	*_ppOutBuffer = pVertexBuffer.Get();
 
 RETURN:
+	return hr;
+}
+
+HRESULT CreateUploadBuffer(D3D12Device_raw _pDevice, void* _pData, UINT64 _DataSize, D3D12Resource_raw* _ppResource, const WCHAR* _wchResourceName)
+{
+	auto uploadHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
+	auto bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(_DataSize);
+
+	HRESULT hr = _pDevice->CreateCommittedResource(
+		&uploadHeapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&bufferDesc,
+		D3D12_RESOURCE_STATE_GENERIC_READ,
+		nullptr,
+		IID_PPV_ARGS(_ppResource));
+
+	if (FAILED(hr)) {
+		__debugbreak();
+		return hr;
+	}
+	if (_wchResourceName) {
+		(*_ppResource)->SetName(_wchResourceName);
+	}
+
+	if (_pData)	{
+		void* pMappedData = nullptr;
+		CD3DX12_RANGE readRange(0, 0);
+		(*_ppResource)->Map(0, &readRange, &pMappedData);
+		memcpy(pMappedData, _pData, _DataSize);
+		(*_ppResource)->Unmap(0, nullptr);
+	}
+
 	return hr;
 }
 
