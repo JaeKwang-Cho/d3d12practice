@@ -38,7 +38,7 @@ private:
 	void CleanupFence_forRayTracing();
 
 	void BuildShaderTable();
-	void CleanupShaderTable();
+	void CleanupShaderTables();
 
 	void CreateRootSignatures();
 	void CreateRaytracingPipelineStateObject();

@@ -122,6 +122,11 @@ bool ShaderManager::InitDXC()
 
 void ShaderManager::CleanupDXC()
 {
+	// DLL 언로드 전에 해당 DLL에서 생성된 COM 객체들을 먼저 해제해야 한다.
+	m_pDxcIncludeHandler.Reset();
+	m_pDxcCompiler.Reset();
+	m_pDxcUtils.Reset();
+
 	if (m_hDXL)
 	{
 		FreeLibrary(m_hDXL);
@@ -142,3 +147,4 @@ ShaderManager::~ShaderManager()
 {
 	CleanupShaderManager();
 }
+

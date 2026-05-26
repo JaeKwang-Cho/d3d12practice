@@ -64,9 +64,6 @@ bool ShaderTable::InsertShaderRecord(const ShaderRecord* _pShaderRecord)
 	return true;
 }
 
-void RayTracingManager::BuildShaderTable()
-{
-}
 
 void ShaderTable::CleanupShaderTable()
 {

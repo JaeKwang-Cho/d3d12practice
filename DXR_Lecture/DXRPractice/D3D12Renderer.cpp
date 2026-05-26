@@ -7,7 +7,7 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 {
 	HRESULT hr = E_FAIL;
 	// debug layer를 켜는데 사용하는 interface
-	Microsoft::WRL::ComPtr<ID3D12Debug6> pDebugController = nullptr;
+	Microsoft::WRL::ComPtr<ID3D12Debug> pDebugController = nullptr;
 	// DXGI 개체를 생성하는 interface
 	Microsoft::WRL::ComPtr<IDXGIFactory7> pFactory = nullptr;
 	// display subsystem의 스펙을 알아내는 interface
@@ -197,6 +197,9 @@ EXIT:
 	// d3d12는 완전 비둥기(asynchronous) api다.
 	CreateFence();
 
+	m_pShaderManager = std::make_unique<ShaderManager>();
+	m_pShaderManager->Initialize(this, _wchSahderPath, _bDebugShader);
+
 	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
 
 	// for ray tracing
@@ -287,11 +290,11 @@ void D3D12Renderer::Present()
 	WaitForFenceValue();
 }
 
-bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _Height)
+bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
 {
-	if (!(_width * _Height))
+	if (!(_width * _height))
 		return false;
-	if(m_ulHeight == _width && m_ulHeight == _Height)
+	if(m_ulHeight == _width && m_ulHeight == _height)
 		return false;
 
 	CleanupDepthStencilBuffer();
@@ -307,50 +310,140 @@ bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _Height)
 		m_pRenderTargets[n].Reset();
 	}
 
-	if(FAILED(m_pSwapChain->ResizeBuffers(SWAP_CHAIN_FRAME_COUNT, _width, _Height, DXGI_FORMAT_R8G8B8A8_UNORM, m_uiSwapChainFlags))) {
+	if(FAILED(m_pSwapChain->ResizeBuffers(SWAP_CHAIN_FRAME_COUNT, _width, _height, DXGI_FORMAT_R8G8B8A8_UNORM, m_uiSwapChainFlags))) {
 		__debugbreak();
 		return false;
 	}
-	static_assert(false && "여기서 부터 구현 시작");
+	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart());
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+		m_pSwapChain->GetBuffer(i, IID_PPV_ARGS(m_pRenderTargets[i].GetAddressOf()));
+		m_pD3DDevice->CreateRenderTargetView(m_pRenderTargets[i].Get(), nullptr, rtvHandle);
+		rtvHandle.Offset(1, m_rtvDescriptorSize);
+		m_pRenderTargets[i]->SetName(L"Render Target Resource");
+	}
+
+	m_ulHeight = _height;
+	m_ulWidth = _width;
+	m_viewport.Width = static_cast<float>(m_ulWidth);
+	m_viewport.Height = static_cast<float>(m_ulHeight);
+	m_scissorRect.left = 0;
+	m_scissorRect.top = 0;
+	m_scissorRect.right = m_ulWidth;
+	m_scissorRect.bottom = m_ulHeight;
+
+	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
+
+	m_pRayTracingManager->UpdateWindowSize_forRayTracing(m_ulWidth, m_ulHeight);
+
+	return true;
 }
 
 void D3D12Renderer::CreateCommandList()
 {
-}
+	if(FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf())))) {
+		__debugbreak();
+	}
 
-void D3D12Renderer::CleanupCommandList()
-{
+	if(FAILED(m_pD3DDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCommandAllocator.Get(), nullptr, IID_PPV_ARGS(m_pCommandList.GetAddressOf())))) {
+		__debugbreak();
+	}
+
+	m_pCommandList->Close();
 }
 
 bool D3D12Renderer::CreateDescriptorHeapForRTV()
 {
-	return false;
-}
+	D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+	rtvHeapDesc.NumDescriptors = SWAP_CHAIN_FRAME_COUNT;
+	rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+	rtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	if(FAILED(m_pD3DDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(m_pRTVHeap.GetAddressOf())))) {
+		__debugbreak();
+		return false;
+	}
 
-void D3D12Renderer::CleanupDescriptorHeapForRTV()
-{
+	m_rtvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+	return true;
 }
 
 bool D3D12Renderer::CreateDescriptorHeapForDSV()
 {
-	return false;
-}
+	D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+	dsvHeapDesc.NumDescriptors = 1;
+	dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+	dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+	if(FAILED(m_pD3DDevice->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(m_pDSVHeap.GetAddressOf())))) {
+		__debugbreak();
+		return false;
+	}
 
-void D3D12Renderer::CleanupDescriptorHeapForDSV()
-{
+	m_dsvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
+	return true;
 }
 
 bool D3D12Renderer::CreateDepthStencilBuffer(UINT _Width, UINT _Height)
 {
-	return false;
+	D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
+	depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+	depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+	depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+	depthOptimizedClearValue.DepthStencil.Depth = 1.f;
+	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+	CD3DX12_RESOURCE_DESC depthDesc(
+		D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+		0,
+		_Width,
+		_Height,
+		1,
+		1,
+		DXGI_FORMAT_R32_TYPELESS,
+		1,
+		0,
+		D3D12_TEXTURE_LAYOUT_UNKNOWN,
+		D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL
+	);
+
+	auto depthHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	if (FAILED(m_pD3DDevice->CreateCommittedResource(
+		&depthHeapProperties,
+		D3D12_HEAP_FLAG_NONE,
+		&depthDesc,
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthOptimizedClearValue,
+		IID_PPV_ARGS(m_pDepthStencilBuffer.GetAddressOf())))) 
+	{
+		__debugbreak();
+		return false;
+	}
+	m_pDepthStencilBuffer->SetName(L"D3D12Renderer::m_pDepthStencilBuffer");
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
+	m_pD3DDevice->CreateDepthStencilView(m_pDepthStencilBuffer.Get(), &depthStencilDesc, dsvHandle);
+
+	return true;
 }
 
 void D3D12Renderer::CleanupDepthStencilBuffer()
 {
+	if(m_pDepthStencilBuffer) {
+		m_pDepthStencilBuffer.Reset();
+	}
 }
 
 void D3D12Renderer::CreateFence()
 {
+	if(FAILED(m_pD3DDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(m_pFence.GetAddressOf())))) {
+		__debugbreak();
+	}
+
+	m_ui64FenceValue = 0;
+	m_hFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
 }
 
 UINT64 D3D12Renderer::DoFence()
@@ -374,10 +467,17 @@ void D3D12Renderer::WaitForFenceValue()
 
 void D3D12Renderer::CleanUpFence()
 {
+	if(m_hFenceEvent) {
+		CloseHandle(m_hFenceEvent);
+		m_hFenceEvent = nullptr;
+	}
 }
 
 void D3D12Renderer::CleanupRenderer()
 {
+	WaitForFenceValue();
+
+	CleanUpFence();
 }
 
 D3D12Renderer::D3D12Renderer()
@@ -386,4 +486,5 @@ D3D12Renderer::D3D12Renderer()
 
 D3D12Renderer::~D3D12Renderer()
 {
+	CleanupRenderer();
 }

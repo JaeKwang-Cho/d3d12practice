@@ -33,7 +33,7 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, ULONG _ulWidth, UL
 	CreateDescriptorHeapCBV_SRV_UAV();
 	CreateShaderVisibleHeap();
 
-	m_pRayShaderHandle = pShaderManager->CreateShaderDXC(L"RayTracingShader.hlsl", L"", L"lib_6_3", 0);
+	m_pRayShaderHandle = pShaderManager->CreateShaderDXC(L"Raytracing.hlsl", L"", L"lib_6_3", 0);
 
 	CreateOutputDiffuseBuffer(m_ulWidth, m_ulHeight);
 	CreateOutputDepthBuffer(m_ulWidth, m_ulHeight);
@@ -116,6 +116,33 @@ void RayTracingManager::CleanupFence_forRayTracing()
 	if (m_pFence)
 	{
 		m_pFence.Reset();
+	}
+}
+
+void RayTracingManager::BuildShaderTable()
+{
+	Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> pStateObjectProperties = nullptr;
+	m_pDXRStateObject->QueryInterface(IID_PPV_ARGS(pStateObjectProperties.GetAddressOf()));
+
+	void* pRayGenShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_raygenShaderName);
+
+	// Raygen Shader Table
+	ShaderRecord rayGenShaderRecord = ShaderRecord(pRayGenShaderIdentifier, m_ShaderIdentifierSize, nullptr, 0);
+	m_pRayGenShaderTable = new ShaderTable;
+	m_pRayGenShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize, L"RayGenShaderTable");
+	m_pRayGenShaderTable->CommitResource(1);
+	m_pRayGenShaderTable->InsertShaderRecord(&rayGenShaderRecord);
+
+	// Miss Shader Table
+
+	// Hit Group Shader Table
+}
+
+void RayTracingManager::CleanupShaderTables()
+{
+	if (m_pRayGenShaderTable) {
+		delete m_pRayGenShaderTable;
+		m_pRayGenShaderTable = nullptr;
 	}
 }
 
@@ -362,4 +389,5 @@ RayTracingManager::RayTracingManager()
 
 RayTracingManager::~RayTracingManager()
 {
+	CleanupRayTracingManager();
 }

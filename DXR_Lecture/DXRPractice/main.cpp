@@ -4,6 +4,7 @@
 #include "pch.h"
 #include <windowsx.h>
 #include <filesystem>
+#include "D3D12Renderer.h"
 
 // D3D 라이브러리 링크
 #pragma comment(lib, "DXGI.lib")
@@ -19,7 +20,7 @@
 extern "C" { __declspec(dllexport) extern const UINT D3D12SDKVersion = 619; }
 
 #if defined(_M_AMD64)
-extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3D12\\x64\\"; } 
+extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3D12\\"; } 
 #endif
 
 // 윈도우 전역 변수:
@@ -31,8 +32,18 @@ int g_ClientWidth = 1280;
 int g_ClientHeight = 720;
 WCHAR g_tempPath[MAX_PATH];
 
+D3D12Renderer* g_pRenderer = nullptr;
+
+ULONGLONG g_PrvFrameCheckTick = 0;
+ULONGLONG g_PrvUpdateTick = 0;
+DWORD	g_FrameCount = 0;
+
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
+
+// 게임 루프
+void RunGame();
+void Update();
 
 // 초기화 함수
 bool InitWindow(HINSTANCE _hInstance);
@@ -64,9 +75,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         __debugbreak();
     }
 
-
     MSG msg = {};
 
+    WCHAR wchAppPath[_MAX_PATH];
+    GetCurrentDirectory(_MAX_PATH, wchAppPath);
+
+    WCHAR wchExePath[_MAX_PATH];
+    GetModuleFileNameW(nullptr, wchExePath, _MAX_PATH);
+
+    std::filesystem::path shaderPath =
+        std::filesystem::path(wchExePath).parent_path() / L"..\\Shaders";
+    shaderPath = std::filesystem::canonical(shaderPath);
+
+    g_pRenderer = new D3D12Renderer;
+    g_pRenderer->Initialize(g_hWnd, true, true, true, shaderPath.wstring().c_str());
 
     // 기본으로 PeekMessage를 사용
     while (msg.message != WM_QUIT) {
@@ -74,6 +96,15 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
+        else {
+            RunGame();
+        }
+    }
+
+    if (g_pRenderer)
+    {
+        delete g_pRenderer;
+        g_pRenderer = nullptr;
     }
 
     // resource leak!!!
@@ -151,6 +182,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
     return 0;
+}
+
+void RunGame()
+{
+    g_FrameCount++;
+
+    // begin
+    ULONGLONG CurTick = GetTickCount64();
+
+    g_pRenderer->BeginRender();
+
+    // game business logic
+    if (CurTick - g_PrvUpdateTick > 16)
+    {
+        // Update Scene with 60FPS
+        Update();
+        g_PrvUpdateTick = CurTick;
+    }
+
+    // rendering objects
+    // 
+
+
+    // end
+    g_pRenderer->EndRender();
+
+    // Present
+    g_pRenderer->Present();
+
+    if (CurTick - g_PrvFrameCheckTick > 1000)
+    {
+        g_PrvFrameCheckTick = CurTick;
+
+        WCHAR wchTxt[64];
+        swprintf_s(wchTxt, L"FPS:%u", g_FrameCount);
+        SetWindowText(g_hWnd, wchTxt);
+
+        g_FrameCount = 0;
+    }
+}
+
+void Update()
+{
 }
 
 bool InitWindow(HINSTANCE _hInstance)

@@ -159,9 +159,6 @@
     <ClCompile Include="ShaderTable.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
     <ClInclude Include="..\D3D_Utils\D3DUtil.h" />
     <ClInclude Include="..\D3D_Utils\ShaderUtil.h" />
     <ClInclude Include="..\Utils\IndexCreator.h" />
@@ -176,6 +173,28 @@
     <ClInclude Include="ShaderTable_Common.h" />
     <ClInclude Include="ShaderUtil.h" />
     <ClInclude Include="typedef.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\Shaders\Raytracing.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compliing %(FileName).hlsl</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../Shaders/%(FileName).csm</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm
+</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compliing %(FileName).hlsl</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">../Shaders/%(FileName).csm</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\Raytracing_common.hlsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\Raytracing_typedef.hlsl">
+      <FileType>Document</FileType>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

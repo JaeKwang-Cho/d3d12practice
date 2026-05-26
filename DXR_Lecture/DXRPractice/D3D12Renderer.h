@@ -16,12 +16,8 @@ public:
 
 private:
 	void CreateCommandList();
-	void CleanupCommandList();
-
 	bool CreateDescriptorHeapForRTV();
-	void CleanupDescriptorHeapForRTV();
 	bool CreateDescriptorHeapForDSV();
-	void CleanupDescriptorHeapForDSV();
 
 	bool CreateDepthStencilBuffer(UINT _Width, UINT _Height);
 	void CleanupDepthStencilBuffer();
