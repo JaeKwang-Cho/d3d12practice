@@ -17,20 +17,32 @@
     <Filter Include="Renderer\D3D12Renderer">
       <UniqueIdentifier>{02b49dfc-3359-4533-9f6f-0d92e98d104e}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Renderer\RayTracingManager">
-      <UniqueIdentifier>{59ed79da-f6a4-4da8-b531-cd401020a15e}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Renderer\ShaderManager">
-      <UniqueIdentifier>{90e9bbce-1c51-4159-92cd-6bc5f4029cf9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Renderer\ShaderTable">
-      <UniqueIdentifier>{362d3ca2-c33b-43ed-a7c4-c8c150600ea2}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Utils">
       <UniqueIdentifier>{413cef32-f624-499c-9e5e-d9f8716110d6}</UniqueIdentifier>
     </Filter>
     <Filter Include="Shaders">
       <UniqueIdentifier>{b4a3bb7b-bf3f-421e-b36e-c3cff0a0fc3f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers">
+      <UniqueIdentifier>{61661337-eaf7-44d4-b9b1-6fa4221c2e92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\ResourceManager">
+      <UniqueIdentifier>{6ba5fd06-77a0-4e5b-a899-42ab6b917e19}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\RayTracingManager">
+      <UniqueIdentifier>{59ed79da-f6a4-4da8-b531-cd401020a15e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\ShaderManager">
+      <UniqueIdentifier>{90e9bbce-1c51-4159-92cd-6bc5f4029cf9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\ShaderTable">
+      <UniqueIdentifier>{362d3ca2-c33b-43ed-a7c4-c8c150600ea2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\ConstantBufferManager">
+      <UniqueIdentifier>{9bd02ccf-56c6-4e53-a3c2-006fc81f8a1c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Pools">
+      <UniqueIdentifier>{16b277b8-856b-45fe-9431-6c07cb256255}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -47,13 +59,13 @@
       <Filter>Utils</Filter>
     </ClCompile>
     <ClCompile Include="RayTracingManager.cpp">
-      <Filter>Renderer\RayTracingManager</Filter>
+      <Filter>Renderer\Managers\RayTracingManager</Filter>
     </ClCompile>
     <ClCompile Include="ShaderManager.cpp">
-      <Filter>Renderer\ShaderManager</Filter>
+      <Filter>Renderer\Managers\ShaderManager</Filter>
     </ClCompile>
     <ClCompile Include="ShaderTable.cpp">
-      <Filter>Renderer\ShaderTable</Filter>
+      <Filter>Renderer\Managers\ShaderTable</Filter>
     </ClCompile>
     <ClCompile Include="..\Utils\WriteDebugString.cpp">
       <Filter>Utils</Filter>
@@ -63,6 +75,15 @@
     </ClCompile>
     <ClCompile Include="..\D3D_Utils\ShaderUtil.cpp">
       <Filter>Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D12ResourceManager.cpp">
+      <Filter>Renderer\Managers\ResourceManager</Filter>
+    </ClCompile>
+    <ClCompile Include="ConstantBufferManager.cpp">
+      <Filter>Renderer\Managers\ConstantBufferManager</Filter>
+    </ClCompile>
+    <ClCompile Include="SimpleConstantBufferPool.cpp">
+      <Filter>Main Entry</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -86,16 +107,16 @@
       <Filter>Utils</Filter>
     </ClInclude>
     <ClInclude Include="RayTracingManager.h">
-      <Filter>Renderer\RayTracingManager</Filter>
+      <Filter>Renderer\Managers\RayTracingManager</Filter>
     </ClInclude>
     <ClInclude Include="ShaderManager.h">
-      <Filter>Renderer\ShaderManager</Filter>
+      <Filter>Renderer\Managers\ShaderManager</Filter>
     </ClInclude>
     <ClInclude Include="ShaderTable.h">
-      <Filter>Renderer\ShaderTable</Filter>
+      <Filter>Renderer\Managers\ShaderTable</Filter>
     </ClInclude>
     <ClInclude Include="ShaderTable_Common.h">
-      <Filter>Renderer\ShaderTable</Filter>
+      <Filter>Renderer\Managers\ShaderTable</Filter>
     </ClInclude>
     <ClInclude Include="..\Utils\WriteDebugString.h">
       <Filter>Utils</Filter>
@@ -106,6 +127,13 @@
     <ClInclude Include="..\D3D_Utils\ShaderUtil.h">
       <Filter>Utils</Filter>
     </ClInclude>
+    <ClInclude Include="D3D12ResourceManager.h">
+      <Filter>Renderer\Managers\ResourceManager</Filter>
+    </ClInclude>
+    <ClInclude Include="ConstantBufferManager.h">
+      <Filter>Renderer\Managers\ConstantBufferManager</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleConstantBufferPool.h" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\Shaders\Raytracing.hlsl">

@@ -2,6 +2,7 @@
 #include "D3D12Renderer.h"
 #include "RayTracingManager.h"
 #include "ShaderManager.h"
+#include "D3D12ResourceManager.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath)
 {
