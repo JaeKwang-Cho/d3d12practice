@@ -108,7 +108,7 @@ HRESULT CompileShaderFromFileWithDXC(IDxcUtils* _pUtils, IDxcCompiler3* _pCompil
 		pArg[ulArgCount++] = DXC_ARG_OPTIMIZATION_LEVEL3;
 	}
 
-	IDxcCompilerArgs* pCompilerArgs = nullptr;
+	Microsoft::WRL::ComPtr<IDxcCompilerArgs> pCompilerArgs = nullptr;
 	hr = _pUtils->BuildArguments(
 		_wchFileName,
 		_wchEntryPoint,
@@ -129,7 +129,7 @@ HRESULT CompileShaderFromFileWithDXC(IDxcUtils* _pUtils, IDxcCompiler3* _pCompil
 	sourceBuffer.Size = ulCodeSize > 0 ? static_cast<SIZE_T>(ulCodeSize - 1) : 0;
 	sourceBuffer.Encoding = DXC_CP_ACP;
 
-	IDxcResult* pCompileResult = nullptr;
+	Microsoft::WRL::ComPtr<IDxcResult> pCompileResult = nullptr;
 	hr = _pCompiler->Compile(
 		&sourceBuffer,
 		pCompilerArgs->GetArguments(),
@@ -164,15 +164,6 @@ HRESULT CompileShaderFromFileWithDXC(IDxcUtils* _pUtils, IDxcCompiler3* _pCompil
 			pErrorBlob->Release();
 			pErrorBlob = nullptr;
 		}
-	}
-
-	if (pCompileResult) {
-		pCompileResult->Release();
-		pCompileResult = nullptr;
-	}
-	if (pCompilerArgs) {
-		pCompilerArgs->Release();
-		pCompilerArgs = nullptr;
 	}
 
 	DeleteShaderCode(pCodeBuffer);
