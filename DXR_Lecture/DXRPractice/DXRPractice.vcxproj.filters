@@ -44,6 +44,9 @@
     <Filter Include="Renderer\Pools">
       <UniqueIdentifier>{16b277b8-856b-45fe-9431-6c07cb256255}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Utils\Texture_Utils">
+      <UniqueIdentifier>{8e8c9600-486a-4bf5-86de-94699746c15d}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -84,6 +87,12 @@
     </ClCompile>
     <ClCompile Include="SimpleConstantBufferPool.cpp">
       <Filter>Renderer\Pools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Utils\DDSTextureLoader12.cpp">
+      <Filter>Utils\Texture_Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Utils\WICTextureLoader12.cpp">
+      <Filter>Utils\Texture_Utils</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -136,6 +145,12 @@
     <ClInclude Include="SimpleConstantBufferPool.h">
       <Filter>Renderer\Pools</Filter>
     </ClInclude>
+    <ClInclude Include="..\Utils\DDSTextureLoader12.h">
+      <Filter>Utils\Texture_Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Utils\WICTextureLoader12.h">
+      <Filter>Utils\Texture_Utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\Shaders\Raytracing.hlsl">
@@ -145,6 +160,9 @@
       <Filter>Shaders</Filter>
     </CustomBuild>
     <CustomBuild Include="..\Shaders\Raytracing_typedef.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\Rasterization.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>

@@ -5,7 +5,7 @@ class SimpleConstantBufferPool;
 class ConstantBufferManager
 {
 public:
-	bool Initialize(D3D12Device_raw _pD3DDevice, ULONG _ulMaxCBVNum);
+	bool Initialize(D3D12Device_raw _pD3DDevice, UINT _ulMaxCBVNum);
 	void Reset_ConstantBufferManager();
 
 	SimpleConstantBufferPool* GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType);

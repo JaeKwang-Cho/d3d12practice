@@ -19,6 +19,8 @@ bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 	CreateCommandList_forResourceManager();
 	// GPU에 메모리를 올리는 거라서 필요하다.
 	CreateFence_forResourceManager();
+
+	return true;
 }
 
 HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData)
@@ -295,8 +297,6 @@ HRESULT D3D12ResourceManager::CreateTexture(D3D12Resource_ptr* _ppOutResource, U
 
 HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName)
 {
-	return E_NOTIMPL;
-
 	D3D12Resource_ptr pTexResource = nullptr;
 	D3D12Resource_ptr pUploadBuffer = nullptr;
 
@@ -312,7 +312,6 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutRes
 	std::wstring texFormat = wsFileName.substr(wsFileName.find_last_of(L".") + 1);
 
 	HRESULT hr = S_OK;
-#if 0
 	std::unique_ptr<ScratchImage> image = std::make_unique<ScratchImage>();
 	// DirectXTex 라이브러리를 사용한다.
 	// 일단은 mipmap이 없는 2d 이미지만 받는다.
@@ -321,7 +320,7 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutRes
 		hr = LoadDDSTextureFromFile(m_pD3DDevice.Get(), _wchFileName, pTexResource.GetAddressOf(), texData, subresourceData);
 		if (FAILED(hr)) {
 			__debugbreak();
-			goto RETURN;
+			return hr;
 		}
 	}
 	else if (texFormat == L"png")
@@ -330,7 +329,7 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutRes
 		hr = LoadWICTextureFromFile(m_pD3DDevice.Get(), _wchFileName, pTexResource.GetAddressOf(), texData, subresourceData[0]);
 		if (FAILED(hr)) {
 			__debugbreak();
-			goto RETURN;
+			return hr;
 		}
 	}
 	else
@@ -338,7 +337,6 @@ HRESULT D3D12ResourceManager::CreateTextureFromFile(D3D12Resource_ptr* _ppOutRes
 		__debugbreak();
 	}
 
-#endif
 	// DirectXTex에서 얻어준 정보를 가지고 Resource를 생성해서 GPU에 올린다.
 	textureDesc = pTexResource->GetDesc();
 	subresourceSize = (UINT)subresourceData.size();

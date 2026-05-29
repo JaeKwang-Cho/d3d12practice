@@ -46,9 +46,12 @@ using Microsoft::WRL::ComPtr;
 #include "typedef.h"
 #include "Renderer_typedef.h"
 
-#ifdef _DEBUG
+// 메모리릭 체크
+#if defined(DEBUG) || defined(_DEBUG)
+#ifndef _CRTDBG_MAP_ALLOC
 #define _CRTDBG_MAP_ALLOC
-#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
+#include <crtdbg.h>
+#endif
 #endif
 
 using namespace std;
@@ -58,3 +61,6 @@ using namespace std;
 #include "../Utils/WriteDebugString.h"
 #include "../D3D_Utils/D3DUtil.h"
 #include "../D3D_Utils/ShaderUtil.h"
+#include "DirectXTex.h"
+#include "../Utils/WICTextureLoader12.h"
+#include "../Utils/DDSTextureLoader12.h"

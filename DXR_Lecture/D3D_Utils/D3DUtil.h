@@ -19,9 +19,9 @@ HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, 
 
 HRESULT CreateUploadBuffer(D3D12Device_raw _pDevice, void* _pData, UINT64 _DataSize, D3D12Resource_raw* _ppResource, const WCHAR* _wchResourceName);
 
-inline size_t AlignConstantBufferSize(size_t _size) {
+inline UINT AlignConstantBufferSize(size_t _size) {
 	// 이렇게 하면 256 보다 작은 값은 날라간다.
-	size_t aligned_size = (_size + 255) & (~255);
+	UINT aligned_size = (_size + 255) & (~255);
 	return aligned_size;
 }
 

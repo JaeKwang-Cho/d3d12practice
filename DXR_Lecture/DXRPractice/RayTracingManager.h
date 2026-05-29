@@ -29,6 +29,9 @@ public:
 	void DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList);
 	void UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight);
 
+	BLAS_INSTANCE* AllocBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate);
+	void FreeBLAS(BLAS_INSTANCE* _pBLASInstance);
+
 private:
 	void CreateCommandList_forRayTracing();
 
@@ -49,6 +52,13 @@ private:
 	void CleanupOutputDiffuseBuffer();
 	bool CreateOutputDepthBuffer(UINT _uiWidth, UINT _uiHeight);
 	void CleanupOutputDepthBuffer();
+
+	BLAS_INSTANCE* BuildBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate);
+	D3D12Resource_raw BuildTLAS(D3D12Resource_raw _pInstanceDescResource, BLAS_INSTANCE** _ppInstanceList, ULONG _ulBlasInstanceNum, bool _bAllowUpdate, UINT _CurrContextIndex);
+	bool InitMesh();
+	void CleanupMesh();
+	
+	bool InitAccelerationStructure();
 
 	void CleanupRayTracingManager();
 
@@ -84,7 +94,27 @@ private:
 
 	// ShaderTable도 RayTracingManager이 소유한다.
 	std::unique_ptr<ShaderTable> m_pRayGenShaderTable = nullptr;
+	std::unique_ptr<ShaderTable> m_pMissShaderTable = nullptr;
+	std::unique_ptr<ShaderTable> m_pHitGroupShaderTable = nullptr;
+
+	UINT m_MissShaderTableStrideInBytes = 0;
+	UINT m_HitGroupShaderTableStrideInBytes = 0;
+	ULONG m_ulHitGroupShaderRecordNum = 0;
+
 	UINT m_ShaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+
+	// BLAS_INSTANCE는 RayTracingManager이 소유한다.
+	std::vector<std::unique_ptr<BLAS_INSTANCE>> m_vecBLASInstance; 
+
+	D3D12Resource_ptr m_pBLASInstanceDescResource = nullptr;
+	D3D12Resource_ptr m_pTLAS = nullptr;
+	std::unique_ptr<BLAS_INSTANCE> m_pBLASInstance = nullptr;
+
+	// 테스트용 mesh 데이터
+	D3D12Resource_ptr m_pVertexBuffer = nullptr;
+	D3D12Resource_ptr m_pIndexBuffer = nullptr;
+
+
 
 	// RayTracingManager이 소유 - end
 public:

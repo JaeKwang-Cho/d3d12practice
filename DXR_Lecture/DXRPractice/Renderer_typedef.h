@@ -34,3 +34,25 @@ struct CONSTANT_BUFFER_PROPERTY
 	CONSTANT_BUFFER_TYPE cbType;
 	UINT cbSize;
 };
+
+const ULONG MAX_TRIANGLE_COUNT_PER_BLAS = 16;
+
+struct BLAS_BUILD_TRIGROUP_INFO
+{
+	D3D12Resource_raw pIndexBuffer;
+	D3D12Resource_raw pTexResource;
+	ULONG ulIndexNum;
+	bool bNotOpaque;
+};
+
+struct BLAS_INSTANCE
+{
+	void* pSrcMeshObj;
+	D3D12Resource_raw pBLAS;
+	XMMATRIX matTransform;
+
+	ULONG ulIndex;
+	UINT uiShaderRecordIndex;
+	ULONG ulVertexCount;
+	ULONG ulTriGroupCount;
+};

@@ -6,7 +6,7 @@ CONSTANT_BUFFER_PROPERTY f_pCBProperties[] = {
 	{ CONSTANT_BUFFER_TYPE::RAY_TRACING, sizeof(CONSTANT_BUFFER_RAY_TRACING) }
 };
 
-bool ConstantBufferManager::Initialize(D3D12Device_raw _pD3DDevice, ULONG _ulMaxCBVNum)
+bool ConstantBufferManager::Initialize(D3D12Device_raw _pD3DDevice, UINT _ulMaxCBVNum)
 {
 	for(UINT i = 0; i < static_cast<UINT>(CONSTANT_BUFFER_TYPE::COUNT); i++) {
 		m_pConstantBufferPool[i] = std::make_unique<SimpleConstantBufferPool>();
