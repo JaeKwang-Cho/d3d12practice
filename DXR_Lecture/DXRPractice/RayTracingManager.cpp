@@ -4,10 +4,12 @@
 #include "ShaderTable.h"
 #include "ShaderTable_Common.h"
 #include "ShaderManager.h"
+#include "SimpleConstantBufferPool.h"
+#include "ConstantBufferManager.h"
 
 const wchar_t* c_raygenShaderName = { L"MyRaygenShader_RadianceRay" };
 
-bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, ULONG _ulWidth, ULONG _ulHeight)
+bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight)
 {
 	m_pRenderer = _pRenderer;
 	m_pD3DDevice = m_pRenderer->INL_GetD3DDevice();
@@ -41,14 +43,99 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, ULONG _ulWidth, UL
 	CreateRootSignatures();
 	CreateRaytracingPipelineStateObject();
 
+	BuildShaderTable();
+
+	// build geometry
+	
+	// build accelration structure
+
 	return true;
 }
 
 void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 {
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dispatchHeapHandleCPU(m_pShaderVisibleDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+	D3D12_CPU_DESCRIPTOR_HANDLE cbvHandle = {};
+	SimpleConstantBufferPool* pCBPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::RAY_TRACING);
+	CB_CONTAINER* pCBContainer = pCBPool->AllocCBContainer();
+	if (!pCBContainer) {
+		__debugbreak();
+		return;
+	}
+
+	// RayTracing에 필요한 상수 버퍼 데이터를 채운다.
+	CONSTANT_BUFFER_RAY_TRACING* pConstBuffer = reinterpret_cast<CONSTANT_BUFFER_RAY_TRACING*>(pCBContainer->pSysMemAddress);
+	pConstBuffer->MaxRadianceRayRecursionDepth = MAX_RADIANCE_RECURSION_DEPTH;
+	pConstBuffer->Near = NEAR_PLANE;
+	pConstBuffer->Far = FAR_PLANE;
+
+	// (0) CBV - RayTracing
+	m_pD3DDevice->CopyDescriptorsSimple(1, dispatchHeapHandleCPU, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	dispatchHeapHandleCPU.Offset(1, m_DescriptorSize);
+
+	// (1) UAV - Output Diffuse
+	CD3DX12_CPU_DESCRIPTOR_HANDLE uavDiffuse(m_pCommonDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(COMMON_DESCRIPTOR_INDEX::OUTPUT_DIFFUSE_UAV), m_DescriptorSize);
+	m_pD3DDevice->CopyDescriptorsSimple(1, dispatchHeapHandleCPU, uavDiffuse, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	dispatchHeapHandleCPU.Offset(1, m_DescriptorSize);
+
+	// (2) UAV - Output Depth
+	CD3DX12_CPU_DESCRIPTOR_HANDLE uavDepth(m_pCommonDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), static_cast<INT>(COMMON_DESCRIPTOR_INDEX::OUTPUT_DEPTH_UAV), m_DescriptorSize);
+	m_pD3DDevice->CopyDescriptorsSimple(1, dispatchHeapHandleCPU, uavDepth, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	dispatchHeapHandleCPU.Offset(1, m_DescriptorSize);
+
+	CD3DX12_RESOURCE_BARRIER rcBarrier[] = {
+		CD3DX12_RESOURCE_BARRIER::Transition(m_pOutputDiffuseBuffer.Get(), D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS),
+		CD3DX12_RESOURCE_BARRIER::Transition(m_pOutputDepthBuffer.Get(), D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS)
+	};
+
+	_pCommandList->ResourceBarrier(static_cast<UINT>(_countof(rcBarrier)), rcBarrier);
+
+	// Ray들이 사용할 global root signature을 설정한다.
+	_pCommandList->SetComputeRootSignature(m_pRaytracingGlobalRootSignature.Get());
+
+	// acceleration structure와 dispatch rays를 위한 descriptor heap을 설정한다.
+	D3D12DescriptorHeap_raw ppHeaps[] = { m_pShaderVisibleDescriptorHeap.Get() };
+	_pCommandList->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+
+	// heap을 table로 설정한다. root param 0에 heap이 바인딩된다고 가정한다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE dispatchHeapHandleGPU(m_pShaderVisibleDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	_pCommandList->SetComputeRootDescriptorTable(0, dispatchHeapHandleGPU);
+
+	// 각 Ray들은 D3D12_DISPATCH_RAYS_DESC에 값을	 채워서 DispatchRays()로 실행된다.
+	D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
+	// Set Acceleration Structure
+	// No-Implementation
+
+	// Hit group shader table
+	// No-Implementation
+
+	// Miss shader table
+	// No-Implementation
+
+	// Raygen shader table
+	D3D12Resource_raw pRayGenShaderTableResource = m_pRayGenShaderTable->GetResource();
+	dispatchDesc.RayGenerationShaderRecord.StartAddress = pRayGenShaderTableResource->GetGPUVirtualAddress();
+	dispatchDesc.RayGenerationShaderRecord.SizeInBytes = m_pRayGenShaderTable->GetShaderRecordSize();
+
+	// Ray dimension
+	dispatchDesc.Width = m_ulWidth;
+	dispatchDesc.Height = m_ulHeight;
+	dispatchDesc.Depth = 1;
+
+	// Object를 세팅해주고, Ray를 Dispatch한다.
+	_pCommandList->SetPipelineState1(m_pDXRStateObject.Get());
+	_pCommandList->DispatchRays(&dispatchDesc);
+
+	CD3DX12_RESOURCE_BARRIER rcBarrier2[] = {
+		CD3DX12_RESOURCE_BARRIER::Transition(m_pOutputDiffuseBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE),
+		CD3DX12_RESOURCE_BARRIER::Transition(m_pOutputDepthBuffer.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE)
+	};
+
+	_pCommandList->ResourceBarrier(static_cast<UINT>(_countof(rcBarrier2)), rcBarrier2);
 }
 
-void RayTracingManager::UpdateWindowSize_forRayTracing(ULONG _ulWidth, ULONG _ulHeight)
+void RayTracingManager::UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight)
 {
 	CleanupOutputDiffuseBuffer();
 	CleanupOutputDepthBuffer();
@@ -121,29 +208,22 @@ void RayTracingManager::CleanupFence_forRayTracing()
 
 void RayTracingManager::BuildShaderTable()
 {
+	// RayGen Shader에 대한 shader identifier가 들어가는, shader table이 있어야 한다.
 	Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> pStateObjectProperties = nullptr;
 	m_pDXRStateObject->QueryInterface(IID_PPV_ARGS(pStateObjectProperties.GetAddressOf()));
-
+	// entry 이름으로 identifier를 얻고, shader table에 넣는다. Shader table은 raygen, miss, hit group shader 각각에 대해 만들어야 한다.
 	void* pRayGenShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_raygenShaderName);
 
 	// Raygen Shader Table
 	ShaderRecord rayGenShaderRecord = ShaderRecord(pRayGenShaderIdentifier, m_ShaderIdentifierSize, nullptr, 0);
-	m_pRayGenShaderTable = new ShaderTable;
+	m_pRayGenShaderTable = std::make_unique<ShaderTable>();
 	m_pRayGenShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize, L"RayGenShaderTable");
-	m_pRayGenShaderTable->CommitResource(1);
+	m_pRayGenShaderTable->CommitResource(1); // 지금	은 raygen shader record 하나만 있으므로 1로 설정한다.
 	m_pRayGenShaderTable->InsertShaderRecord(&rayGenShaderRecord);
 
 	// Miss Shader Table
 
 	// Hit Group Shader Table
-}
-
-void RayTracingManager::CleanupShaderTables()
-{
-	if (m_pRayGenShaderTable) {
-		delete m_pRayGenShaderTable;
-		m_pRayGenShaderTable = nullptr;
-	}
 }
 
 void RayTracingManager::CreateRootSignatures()
@@ -162,7 +242,7 @@ void RayTracingManager::CreateRootSignatures()
 	globalRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);  // u0 - Diffuse UAV, u1 - Depth UAV
 
 	// b0 : RayTracingCB | u0 : Output Diffuse | u1 : Output Depth | t0 : AccelerationStructure
-	CD3DX12_ROOT_PARAMETER GlobalRootParameters[1];
+	CD3DX12_ROOT_PARAMETER GlobalRootParameters[1] = {};
 	GlobalRootParameters[0].InitAsDescriptorTable(_countof(globalRanges), globalRanges, D3D12_SHADER_VISIBILITY_ALL);
 
 	// Sampler
@@ -224,12 +304,12 @@ void RayTracingManager::CreateRaytracingPipelineStateObject()
 	pShaderConfig->Config(payloadSize, attributeSize);
 
 	// 4 ~ 5) Local Root Signature Subobject와 Association
-	// Local Root Signature 및 연결 설정
+	// Local Root Signature 및 연결 객체 설정
 	// Shader Table에서 각 Shader가 고유한 parameter를 사용할 수 있게 한다.
 	// No - Implemented. RayGen Shader만 있는 간단한 예제이므로, Local Root Signature는 만들지 않는다.
 
 	// 6) Global Root Signature Subobject
-	// DispatchRays()에서 사용할 Global Root Signature를 설정한다.
+	// DispatchRays()에서 나온 결과를 저장할 UAV 텍스쳐를 넘겨줄, Global Root Signature를 설정한다.
 	CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT* pGlobalRootSignature = raytracingPipeline.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
 	pGlobalRootSignature->SetRootSignature(m_pRaytracingGlobalRootSignature.Get());
 
@@ -246,6 +326,7 @@ void RayTracingManager::CreateRaytracingPipelineStateObject()
 		__debugbreak();
 		return;
 	}
+	// 이렇게 이름을 정해주면(그리고 컴파일 할 때 디버그 정보가 포함되어 있으면), PIX에서 RayTracing Pipeline State Object의 이름으로 나온다.
 	m_pDXRStateObject->SetName(L"RayTracingManager::m_pDXRStateObject");
 }
 
@@ -381,6 +462,7 @@ void RayTracingManager::CleanupRayTracingManager()
 		pShaderManager->ReleaseShader(m_pRayShaderHandle);
 		m_pRayShaderHandle = nullptr;
 	}
+
 }
 
 RayTracingManager::RayTracingManager()

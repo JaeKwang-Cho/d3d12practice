@@ -3,6 +3,8 @@
 #include "RayTracingManager.h"
 #include "ShaderManager.h"
 #include "D3D12ResourceManager.h"
+#include "ConstantBufferManager.h"
+#include "SimpleConstantBufferPool.h"
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath)
 {
@@ -198,8 +200,13 @@ EXIT:
 	// d3d12는 완전 비둥기(asynchronous) api다.
 	CreateFence();
 
+
+	// #11 Renderer에서 사용하는 Manager들을 초기화한다.
 	m_pShaderManager = std::make_unique<ShaderManager>();
 	m_pShaderManager->Initialize(this, _wchSahderPath, _bDebugShader);
+
+	m_pConstantBufferManager = std::make_unique<ConstantBufferManager>();
+	m_pConstantBufferManager->Initialize(m_pD3DDevice.Get(), 256);
 
 	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
 
@@ -289,6 +296,8 @@ void D3D12Renderer::Present()
 	DoFence();
 
 	WaitForFenceValue();
+
+	m_pConstantBufferManager->Reset_ConstantBufferManager();
 }
 
 bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
@@ -479,6 +488,11 @@ void D3D12Renderer::CleanupRenderer()
 	WaitForFenceValue();
 
 	CleanUpFence();
+}
+
+SimpleConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType)
+{
+	return m_pConstantBufferManager->GetConstantBufferPool(_cbType);
 }
 
 D3D12Renderer::D3D12Renderer()

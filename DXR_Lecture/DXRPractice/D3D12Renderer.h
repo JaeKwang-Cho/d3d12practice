@@ -3,6 +3,8 @@
 struct SHADER_HANDLE;
 class ShaderManager;
 class RayTracingManager;
+class ConstantBufferManager;
+class SimpleConstantBufferPool;
 
 class D3D12Renderer
 {
@@ -45,6 +47,7 @@ private:
 	// Manager도 Render가 소유한다.
 	std::unique_ptr<ShaderManager> m_pShaderManager = nullptr;
 	std::unique_ptr<RayTracingManager> m_pRayTracingManager = nullptr;
+	std::unique_ptr<ConstantBufferManager> m_pConstantBufferManager = nullptr;
 
 	D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;
 	DXGI_ADAPTER_DESC3 m_adapterDesc = {};
@@ -78,6 +81,7 @@ public:
 	D3D12Device_raw INL_GetD3DDevice() const { return m_pD3DDevice.Get(); }
 	ShaderManager* INL_GetShaderManager() const { return m_pShaderManager.get(); }
 	RayTracingManager* INL_GetRayTracingManager() const { return m_pRayTracingManager.get(); }
+	SimpleConstantBufferPool* INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType);
 
 	ULONG INL_GetWidth() const { return m_ulWidth; }
 	ULONG INL_GetHeight() const { return m_ulHeight; }

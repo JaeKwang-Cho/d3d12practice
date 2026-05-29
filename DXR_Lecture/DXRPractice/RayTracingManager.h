@@ -8,13 +8,13 @@ class RayTracingManager
 {
 private:
 	enum class COMMON_DESCRIPTOR_INDEX {
-		OUTPUT_DIFFUSE_UAV, // UAV - Output - Diffuse
+		OUTPUT_DIFFUSE_UAV = 0, // UAV - Output - Diffuse
 		OUTPUT_DEPTH_UAV,   // UAV - Output - Depth
 		Count,
 	};
 
 	enum class DISPATCH_DESCRIPTOR_INDEX {
-		RAYTRACING_CBV,
+		RAYTRACING_CBV = 0,
 		OUTPUT_DIFFUSE,
 		OUTPUT_DEPTH,
 		Count,
@@ -24,10 +24,10 @@ private:
 	static const DWORD MAX_RADIANCE_RECURSION_DEPTH = std::min<DWORD>(MAX_RECURSION_DEPTH, 1);
 
 public:
-	bool Initialize(D3D12Renderer* _pRenderer, ULONG _ulWidth, ULONG _ulHeight);
+	bool Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight);
 
 	void DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList);
-	void UpdateWindowSize_forRayTracing(ULONG _ulWidth, ULONG _ulHeight);
+	void UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight);
 
 private:
 	void CreateCommandList_forRayTracing();
@@ -38,7 +38,6 @@ private:
 	void CleanupFence_forRayTracing();
 
 	void BuildShaderTable();
-	void CleanupShaderTables();
 
 	void CreateRootSignatures();
 	void CreateRaytracingPipelineStateObject();
@@ -70,8 +69,8 @@ private:
 	// ray tracing 결과를 저장할 버퍼. UAV로 바인딩해서 사용한다.
 	D3D12Resource_ptr m_pOutputDiffuseBuffer = nullptr; 
 	D3D12Resource_ptr m_pOutputDepthBuffer = nullptr;
-	ULONG m_ulWidth = 0;
-	ULONG m_ulHeight = 0;
+	UINT m_ulWidth = 0;
+	UINT m_ulHeight = 0;
 
 	SHADER_HANDLE* m_pRayShaderHandle = nullptr;
 
@@ -84,7 +83,7 @@ private:
 	UINT m_DescriptorSize = 0;
 
 	// ShaderTable도 RayTracingManager이 소유한다.
-	ShaderTable* m_pRayGenShaderTable = nullptr;
+	std::unique_ptr<ShaderTable> m_pRayGenShaderTable = nullptr;
 	UINT m_ShaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
 
 	// RayTracingManager이 소유 - end

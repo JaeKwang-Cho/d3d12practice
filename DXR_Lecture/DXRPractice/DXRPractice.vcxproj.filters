@@ -83,7 +83,7 @@
       <Filter>Renderer\Managers\ConstantBufferManager</Filter>
     </ClCompile>
     <ClCompile Include="SimpleConstantBufferPool.cpp">
-      <Filter>Main Entry</Filter>
+      <Filter>Renderer\Pools</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -133,7 +133,9 @@
     <ClInclude Include="ConstantBufferManager.h">
       <Filter>Renderer\Managers\ConstantBufferManager</Filter>
     </ClInclude>
-    <ClInclude Include="SimpleConstantBufferPool.h" />
+    <ClInclude Include="SimpleConstantBufferPool.h">
+      <Filter>Renderer\Pools</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\Shaders\Raytracing.hlsl">
