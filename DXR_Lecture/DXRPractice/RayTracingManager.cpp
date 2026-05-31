@@ -6,8 +6,15 @@
 #include "ShaderManager.h"
 #include "SimpleConstantBufferPool.h"
 #include "ConstantBufferManager.h"
+#include "D3D12ResourceManager.h"
 
 const wchar_t* c_raygenShaderName = { L"MyRaygenShader_RadianceRay" };
+const wchar_t* c_closestHitShaderName[] = { L"MyClosestHitShader_RadianceRay" };
+const wchar_t* c_missShaderName[] = { L"MyMissShader_RadianceRay" }; 
+const wchar_t* c_anyHitShaderName[] = { L"MyAnyHitShader_RadianceRay" };
+
+// Hit groups
+const wchar_t* c_hitGroupName[] = { L"MyHitGroup_Triangle_RadianceRay" };
 
 bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight)
 {
@@ -46,8 +53,10 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 	BuildShaderTable();
 
 	// build geometry
+	InitMesh();
 	
 	// build accelration structure
+	InitAccelerationStructure();
 
 	return true;
 }
@@ -147,6 +156,15 @@ void RayTracingManager::UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHe
 	CreateOutputDepthBuffer(m_ulWidth, m_ulHeight);
 }
 
+BLAS_INSTANCE* RayTracingManager::AllocBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate)
+{
+	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = BuildBLAS(_pVertexBuffer, _VertexSize, _ulVertexCount, _pTriGroupInfoList, _ulTriGroupCount, _bAllowUpdate);
+	BLAS_INSTANCE* pBlasInstanceRaw = pBlasInstance.get();
+	m_arrBLASInstance.push_back(std::move(pBlasInstance));
+
+	return pBlasInstanceRaw;
+}
+
 void RayTracingManager::CreateCommandList_forRayTracing()
 {
 	if(FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf()))))
@@ -211,19 +229,39 @@ void RayTracingManager::BuildShaderTable()
 	// RayGen Shader에 대한 shader identifier가 들어가는, shader table이 있어야 한다.
 	Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> pStateObjectProperties = nullptr;
 	m_pDXRStateObject->QueryInterface(IID_PPV_ARGS(pStateObjectProperties.GetAddressOf()));
-	// entry 이름으로 identifier를 얻고, shader table에 넣는다. Shader table은 raygen, miss, hit group shader 각각에 대해 만들어야 한다.
-	void* pRayGenShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_raygenShaderName);
 
+	// entry 이름으로 identifier를 얻고, shader table에 넣는다. Shader table은 raygen, miss, hit group shader 각각에 대해 만들어야 한다.
+	// 
 	// Raygen Shader Table
+	void* pRayGenShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_raygenShaderName);
 	ShaderRecord rayGenShaderRecord = ShaderRecord(pRayGenShaderIdentifier, m_ShaderIdentifierSize, nullptr, 0);
+
 	m_pRayGenShaderTable = std::make_unique<ShaderTable>();
 	m_pRayGenShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize, L"RayGenShaderTable");
 	m_pRayGenShaderTable->CommitResource(1); // 지금	은 raygen shader record 하나만 있으므로 1로 설정한다.
 	m_pRayGenShaderTable->InsertShaderRecord(&rayGenShaderRecord);
 
 	// Miss Shader Table
+	void* pMissShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_missShaderName[0]);
+	ShaderRecord missShaderRecord = ShaderRecord(pMissShaderIdentifier, m_ShaderIdentifierSize);
+
+	m_pMissShaderTable = std::make_unique<ShaderTable>();
+	m_pMissShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize, L"MissShaderTable");
+	m_pMissShaderTable->CommitResource(1);
+	m_pMissShaderTable->InsertShaderRecord(&missShaderRecord);
+	m_MissShaderTableStrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
 
 	// Hit Group Shader Table
+	void* pHitGroupShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_hitGroupName[0]);
+	m_pHitGroupShaderTable = std::make_unique<ShaderTable>();
+	m_pHitGroupShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize + sizeof(ROOT_ARG), L"HitGroupShaderTable");
+	m_pHitGroupShaderTable->CommitResource(1);
+	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
+	ROOT_ARG rootArg = {}; // 여기서는 hit에 전달할 파라미터가 없으므로, root argument는 비워둔다.
+	ShaderRecord hitGroupShaderRecord = ShaderRecord(pHitGroupShaderIdentifier, m_ShaderIdentifierSize, &rootArg, sizeof(ROOT_ARG));
+	m_pHitGroupShaderTable->InsertShaderRecord(&hitGroupShaderRecord);
+	m_HitGroupShaderTableStrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
+	m_ulHitGroupShaderRecordNum = m_pHitGroupShaderTable->GetShaderRecordCount();
 }
 
 void RayTracingManager::CreateRootSignatures()
@@ -242,8 +280,9 @@ void RayTracingManager::CreateRootSignatures()
 	globalRanges[1].Init(D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0);  // u0 - Diffuse UAV, u1 - Depth UAV
 
 	// b0 : RayTracingCB | u0 : Output Diffuse | u1 : Output Depth | t0 : AccelerationStructure
-	CD3DX12_ROOT_PARAMETER GlobalRootParameters[1] = {};
+	CD3DX12_ROOT_PARAMETER GlobalRootParameters[2] = {};
 	GlobalRootParameters[0].InitAsDescriptorTable(_countof(globalRanges), globalRanges, D3D12_SHADER_VISIBILITY_ALL);
+	GlobalRootParameters[1].InitAsShaderResourceView(0); // t0 - AccelerationStructure
 
 	// Sampler
 	D3D12_STATIC_SAMPLER_DESC samplers[4] = {};
@@ -452,6 +491,267 @@ void RayTracingManager::CleanupOutputDepthBuffer()
 	{
 		m_pOutputDepthBuffer.Reset();
 	}
+}
+
+std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate)
+{
+	D3D12Resource_raw pBLASResource = nullptr; // BLAS_INSTANCE에 들어갈 BLAS 리소스
+
+	// 일단은 VB 하나에 IB 여러개
+	if (_ulTriGroupCount > MAX_TRIANGLE_COUNT_PER_BLAS) {
+		__debugbreak;
+		return nullptr;
+	}
+
+	ULONG ulBlasInstanceMemSize = static_cast<ULONG>(sizeof(BLAS_INSTANCE) - sizeof(ROOT_ARG)) * _ulTriGroupCount;
+
+	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = std::make_unique<BLAS_INSTANCE>();
+	pBlasInstance->ulID = 0;
+	pBlasInstance->matTransform = XMMatrixIdentity();
+	pBlasInstance->ulVertexCount = _ulVertexCount;
+
+	// BLAS에 들어갈 geometry description을 만든다. Triangle이 여러 그룹으로 나뉘어져 있다면, 각 그룹마다 geometry description이 필요하다. (예시에서는 하나의 그룹만 있지만, 일반적으로는 여러 그룹이 있을 수 있다.)
+	D3D12_RAYTRACING_GEOMETRY_DESC pGeomDescList[MAX_TRIANGLE_COUNT_PER_BLAS] = {};
+	D3D12_GPU_VIRTUAL_ADDRESS VB_GPU_Ptr = _pVertexBuffer->GetGPUVirtualAddress();
+	for (ULONG i = 0; i < _ulTriGroupCount; i++) {
+		D3D12_GPU_VIRTUAL_ADDRESS IB_GPU_Ptr = _pTriGroupInfoList[i].pIndexBuffer->GetGPUVirtualAddress();
+
+		pGeomDescList[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		pGeomDescList[i].Triangles.IndexBuffer = IB_GPU_Ptr;
+		pGeomDescList[i].Triangles.IndexCount = _pTriGroupInfoList[i].ulIndexNum;
+		pGeomDescList[i].Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+		pGeomDescList[i].Triangles.Transform3x4 = 0;
+		pGeomDescList[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+		pGeomDescList[i].Triangles.VertexCount = _ulVertexCount;
+		pGeomDescList[i].Triangles.VertexBuffer.StartAddress = VB_GPU_Ptr;
+		pGeomDescList[i].Triangles.VertexBuffer.StrideInBytes = _VertexSize;
+		if (_pTriGroupInfoList[i].bNotOpaque)
+		{
+			pGeomDescList[i].Flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
+		}
+		else {
+			pGeomDescList[i].Flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+		}
+	}
+
+	// Build BLAS with pGeomDescList and store the result in pBlasInstance->pBLASResource
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+	if (_bAllowUpdate) {
+		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+	}
+	else {
+		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+	}
+	inputs.NumDescs = _ulTriGroupCount;
+	inputs.pGeometryDescs = pGeomDescList;
+	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+
+	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
+	m_pD3DDevice->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
+
+	D3D12Resource_ptr pScratchResource = nullptr;
+	auto defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto uavResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	HRESULT hr = m_pD3DDevice->CreateCommittedResource(
+		&defaultHeapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&uavResourceDesc,
+		D3D12_RESOURCE_STATE_COMMON,
+		nullptr, IID_PPV_ARGS(pScratchResource.GetAddressOf()));
+
+	if (FAILED(hr)) {
+		__debugbreak();
+		return nullptr;
+	}
+	
+	D3D12_GPU_VIRTUAL_ADDRESS pScratchGPUAddress = pScratchResource->GetGPUVirtualAddress();
+	if(!pScratchGPUAddress){
+		__debugbreak();
+		return nullptr;
+	}
+	// acceleration structure를 위한 리소스 할당하기
+	// Acceleration Structure는 오직 default heap(혹은 custom heap)에만 생성될 수 있다.
+	// Default heap은 CPU에서 접근할 수 없다.
+	// Acceleration Structure를 가질 리소스는 D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 상태로 생성되어야 한다.
+	// 그리고 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그도 설정되어야 한다. 
+
+	D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+
+	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, &pBLASResource, initialResourceState, L"BottomLevelAccelerationStructure");
+	if (FAILED(hr)) {
+		__debugbreak();
+		return nullptr;
+	}
+
+	// BLAS desc
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC blasDesc = {};
+	blasDesc.Inputs = inputs;
+	blasDesc.ScratchAccelerationStructureData = pScratchGPUAddress;
+	blasDesc.DestAccelerationStructureData = pBLASResource->GetGPUVirtualAddress();
+
+	if(FAILED(m_pCommandAllocator->Reset()))
+	{
+		__debugbreak();
+		return nullptr;
+	}
+	if(FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr)))
+	{
+		__debugbreak();
+		return nullptr;
+	}
+
+	m_pCommandList->BuildRaytracingAccelerationStructure(&blasDesc, 0, nullptr);
+	// RayTracing을 하기 전에, UAV Barrier를 넣어준다.
+	auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(pBLASResource);
+	m_pCommandList->ResourceBarrier(1, &uavBarrier);
+
+	m_pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	DoFence_forRayTracing();
+	WaitForFenceValue_forRayTracing();
+
+	pBlasInstance->pBLAS = pBLASResource;
+	pBlasInstance->ulTriGroupCount = _ulTriGroupCount;
+
+	return pBlasInstance;
+}
+
+D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescResource, BLAS_INSTANCE** _ppInstanceList, ULONG _ulBlasInstanceNum, bool _bAllowUpdate, UINT _CurrContextIndex)
+{
+	D3D12Resource_raw pTLASResource = nullptr; // TLAS를 위한 리소스
+
+	// TLAS도 BLAS와 비슷한 방식으로 만들어진다. TLAS는 instance desc로부터 만들어지는데, instance desc는 GPU에서 접근할 수 있는 리소스에 있어야 한다.
+	// TLAS 버퍼의 크기를 얻고, TLAS를 위한 리소스를 할당한다. TLAS도 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그가 설정된 default heap에 생성되어야 한다.
+
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
+	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+	inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE;
+	if(_bAllowUpdate) {
+		inputs.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+	}
+	else {
+		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+	}
+	inputs.NumDescs = _ulBlasInstanceNum;
+	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+
+	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
+	m_pD3DDevice->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
+
+	D3D12Resource_ptr pScratchResource = nullptr;
+
+	auto defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto uavResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	HRESULT hr = m_pD3DDevice->CreateCommittedResource(
+		&defaultHeapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&uavResourceDesc,
+		D3D12_RESOURCE_STATE_COMMON,
+		nullptr, IID_PPV_ARGS(pScratchResource.GetAddressOf()));
+	if (FAILED(hr)) {
+		__debugbreak();
+		return nullptr;
+	}
+
+	D3D12_GPU_VIRTUAL_ADDRESS pScratchGPUAddress = pScratchResource->GetGPUVirtualAddress();
+
+	D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
+	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, &pTLASResource, initialResourceState, L"TopLevelAccelerationStructure");
+
+	// acceleration structure를 위한 리소스 할당하기
+	// Acceleration Structure는 오직 default heap(혹은 custom heap)에만 생성될 수 있다.
+	// Default heap은 CPU에서 접근할 수 없다.
+	// Acceleration Structure를 가질 리소스는 D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 상태로 생성되어야 한다.
+	// 그리고 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그도 설정되어야 한다. 
+
+	D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDescLists = nullptr;
+
+	CD3DX12_RANGE readRange(0, 0);
+	_pInstanceDescResource->Map(0, &readRange, reinterpret_cast<void**>(&pInstanceDescLists));
+
+	ULONG ulTLAS_ElementCount = 0;
+	D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDescEntry = pInstanceDescLists;
+	for(ULONG i = 0; i<_ulBlasInstanceNum; i++)
+	{
+		const BLAS_INSTANCE* pInstanceSrc = _ppInstanceList[i];
+		XMMATRIX matTranpose = XMMatrixTranspose(pInstanceSrc->matTransform);
+		memcpy(pInstanceDescEntry->Transform, &matTranpose, sizeof(pInstanceDescEntry->Transform));
+
+		pInstanceDescEntry->InstanceID = pInstanceSrc->ulID; // 나중에 Shader에서 InstanceID()으로 노출이 되는 값이다.
+		pInstanceDescEntry->InstanceContributionToHitGroupIndex = pInstanceSrc->uiShaderRecordIndex; // Ray가 hit group shader table에서 어떤 레코드를 참조할 지 결정하는 값이다. Ray가 hit group shader table에서 참조할 레코드는 InstanceContributionToHitGroupIndex + HitGroupIndexInShaderTable이다. (HitGroupIndexInShaderTable은 ray tracing dispatch할 때 설정된다.)
+		pInstanceDescEntry->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
+		pInstanceDescEntry->AccelerationStructure = pInstanceSrc->pBLAS->GetGPUVirtualAddress();
+		pInstanceDescEntry->InstanceMask = 0xFF;
+		pInstanceDescEntry++;
+		ulTLAS_ElementCount++;
+	}
+	_pInstanceDescResource->Unmap(0, nullptr);
+
+	// TLAS desc으로 TLAS를 만든다.
+	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC tlasDesc = {};
+	static_assert(false && "여기서 부터 다시 시작")
+}
+
+bool RayTracingManager::InitMesh()
+{
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	// Create the vertex buffer.
+	BasicVertex Vertices[] =
+	{
+		{ { -0.25f, 0.25f, 0.1f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
+		{ { 0.25f, 0.25f, 0.1f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+		{ { 0.25f, -0.25f, 0.1f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.1f }, { 0.0f, 0.5f, 0.5f, 1.0f } }
+	};
+	WORD Indices[] =
+	{
+		0, 1, 2,
+		0, 2, 3
+	};
+
+	D3D12_VERTEX_BUFFER_VIEW VertexBufferView = {};
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
+
+	const UINT VertexBufferSize = sizeof(Vertices);
+
+	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<ULONG>(_countof(Vertices)), &VertexBufferView, &m_pVertexBuffer, Vertices)))
+	{
+		__debugbreak();
+		return false;
+	}
+	const DWORD ulFacesNum = 2;
+	ULONG ulIndicesSize = ulFacesNum * 3 * static_cast<ULONG>(sizeof(USHORT));
+	ULONG ulAlignedIndicesSize = (ulIndicesSize / 16 + ((ulIndicesSize % 16) != 0)) * 16;
+	ULONG ulAlignedIndexNum = ulAlignedIndicesSize / sizeof(USHORT);
+
+	if (FAILED(pResourceManager->CreateIndexBuffer(ulAlignedIndexNum, &IndexBufferView, &m_pIndexBuffer, Indices, sizeof(Indices))))
+	{
+		__debugbreak();
+		return false;
+	}
+
+	return true;
+} 
+
+bool RayTracingManager::InitAccelerationStructure()
+{
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	// Build BLAS
+	BLAS_BUILD_TRIGROUP_INFO BuildInfo = {};
+
+	BuildInfo.pIndexBuffer = m_pIndexBuffer.Get();
+	BuildInfo.bNotOpaque = false;
+	BuildInfo.ulIndexNum = 6;
+
+	
 }
 
 void RayTracingManager::CleanupRayTracingManager()

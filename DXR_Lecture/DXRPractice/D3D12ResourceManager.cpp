@@ -1,5 +1,8 @@
 #include "pch.h"
 #include "D3D12ResourceManager.h"
+#include "DirectXTex.h"
+#include "../Utils/WICTextureLoader12.h"
+#include "../Utils/DDSTextureLoader12.h"
 
 bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 {
@@ -23,7 +26,7 @@ bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 	return true;
 }
 
-HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData)
+HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData)
 {
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 	// 업로드 버퍼를 이용해서, 기본 버퍼로 데이터를 전달한다.

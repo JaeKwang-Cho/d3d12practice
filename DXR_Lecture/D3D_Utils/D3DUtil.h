@@ -15,9 +15,11 @@ void SetSamplerDesc_Mirror(D3D12_STATIC_SAMPLER_DESC* _pOutSamperDesc, UINT _Reg
 
 void SerializeAndCreateRaytracingRootSignature(ID3D12Device* _pDevice, D3D12_ROOT_SIGNATURE_DESC* _pDesc, D3D12RootSignature_raw* _ppOutRootSig);
 
-HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer);
+HRESULT CreateVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer);
 
 HRESULT CreateUploadBuffer(D3D12Device_raw _pDevice, void* _pData, UINT64 _DataSize, D3D12Resource_raw* _ppResource, const WCHAR* _wchResourceName);
+
+HRESULT CreateUAVBuffer(D3D12Device_raw _pDevice, UINT64 _bufferSize, D3D12Resource_raw* _ppResource, D3D12_RESOURCE_STATES _initialResourceState, const WCHAR* _wchResourceName);
 
 inline UINT AlignConstantBufferSize(size_t _size) {
 	// 이렇게 하면 256 보다 작은 값은 날라간다.

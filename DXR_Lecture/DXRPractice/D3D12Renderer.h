@@ -5,6 +5,7 @@ class ShaderManager;
 class RayTracingManager;
 class ConstantBufferManager;
 class SimpleConstantBufferPool;
+class D3D12ResourceManager;
 
 class D3D12Renderer
 {
@@ -48,6 +49,7 @@ private:
 	std::unique_ptr<ShaderManager> m_pShaderManager = nullptr;
 	std::unique_ptr<RayTracingManager> m_pRayTracingManager = nullptr;
 	std::unique_ptr<ConstantBufferManager> m_pConstantBufferManager = nullptr;
+	std::unique_ptr<D3D12ResourceManager> m_pResourceManager = nullptr;
 
 	D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;
 	DXGI_ADAPTER_DESC3 m_adapterDesc = {};
@@ -82,6 +84,7 @@ public:
 	ShaderManager* INL_GetShaderManager() const { return m_pShaderManager.get(); }
 	RayTracingManager* INL_GetRayTracingManager() const { return m_pRayTracingManager.get(); }
 	SimpleConstantBufferPool* INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType);
+	D3D12ResourceManager* INL_GetResourceManager() const { return m_pResourceManager.get();; }
 
 	ULONG INL_GetWidth() const { return m_ulWidth; }
 	ULONG INL_GetHeight() const { return m_ulHeight; }

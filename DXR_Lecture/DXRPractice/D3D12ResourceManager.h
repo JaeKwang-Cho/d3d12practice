@@ -5,7 +5,7 @@ public:
 	bool Initialize(D3D12Device_ptr _pD3DDevice);
 
 	HRESULT CreateVertexBuffer(
-		UINT _sizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView,
+		UINT _sizePerVertex, ULONG _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView,
 		D3D12Resource_ptr* _ppOutBuffer, void* _pInitData);
 
 	HRESULT CreateIndexBuffer(

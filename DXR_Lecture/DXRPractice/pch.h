@@ -61,6 +61,3 @@ using namespace std;
 #include "../Utils/WriteDebugString.h"
 #include "../D3D_Utils/D3DUtil.h"
 #include "../D3D_Utils/ShaderUtil.h"
-#include "DirectXTex.h"
-#include "../Utils/WICTextureLoader12.h"
-#include "../Utils/DDSTextureLoader12.h"

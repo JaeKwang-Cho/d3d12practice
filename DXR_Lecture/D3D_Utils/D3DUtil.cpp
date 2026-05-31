@@ -155,7 +155,7 @@ void SerializeAndCreateRaytracingRootSignature(ID3D12Device* _pDevice, D3D12_ROO
 	}
 }
 
-HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer)
+HRESULT CreateVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, DWORD _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer)
 {
 	HRESULT hr = S_OK;
 
@@ -177,7 +177,7 @@ HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, 
 
 	if (FAILED(hr))
 	{
-		goto RETURN;
+		return E_FAIL;
 	}
 
 	// vertex buffer view를 초기화 한다.
@@ -188,7 +188,6 @@ HRESULT CreateSimpleVertexBuffer(D3D12Device_ptr _pDevice, UINT _SizePerVertex, 
 	*_pOutVertexBufferView = VertexBufferView;
 	*_ppOutBuffer = pVertexBuffer.Get();
 
-RETURN:
 	return hr;
 }
 
@@ -221,6 +220,26 @@ HRESULT CreateUploadBuffer(D3D12Device_raw _pDevice, void* _pData, UINT64 _DataS
 		(*_ppResource)->Unmap(0, nullptr);
 	}
 
+	return hr;
+}
+
+HRESULT CreateUAVBuffer(D3D12Device_raw _pDevice, UINT64 _bufferSize, D3D12Resource_raw* _ppResource, D3D12_RESOURCE_STATES _initialResourceState, const WCHAR* _wchResourceName)
+{
+	auto uploadHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
+	auto uavBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(_bufferSize, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	HRESULT hr = _pDevice->CreateCommittedResource(
+		&uploadHeapProps,
+		D3D12_HEAP_FLAG_NONE,
+		&uavBufferDesc,
+		_initialResourceState,
+		nullptr,
+		IID_PPV_ARGS(_ppResource));
+	if (FAILED(hr)) {
+		return hr;
+	}
+	if (_wchResourceName) {
+		(*_ppResource)->SetName(_wchResourceName);
+	}
 	return hr;
 }
 

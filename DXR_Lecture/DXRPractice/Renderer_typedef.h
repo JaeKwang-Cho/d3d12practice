@@ -35,12 +35,19 @@ struct CONSTANT_BUFFER_PROPERTY
 	UINT cbSize;
 };
 
+struct ROOT_ARG 
+{
+	D3D12_GPU_DESCRIPTOR_HANDLE srvVertexBuffer;
+	D3D12_GPU_DESCRIPTOR_HANDLE srvIndexBuffer;
+	D3D12_GPU_DESCRIPTOR_HANDLE srvTexBuffer;
+};
+
 const ULONG MAX_TRIANGLE_COUNT_PER_BLAS = 16;
 
 struct BLAS_BUILD_TRIGROUP_INFO
 {
-	D3D12Resource_raw pIndexBuffer;
-	D3D12Resource_raw pTexResource;
+	ID3D12Resource* pIndexBuffer;
+	ID3D12Resource* pTexResource;
 	ULONG ulIndexNum;
 	bool bNotOpaque;
 };
@@ -48,10 +55,10 @@ struct BLAS_BUILD_TRIGROUP_INFO
 struct BLAS_INSTANCE
 {
 	void* pSrcMeshObj;
-	D3D12Resource_raw pBLAS;
+	ID3D12Resource* pBLAS;
 	XMMATRIX matTransform;
 
-	ULONG ulIndex;
+	ULONG ulID;
 	UINT uiShaderRecordIndex;
 	ULONG ulVertexCount;
 	ULONG ulTriGroupCount;
