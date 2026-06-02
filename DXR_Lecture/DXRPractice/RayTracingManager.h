@@ -106,7 +106,7 @@ private:
 
 	D3D12Resource_ptr m_pBLASInstanceDescResource = nullptr;
 	D3D12Resource_ptr m_pTLAS = nullptr;
-	std::unique_ptr<BLAS_INSTANCE> m_pBLASInstance = nullptr;
+	BLAS_INSTANCE* m_pBLASInstance = nullptr;
 
 	// 테스트용 mesh 데이터
 	D3D12Resource_ptr m_pVertexBuffer = nullptr;

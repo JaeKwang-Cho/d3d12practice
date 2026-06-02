@@ -208,6 +208,9 @@ EXIT:
 	m_pConstantBufferManager = std::make_unique<ConstantBufferManager>();
 	m_pConstantBufferManager->Initialize(m_pD3DDevice.Get(), 256);
 
+	m_pResourceManager = std::make_unique<D3D12ResourceManager>();
+	m_pResourceManager->Initialize(m_pD3DDevice.Get());
+
 	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
 
 	// for ray tracing
@@ -488,6 +491,49 @@ void D3D12Renderer::CleanupRenderer()
 	WaitForFenceValue();
 
 	CleanUpFence();
+
+	WaitForFenceValue();
+	CleanUpFence();
+
+	// ① RayTracingManager 먼저 (내부에서 CommandQueue 등 사용)
+	m_pRayTracingManager = nullptr;
+	m_pResourceManager = nullptr;
+	m_pConstantBufferManager = nullptr;
+	m_pShaderManager = nullptr;
+
+	// ② Depth Stencil
+	m_pDepthStencilBuffer = nullptr;
+
+	// ③ RenderTarget, DescriptorHeap
+	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
+		m_pRenderTargets[i] = nullptr;
+	m_pRTVHeap = nullptr;
+	m_pDSVHeap = nullptr;
+
+	// ④ CommandList, CommandAllocator
+	m_pCommandList = nullptr;
+	m_pCommandAllocator = nullptr;
+
+	// ⑤ SwapChain을 CommandQueue보다 먼저! (SwapChain이 CommandQueue에 AddRef함)
+	m_pSwapChain = nullptr;
+
+	// ⑥ CommandQueue
+	m_pCommandQueue = nullptr;
+
+	// ⑦ Device를 QueryInterface 후 Release, 그 다음 Report
+	{
+		Microsoft::WRL::ComPtr<ID3D12DebugDevice> pDebugDevice;
+		m_pD3DDevice->QueryInterface(IID_PPV_ARGS(pDebugDevice.GetAddressOf()));
+		m_pD3DDevice.Reset(); // ← Device ComPtr 먼저 해제
+
+		if (pDebugDevice)
+		{
+			// 이 시점에 pDebugDevice만 Device를 물고 있어야 정상
+			pDebugDevice->ReportLiveDeviceObjects(
+				static_cast<D3D12_RLDO_FLAGS>(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL)
+			);
+		}
+	}
 }
 
 SimpleConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType)

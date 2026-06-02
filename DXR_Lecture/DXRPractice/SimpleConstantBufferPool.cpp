@@ -44,7 +44,7 @@ bool SimpleConstantBufferPool::Initialize(D3D12Device_raw _pD3DDevice, CONSTANT_
 
 	D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
 	cbvDesc.BufferLocation = m_pConstantBufferResource->GetGPUVirtualAddress();
-	cbvDesc.SizeInBytes = ByteWidth;
+	cbvDesc.SizeInBytes = m_SizePerCBV;
 
 	UINT8* pSystemMemAddr = m_pSystemMemAddr;
 	CD3DX12_CPU_DESCRIPTOR_HANDLE heapHandle(m_pCBVDescriptorHeap->GetCPUDescriptorHandleForHeapStart());

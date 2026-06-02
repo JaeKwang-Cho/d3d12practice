@@ -113,14 +113,20 @@ void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 
 	// 각 Ray들은 D3D12_DISPATCH_RAYS_DESC에 값을	 채워서 DispatchRays()로 실행된다.
 	D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
-	// Set Acceleration Structure
-	// No-Implementation
+	// t0에 TLAS를 바인딩한다. Ray들이 TLAS를 참조해서 씬의 geometry에 대한 정보를 얻는다.
+	_pCommandList->SetComputeRootShaderResourceView(1, m_pTLAS->GetGPUVirtualAddress());
 
 	// Hit group shader table
-	// No-Implementation
+	D3D12Resource_raw pHitGroupShaderTableResource = m_pHitGroupShaderTable->GetResource();
+	dispatchDesc.HitGroupTable.StartAddress = pHitGroupShaderTableResource->GetGPUVirtualAddress();
+	dispatchDesc.HitGroupTable.SizeInBytes = m_pHitGroupShaderTable->GetHitGroupShaderTableSize();
+	dispatchDesc.HitGroupTable.StrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
 
 	// Miss shader table
-	// No-Implementation
+	D3D12Resource_raw pMissShaderTableResource = m_pMissShaderTable->GetResource();
+	dispatchDesc.MissShaderTable.StartAddress = pMissShaderTableResource->GetGPUVirtualAddress();
+	dispatchDesc.MissShaderTable.SizeInBytes = m_pMissShaderTable->GetShaderRecordSize();
+	dispatchDesc.HitGroupTable.StrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
 
 	// Raygen shader table
 	D3D12Resource_raw pRayGenShaderTableResource = m_pRayGenShaderTable->GetResource();
@@ -252,12 +258,17 @@ void RayTracingManager::BuildShaderTable()
 	m_MissShaderTableStrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
 
 	// Hit Group Shader Table
+	// 여기서 Hit Group Name을 사용해서 export 했던 hit group subobject를 참조해서 shader identifier를 얻는다. 
+	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. 
+	// Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
 	void* pHitGroupShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_hitGroupName[0]);
 	m_pHitGroupShaderTable = std::make_unique<ShaderTable>();
 	m_pHitGroupShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize + sizeof(ROOT_ARG), L"HitGroupShaderTable");
 	m_pHitGroupShaderTable->CommitResource(1);
 	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
 	ROOT_ARG rootArg = {}; // 여기서는 hit에 전달할 파라미터가 없으므로, root argument는 비워둔다.
+	// ShaderRecord 내부적으로 shader identifier과 root argument가 결합된 레코드 버퍼를 만들어서, shader table에 넣는다.
+	// D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT 사이즈 분량으로 shader identifier과 root argument가 결합된 레코드 버퍼가 만들어진다.
 	ShaderRecord hitGroupShaderRecord = ShaderRecord(pHitGroupShaderIdentifier, m_ShaderIdentifierSize, &rootArg, sizeof(ROOT_ARG));
 	m_pHitGroupShaderTable->InsertShaderRecord(&hitGroupShaderRecord);
 	m_HitGroupShaderTableStrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
@@ -331,9 +342,20 @@ void RayTracingManager::CreateRaytracingPipelineStateObject()
 	// RayGen Shader인 "MyRaygenShader_RadianceRay"를 Export한다. Export된 이름은 나중에 ShaderTable에서 참조된다.
 	pLib->DefineExport(c_raygenShaderName);
 
+	// HitGroup에서 import 할 수 있도록 export
+	// 셰이더 타입별(radiance/shadow)로 ClosestHit, Miss, AnyHit 셰이더를 export한다.
+	pLib->DefineExport(c_closestHitShaderName[0]);
+	pLib->DefineExport(c_anyHitShaderName[0]);
+	pLib->DefineExport(c_missShaderName[0]);
+
 	// 2) Triangle hit group Subobject
-	// hit group은 geometry에서 Ray가 intersected 후, 어떤 shader가 실행 될 지 정의 한다.
-	// No - Implemented. RayGen Shader만 있는 간단한 예제이므로, hit group은 만들지 않는다.
+	// hit group은 geometry에서 Ray가 intersected 후, 어떤 shader가 실행 될 지 정의 한다..
+	CD3DX12_HIT_GROUP_SUBOBJECT* pHitGroup = raytracingPipeline.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>();
+	pHitGroup->SetClosestHitShaderImport(c_closestHitShaderName[0]);
+	pHitGroup->SetAnyHitShaderImport(c_anyHitShaderName[0]);
+	pHitGroup->SetHitGroupExport(c_hitGroupName[0]); // 이 HitGroup을 참조할 때 사용할 이름이다. ShaderTable에서 이 이름으로 참조된다.
+	pHitGroup->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+	//pHitGroup->SetIntersectionShaderImport(L""); // Triangle hit group이므로, intersection shader는 필요 없다.
 
 	// 3) Shader Config Subobject
 	// ray payload와 attribute의 크기를 정의한다.
@@ -497,12 +519,12 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 {
 	D3D12Resource_raw pBLASResource = nullptr; // BLAS_INSTANCE에 들어갈 BLAS 리소스
 
-	// 일단은 VB 하나에 IB 여러개
+	// 일단은 VB 하나에 IB 여러개 (물론 나중에 구조를 바꿀 수 있다.)
 	if (_ulTriGroupCount > MAX_TRIANGLE_COUNT_PER_BLAS) {
-		__debugbreak;
+		__debugbreak();
 		return nullptr;
 	}
-
+	// 가변 메모리 할당인데, unique_ptr는 상관이 없다.
 	ULONG ulBlasInstanceMemSize = static_cast<ULONG>(sizeof(BLAS_INSTANCE) - sizeof(ROOT_ARG)) * _ulTriGroupCount;
 
 	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = std::make_unique<BLAS_INSTANCE>();
@@ -510,26 +532,30 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	pBlasInstance->matTransform = XMMatrixIdentity();
 	pBlasInstance->ulVertexCount = _ulVertexCount;
 
-	// BLAS에 들어갈 geometry description을 만든다. Triangle이 여러 그룹으로 나뉘어져 있다면, 각 그룹마다 geometry description이 필요하다. (예시에서는 하나의 그룹만 있지만, 일반적으로는 여러 그룹이 있을 수 있다.)
+	// BLAS에 들어갈 geometry description을 만든다. 여러개의 trigroup이 있다면, 각 그룹마다 geometry description이 필요하다. (예시에서는 하나의 그룹만 있지만, 일반적으로는 여러 그룹이 있을 수 있다.)
 	D3D12_RAYTRACING_GEOMETRY_DESC pGeomDescList[MAX_TRIANGLE_COUNT_PER_BLAS] = {};
 	D3D12_GPU_VIRTUAL_ADDRESS VB_GPU_Ptr = _pVertexBuffer->GetGPUVirtualAddress();
 	for (ULONG i = 0; i < _ulTriGroupCount; i++) {
 		D3D12_GPU_VIRTUAL_ADDRESS IB_GPU_Ptr = _pTriGroupInfoList[i].pIndexBuffer->GetGPUVirtualAddress();
-
-		pGeomDescList[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+		// 지금은 triangle geometry만 지원하지만, AABB geometry도 지원할 수 있다.
+		pGeomDescList[i].Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES; 
+		// IndexBuffer와 VertexBuffer의 GPU virtual address를 설정한다. 그리고 index와 vertex의 개수, vertex 포맷 등도 설정한다.
 		pGeomDescList[i].Triangles.IndexBuffer = IB_GPU_Ptr;
 		pGeomDescList[i].Triangles.IndexCount = _pTriGroupInfoList[i].ulIndexNum;
 		pGeomDescList[i].Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-		pGeomDescList[i].Triangles.Transform3x4 = 0;
+		pGeomDescList[i].Triangles.Transform3x4 = 0; // BLAS 변환은 하지 않고
 		pGeomDescList[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
 		pGeomDescList[i].Triangles.VertexCount = _ulVertexCount;
 		pGeomDescList[i].Triangles.VertexBuffer.StartAddress = VB_GPU_Ptr;
 		pGeomDescList[i].Triangles.VertexBuffer.StrideInBytes = _VertexSize;
+		// 불투명이 아니라면, AnyHit Shader가 실행되어야 하므로, D3D12_RAYTRACING_GEOMETRY_FLAG_NONE 플래그를 설정한다.
+		// 불투명하다면, AnyHit Shader가 실행되지 않고 바로 ClosestHit Shader가 실행되어야 하므로, D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE 플래그를 설정한다.
 		if (_pTriGroupInfoList[i].bNotOpaque)
 		{
 			pGeomDescList[i].Flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_NONE;
 		}
-		else {
+		else 
+		{
 			pGeomDescList[i].Flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 		}
 	}
@@ -537,22 +563,25 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	// Build BLAS with pGeomDescList and store the result in pBlasInstance->pBLASResource
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-	if (_bAllowUpdate) {
+	if (_bAllowUpdate) { // 애니메이션이 들어가면 skinning이 필요한데, 그러면 BLAS를 업데이트 해야 한다.
 		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
 	}
-	else {
+	else { 
 		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
 	}
 	inputs.NumDescs = _ulTriGroupCount;
 	inputs.pGeometryDescs = pGeomDescList;
-	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL; // BLAS를 만드는 중이다.
 
+	// 사전 빌드 정보를 얻는다. 이 정보에는 GPU에서 BLAS를 빌드하는 데 필요한 
+	// scratch buffer와 BLAS buffer의 크기가 포함되어 있다.
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
 	m_pD3DDevice->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
 
 	D3D12Resource_ptr pScratchResource = nullptr;
 	auto defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	auto uavResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	// UAV 타입으로 사이즈를 얻어서 GPU 리소스를 할당한다. Scratch buffer는 BLAS를 빌드하는 동안에 필요한 임시 버퍼이다. 
 	HRESULT hr = m_pD3DDevice->CreateCommittedResource(
 		&defaultHeapProps,
 		D3D12_HEAP_FLAG_NONE,
@@ -564,7 +593,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 		__debugbreak();
 		return nullptr;
 	}
-	
+
 	D3D12_GPU_VIRTUAL_ADDRESS pScratchGPUAddress = pScratchResource->GetGPUVirtualAddress();
 	if(!pScratchGPUAddress){
 		__debugbreak();
@@ -577,14 +606,14 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	// 그리고 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그도 설정되어야 한다. 
 
 	D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-
+	// BLAS로 사용할 리소스를 할당한다. UAV 버퍼로 BLAS 버퍼의 크기를 얻어서 GPU 리소스를 할당한다. BLAS 버퍼는 최종 BLAS가 저장될 버퍼이다.
 	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, &pBLASResource, initialResourceState, L"BottomLevelAccelerationStructure");
 	if (FAILED(hr)) {
 		__debugbreak();
 		return nullptr;
 	}
 
-	// BLAS desc
+	// BLAS desc을 이용해서 (scratch buffer와 BLAS 버퍼를 포함해서) BLAS를 빌드한다. BLAS 빌드는 GPU에서 실행되어야 한다.
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC blasDesc = {};
 	blasDesc.Inputs = inputs;
 	blasDesc.ScratchAccelerationStructureData = pScratchGPUAddress;
@@ -602,7 +631,8 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	}
 
 	m_pCommandList->BuildRaytracingAccelerationStructure(&blasDesc, 0, nullptr);
-	// RayTracing을 하기 전에, UAV Barrier를 넣어준다.
+	// RayTracing을 하기 전에, UAV Barrier를 넣어준다. (BLAS 버퍼에 대한 UAV Barrier)
+	// (지금은 뒤에 fence가 있어서 필요없지만, 나중에 성능을 올리기 위해 구조를 바꾼다면 필요하다.)
 	auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(pBLASResource);
 	m_pCommandList->ResourceBarrier(1, &uavBarrier);
 
@@ -622,7 +652,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 
 D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescResource, BLAS_INSTANCE** _ppInstanceList, ULONG _ulBlasInstanceNum, bool _bAllowUpdate, UINT _CurrContextIndex)
 {
-	D3D12Resource_raw pTLASResource = nullptr; // TLAS를 위한 리소스
+	D3D12Resource_ptr pTLASResource = nullptr; // TLAS를 위한 리소스
 
 	// TLAS도 BLAS와 비슷한 방식으로 만들어진다. TLAS는 instance desc로부터 만들어지는데, instance desc는 GPU에서 접근할 수 있는 리소스에 있어야 한다.
 	// TLAS 버퍼의 크기를 얻고, TLAS를 위한 리소스를 할당한다. TLAS도 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그가 설정된 default heap에 생성되어야 한다.
@@ -633,12 +663,13 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 	if(_bAllowUpdate) {
 		inputs.Flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
 	}
-	else {
+	else { // TLAS는 일반적으로 업데이트가 필요 없으므로, 빠른 추적을 선호하는 플래그를 설정한다.
 		inputs.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
 	}
-	inputs.NumDescs = _ulBlasInstanceNum;
-	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-
+	inputs.NumDescs = _ulBlasInstanceNum; // BLAS 인스턴스의 개수로 instance desc의 개수를 설정한다.
+	inputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL; // TLAS를 만드는 중이다.
+	
+	// 역시 사전 빌드 정보를 얻는다. 이 정보에는 GPU에서 TLAS를 빌드하는 데 필요한 scratch buffer와 TLAS buffer의 크기가 포함되어 있다.
 	D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO info = {};
 	m_pD3DDevice->GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &info);
 
@@ -646,6 +677,7 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 
 	auto defaultHeapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
 	auto uavResourceDesc = CD3DX12_RESOURCE_DESC::Buffer(info.ScratchDataSizeInBytes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	// GPU에 TLAS 컴파일을 위한 scratch 메모리를 할당한다. (UAV)
 	HRESULT hr = m_pD3DDevice->CreateCommittedResource(
 		&defaultHeapProps,
 		D3D12_HEAP_FLAG_NONE,
@@ -660,19 +692,18 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 	D3D12_GPU_VIRTUAL_ADDRESS pScratchGPUAddress = pScratchResource->GetGPUVirtualAddress();
 
 	D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
-	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, &pTLASResource, initialResourceState, L"TopLevelAccelerationStructure");
+	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, pTLASResource.GetAddressOf(), initialResourceState, L"TopLevelAccelerationStructure");
 
-	// acceleration structure를 위한 리소스 할당하기
-	// Acceleration Structure는 오직 default heap(혹은 custom heap)에만 생성될 수 있다.
-	// Default heap은 CPU에서 접근할 수 없다.
-	// Acceleration Structure를 가질 리소스는 D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE 상태로 생성되어야 한다.
-	// 그리고 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS 플래그도 설정되어야 한다. 
-
+	// 인자로 넘어온 instance desc 리스트와, 그 크기의 upload buffer가 들어왔으니
+	// instance desc 리스트를 GPU에서 접근할 수 있는 리소스에 복사한다.
+	// (instance desc 리스트는 CPU에서 만들어지지만, GPU에서 접근할 수 있는 리소스에 있어야 한다.)
 	D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDescLists = nullptr;
 
 	CD3DX12_RANGE readRange(0, 0);
 	_pInstanceDescResource->Map(0, &readRange, reinterpret_cast<void**>(&pInstanceDescLists));
-
+	// 차례대로 upload 버퍼에 넣는다. instance desc 리스트의 각 entry는 BLAS 인스턴스 하나에 해당한다. 
+	// instance desc 리스트의 각 entry에는 BLAS 인스턴스의 변환 행렬, B
+	// LAS 인스턴스가 참조하는 BLAS의 GPU virtual address, 그리고 shader record index 등이 포함되어 있다.
 	ULONG ulTLAS_ElementCount = 0;
 	D3D12_RAYTRACING_INSTANCE_DESC* pInstanceDescEntry = pInstanceDescLists;
 	for(ULONG i = 0; i<_ulBlasInstanceNum; i++)
@@ -682,18 +713,59 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 		memcpy(pInstanceDescEntry->Transform, &matTranpose, sizeof(pInstanceDescEntry->Transform));
 
 		pInstanceDescEntry->InstanceID = pInstanceSrc->ulID; // 나중에 Shader에서 InstanceID()으로 노출이 되는 값이다.
-		pInstanceDescEntry->InstanceContributionToHitGroupIndex = pInstanceSrc->uiShaderRecordIndex; // Ray가 hit group shader table에서 어떤 레코드를 참조할 지 결정하는 값이다. Ray가 hit group shader table에서 참조할 레코드는 InstanceContributionToHitGroupIndex + HitGroupIndexInShaderTable이다. (HitGroupIndexInShaderTable은 ray tracing dispatch할 때 설정된다.)
+		pInstanceDescEntry->InstanceContributionToHitGroupIndex = pInstanceSrc->uiShaderRecordIndex; // **** 중요! ****
+		// Ray가 hit group shader table에서 어떤 레코드를 참조할 지 결정하는 값이다.
+		// Ray가 hit group shader table에서 참조할 레코드는 InstanceContributionToHitGroupIndex + HitGroupIndexInShaderTable이다.
+		// (HitGroupIndexInShaderTable은 ray tracing dispatch할 때 설정된다.)
+		// 오브젝트 갯수가 줄거나 늘어날 때, InstanceContributionToHitGroupIndex를 compact 하게 유지하는 것이 성능에 좋다.
+		// 현재 샘플은 그렇지 않지만. uiShaderRecordIndex가 그 역할을 한다. uiShaderRecordIndex는 BLAS 인스턴스가 참조하는 hit group shader record의 index이다. 
+		// (예시에서는 하나의 hit group shader record만 있지만, 일반적으로는 여러 개가 있을 수 있다.)
 		pInstanceDescEntry->Flags = D3D12_RAYTRACING_INSTANCE_FLAG_NONE;
-		pInstanceDescEntry->AccelerationStructure = pInstanceSrc->pBLAS->GetGPUVirtualAddress();
+		pInstanceDescEntry->AccelerationStructure = pInstanceSrc->pBLAS->GetGPUVirtualAddress(); // BLAS 인스턴스가 참조하는 BLAS의 GPU virtual address이다. Ray가 이 BLAS 인스턴스와 교차할 때, 이 주소를 참조해서 BLAS에 접근한다.
 		pInstanceDescEntry->InstanceMask = 0xFF;
 		pInstanceDescEntry++;
 		ulTLAS_ElementCount++;
 	}
 	_pInstanceDescResource->Unmap(0, nullptr);
 
-	// TLAS desc으로 TLAS를 만든다.
+	// 이제 GPU를 통해서 TLAS desc으로 TLAS를 빌드한다. 
+	// TLAS 빌드도 BLAS 빌드와 비슷하지만, BLAS가 geometry desc로 만들어지는 반면에,
+	// TLAS는 instance desc로 만들어진다는 점이 다르다.
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC tlasDesc = {};
-	static_assert(false && "여기서 부터 다시 시작")
+	tlasDesc.Inputs = inputs;
+	tlasDesc.Inputs.NumDescs = ulTLAS_ElementCount;
+	tlasDesc.Inputs.InstanceDescs = _pInstanceDescResource->GetGPUVirtualAddress();
+	tlasDesc.DestAccelerationStructureData = pTLASResource->GetGPUVirtualAddress();
+	tlasDesc.ScratchAccelerationStructureData = pScratchGPUAddress;
+
+	if(FAILED(m_pCommandAllocator->Reset()))
+	{
+		__debugbreak();
+		return nullptr;
+	}
+	
+	if(FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr)))
+	{
+		__debugbreak();
+		return nullptr;
+	}
+
+	m_pCommandList->BuildRaytracingAccelerationStructure(&tlasDesc, 0, nullptr);
+
+	D3D12_RESOURCE_BARRIER uavBarrier = {};
+	uavBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+	uavBarrier.UAV.pResource = pTLASResource.Get();
+	m_pCommandList->ResourceBarrier(1, &uavBarrier);
+
+	m_pCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get() };
+	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
+	DoFence_forRayTracing();
+	WaitForFenceValue_forRayTracing();
+
+	return pTLASResource;
 }
 
 bool RayTracingManager::InitMesh()
@@ -727,9 +799,9 @@ bool RayTracingManager::InitMesh()
 	}
 	const DWORD ulFacesNum = 2;
 	ULONG ulIndicesSize = ulFacesNum * 3 * static_cast<ULONG>(sizeof(USHORT));
-	ULONG ulAlignedIndicesSize = (ulIndicesSize / 16 + ((ulIndicesSize % 16) != 0)) * 16;
+	ULONG ulAlignedIndicesSize = (ulIndicesSize / 16 + ((ulIndicesSize % 16) != 0)) * 16; 
+	// GPU에서 Access 하기 편하도록 16바이트 Align을 해준다.
 	ULONG ulAlignedIndexNum = ulAlignedIndicesSize / sizeof(USHORT);
-
 	if (FAILED(pResourceManager->CreateIndexBuffer(ulAlignedIndexNum, &IndexBufferView, &m_pIndexBuffer, Indices, sizeof(Indices))))
 	{
 		__debugbreak();
@@ -746,23 +818,53 @@ bool RayTracingManager::InitAccelerationStructure()
 
 	// Build BLAS
 	BLAS_BUILD_TRIGROUP_INFO BuildInfo = {};
-
-	BuildInfo.pIndexBuffer = m_pIndexBuffer.Get();
+	// 사용할 Primitive type을 넣어준다.
+	// rasterization에서는 index buffer가 하나만 필요하지만, 
+	// ray tracing에서는 geometry description마다 index buffer가 필요하다. 
+	// (예시에서는 하나의 geometry description만 있지만, 일반적으로는 여러 개가 있을 수 있다.)
+	BuildInfo.pIndexBuffer = m_pIndexBuffer.Get(); 
 	BuildInfo.bNotOpaque = false;
 	BuildInfo.ulIndexNum = 6;
-
 	
+	// 사각형 하나에 대한 BLAS를 만든다.
+	// Vertex 버퍼와, 그것을 사용하는 index buffer들을	 BLAS_BUILD_TRIGROUP_INFO에 담아서 BLAS를 만든다.
+	m_pBLASInstance = AllocBLAS(m_pVertexBuffer.Get(), sizeof(BasicVertex), 4, &BuildInfo, 1, false);
+	
+	// Shader Table을 만든다. Shader Table은 RayGen, Miss, Hit Group shader 각각에 대해서 만들어야 한다. 
+	// Shader Table을 만들 때, shader identifier과 root argument를 넣어준다. 
+	// Shader identifier는 RayTracing Pipeline State Object를 만들 때 export했던 이름으로 참조할 수 있다. 
+	// Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
+	BuildShaderTable();
+
+	// BLAS update를 바뀐 친구들만 모아서 하기 위해, BLAS instance들을 리스트로 만들어서,
+	// 그리고 TLAS를 만들 때 같이 넘겨준다.
+	BLAS_INSTANCE* ppBLASInstanceList[256] = {};
+	ULONG ulBLASInstanceCount = 0;
+
+	for(auto iter = m_arrBLASInstance.begin(); iter != m_arrBLASInstance.end(); iter++)
+	{
+		ppBLASInstanceList[ulBLASInstanceCount++] = iter->get();
+	}
+	// TLAS를 만들 때, BLAS instance 리스트와, 그리고 BLAS instance 리스트가 들어있는 GPU 리소스를 같이 넘겨준다.
+	// 그러기 위해서 BLAS instance 리스트를 GPU에서 접근할 수 있는 리소스에 복사한다. BLAS instance 리스트는 TLAS desc로 사용된다.
+	CreateUploadBuffer(m_pD3DDevice, nullptr, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * ulBLASInstanceCount, m_pBLASInstanceDescResource.GetAddressOf(), L"InstanceDescs");
+
+	m_pTLAS = BuildTLAS(m_pBLASInstanceDescResource.Get(), ppBLASInstanceList, ulBLASInstanceCount, false, 0);
+
+	return true;
 }
 
 void RayTracingManager::CleanupRayTracingManager()
 {
+	WaitForFenceValue_forRayTracing();
+
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 	if(m_pRayShaderHandle)
 	{
 		pShaderManager->ReleaseShader(m_pRayShaderHandle);
 		m_pRayShaderHandle = nullptr;
 	}
-
+	CleanupFence_forRayTracing();
 }
 
 RayTracingManager::RayTracingManager()

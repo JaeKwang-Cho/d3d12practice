@@ -54,7 +54,7 @@ void MyRaygenShader_RadianceRay()
     float2 screenPos = xy / launchDim.xy * 2.0 - 1.0f; // 화면 좌표계로 변환 (0, 0) ~ (width, height) -> (-1, -1) ~ (1, 1)
     
     float3 origin = float3(screenPos.xy, 0);
-    float3 direction = float3(0, 0, 1);
+    float3 direction = float3(0, 0, 1); // 화면으로 들어가는 레이의 방향 (z축 양의 방향)
     
     Ray ray =
     {
@@ -89,7 +89,7 @@ void MyClosestHitShader_ShadowRay(inout ShadowPayload rayPayload, in BuiltInTria
 [shader("miss")]
 void MyMissShader_RadianceRay(inout RadiancePayload rayPayload)
 {
-    rayPayload.radiance = float3(0, 0, 0); // 임시로 검은색으로 표시. 나중에 환경광 계산이 들어가면 환경광 색상을 반환할 수 있다.
+    rayPayload.radiance = float3(0, 0, 1); // 임시로 파란색으로 표시. 나중에 환경광 계산이 들어가면 환경광 색상을 반환할 수 있다.
     rayPayload.depth = 1.2;
 }
 
