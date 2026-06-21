@@ -7,7 +7,9 @@ using namespace DirectX;
 struct BasicVertex
 {
 	XMFLOAT3 position;
+	XMFLOAT3 normal;
 	XMFLOAT4 color;
+	XMFLOAT2 texCoord;
 };
 
 union RGBA

@@ -17,7 +17,9 @@ static const uint g_TriangleIndexStride = g_IndicesPerTriangle * g_IndexSizeInBy
 struct BasicVertex
 {
     float3 Pos;
-    float4 color;
+    float3 Normal;
+    float4 Color;
+    float2 TexCoord;
 };
 struct Ray
 {

@@ -7,7 +7,7 @@ struct SHADER_HANDLE;
 class RayTracingManager
 {
 private:
-	enum class COMMON_DESCRIPTOR_INDEX {
+	enum class COMMON_DESCRIPTOR_INDEX { 
 		OUTPUT_DIFFUSE_UAV = 0, // UAV - Output - Diffuse
 		OUTPUT_DEPTH_UAV,   // UAV - Output - Depth
 		Count,
@@ -17,6 +17,14 @@ private:
 		RAYTRACING_CBV = 0,
 		OUTPUT_DIFFUSE,
 		OUTPUT_DEPTH,
+		Count,
+	};
+
+	enum class LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX
+	{
+		VB = 0,
+		IB,
+		TEX,
 		Count,
 	};
 
@@ -84,6 +92,7 @@ private:
 
 	// RootSignature과 StateObject도 RayTracingManager이 소유한다.
 	D3D12RootSignature_ptr m_pRaytracingGlobalRootSignature = nullptr;
+	D3D12RootSignature_ptr m_pRaytracingLocalRootSignature = nullptr;
 	D3D12StateObject_ptr m_pDXRStateObject = nullptr;
 
 	D3D12DescriptorHeap_ptr m_pCommonDescriptorHeap = nullptr;
@@ -111,8 +120,11 @@ private:
 	// 테스트용 mesh 데이터
 	D3D12Resource_ptr m_pVertexBuffer = nullptr;
 	D3D12Resource_ptr m_pIndexBuffer = nullptr;
+	D3D12Resource_ptr m_pTexture = nullptr;
 
-
+	UINT m_TexWidth = 0;
+	UINT m_TexHeight = 0;
+	DXGI_FORMAT m_TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	// RayTracingManager이 소유 - end
 public:

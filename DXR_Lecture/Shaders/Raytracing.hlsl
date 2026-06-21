@@ -73,28 +73,79 @@ void MyRaygenShader_RadianceRay()
     g_OutputDepth[launchIndex.xy] = rayPayload.depth;
 }
 [shader("closesthit")]
-void MyClosestHitShader_RadianceRay(inout RadiancePayload rayPayload, in BuiltInTriangleIntersectionAttributes attr)
+void MyClosestHitShader_RadianceRay(inout RadiancePayload _rayPayload, in BuiltInTriangleIntersectionAttributes _attr)
 {
     float3 hitPosition = HitWorldPosition();
     
-    rayPayload.depth = hitPosition.z;
-    rayPayload.radiance = float3(1, 0, 0); // 임시로 빨간색으로 표시. 나중에 광도 계산이 들어가면 hitPosition과 hitNormal을 이용해서 광도 계산을 할 수 있다.
+    // 16-bit 인덱스 버퍼의 시작점을 얻어온다.
+    uint InstID = InstanceID();
+    //uint CustomInstIndex = GetInstanceIndex(InstID); // RaytracingManager에서 넣어주는 index-object index를 얻을 수 있다.
+    // (자동 생성된) TLAS에서 현재 레이가 히트된 인스턴스의 인덱스를 얻어온다.
+    uint SystemInstIndex = InstanceIndex();
+    
+    // (자동 상성된) BLAS에서 현재 레이가 히트된 삼각형의 인덱스를 얻어온다.
+    // 충돌이 발생 했을때, LocalRootSignature에서 byte 단위로 전달 되는 데이터에서, 몇번째에 삼각형의 index가 있는지를 나타내는 값이 g_TriangleIndexStride이다.
+    uint baseIndex = PrimitiveIndex() * g_TriangleIndexStride;
+    
+    
+    // 삼각형의 세 점을 얻기 위해, 세 점의 index를 얻는다.
+    uint3 indices = Load3x16BitIndices(baseIndex);
+    float2 CurTexCoord = 0;
+    float4 CurColor = float4(0, 0, 0, 1);
+    float4 texDiffuse = float4(1, 1, 1, 0);
+    
+    float3 VertexNormals[3] =
+    {
+        l_Vertices[indices.x].Normal,
+        l_Vertices[indices.y].Normal,
+        l_Vertices[indices.z].Normal
+    };
+    
+    float4 Color[3] =
+    {
+        l_Vertices[indices.x].Color,
+        l_Vertices[indices.y].Color,
+        l_Vertices[indices.z].Color
+    };
+    
+    float2 TexCoord[3] =
+    {
+        l_Vertices[indices.x].TexCoord,
+        l_Vertices[indices.y].TexCoord,
+        l_Vertices[indices.z].TexCoord
+    };
+    
+    CurColor = HitAttribute(Color, _attr); // 현재 hit된 지점의 색상. 삼각형의 세 점의 색상과 hit attribute로 보간해서 계산한다.
+    CurTexCoord = HitAttribute(TexCoord, _attr);
+    
+    texDiffuse = l_texDiffuse.SampleLevel(samplerPoint, CurTexCoord, 0);
+    
+    // 오브젝트의 local 좌표계에서 normal
+    float3 LocalNormal = HitAttribute(VertexNormals, _attr);
+    // 오브젝트의 local 좌표계에서 normal을 월드 좌표계로
+    // ObjectToWorld4x3: 오브젝트의 local 좌표계를 월드 좌표계로 변환하는 행렬. 
+    // TLAS에서 BLAS를 변환할 때, 오브젝트의 위치, 회전, 크기 등의 정보를 이용해서 ObjectToWorld4x3 행렬이 만들어진다.
+    float3 WorldNormal = normalize(mul(LocalNormal, (float3x3) ObjectToWorld4x3())); 
+    
+    
+    _rayPayload.depth = hitPosition.z;
+    _rayPayload.radiance = texDiffuse.rgb * CurColor.rgb;
 }
 [shader("closesthit")]
-void MyClosestHitShader_ShadowRay(inout ShadowPayload rayPayload, in BuiltInTriangleIntersectionAttributes attr)
+void MyClosestHitShader_ShadowRay(inout ShadowPayload _rayPayload, in BuiltInTriangleIntersectionAttributes _attr)
 {
+    _rayPayload.tHit = RayTCurrent(); // 레이가 히트된 지점까지의 거리를 저장. 그림자 계산에서는 이 값이 0보다 크면 그림자가 드리워진 것으로 간주할 수 있다.
 }
 
-
 [shader("miss")]
-void MyMissShader_RadianceRay(inout RadiancePayload rayPayload)
+void MyMissShader_RadianceRay(inout RadiancePayload _rayPayload)
 {
-    rayPayload.radiance = float3(0, 0, 1); // 임시로 파란색으로 표시. 나중에 환경광 계산이 들어가면 환경광 색상을 반환할 수 있다.
-    rayPayload.depth = 1.2;
+    _rayPayload.radiance = float3(0, 0, 1); // 임시로 파란색으로 표시. 나중에 환경광 계산이 들어가면 환경광 색상을 반환할 수 있다.
+    _rayPayload.depth = 1.2;
 }
 
 [shader("anyhit")]
-void MyAnyHitShader_RadianceRay(inout RadiancePayload payload, in BuiltInTriangleIntersectionAttributes attr)
+void MyAnyHitShader_RadianceRay(inout RadiancePayload _payload, in BuiltInTriangleIntersectionAttributes _attr)
 {
     float3 hitPosition = HitWorldPosition();
     

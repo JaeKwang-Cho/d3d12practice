@@ -47,6 +47,18 @@
     <Filter Include="Utils\Texture_Utils">
       <UniqueIdentifier>{8e8c9600-486a-4bf5-86de-94699746c15d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\Pools\ConstantBufferPool">
+      <UniqueIdentifier>{2cccaa3c-dfb2-45ef-9a40-7c15178adfe2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Pools\DescriptorPool">
+      <UniqueIdentifier>{b0045000-0c66-4e75-8c00-45644d38d8fb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Allocator">
+      <UniqueIdentifier>{01dde071-d875-4ee7-997d-f421ba5afd82}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Allocator\DescriptorAllocator">
+      <UniqueIdentifier>{4d18f97f-d8e6-4602-b0a8-fcf7f0e7a5cb}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -85,14 +97,20 @@
     <ClCompile Include="ConstantBufferManager.cpp">
       <Filter>Renderer\Managers\ConstantBufferManager</Filter>
     </ClCompile>
-    <ClCompile Include="SimpleConstantBufferPool.cpp">
-      <Filter>Renderer\Pools</Filter>
-    </ClCompile>
     <ClCompile Include="..\Utils\DDSTextureLoader12.cpp">
       <Filter>Utils\Texture_Utils</Filter>
     </ClCompile>
     <ClCompile Include="..\Utils\WICTextureLoader12.cpp">
       <Filter>Utils\Texture_Utils</Filter>
+    </ClCompile>
+    <ClCompile Include="SimpleConstantBufferPool.cpp">
+      <Filter>Renderer\Pools\ConstantBufferPool</Filter>
+    </ClCompile>
+    <ClCompile Include="DescriptorPool.cpp">
+      <Filter>Renderer\Pools\DescriptorPool</Filter>
+    </ClCompile>
+    <ClCompile Include="SingleDescriptorAllocator.cpp">
+      <Filter>Renderer\Allocator\DescriptorAllocator</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -142,14 +160,20 @@
     <ClInclude Include="ConstantBufferManager.h">
       <Filter>Renderer\Managers\ConstantBufferManager</Filter>
     </ClInclude>
-    <ClInclude Include="SimpleConstantBufferPool.h">
-      <Filter>Renderer\Pools</Filter>
-    </ClInclude>
     <ClInclude Include="..\Utils\DDSTextureLoader12.h">
       <Filter>Utils\Texture_Utils</Filter>
     </ClInclude>
     <ClInclude Include="..\Utils\WICTextureLoader12.h">
       <Filter>Utils\Texture_Utils</Filter>
+    </ClInclude>
+    <ClInclude Include="SimpleConstantBufferPool.h">
+      <Filter>Renderer\Pools\ConstantBufferPool</Filter>
+    </ClInclude>
+    <ClInclude Include="DescriptorPool.h">
+      <Filter>Renderer\Pools\DescriptorPool</Filter>
+    </ClInclude>
+    <ClInclude Include="SingleDescriptorAllocator.h">
+      <Filter>Renderer\Allocator\DescriptorAllocator</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

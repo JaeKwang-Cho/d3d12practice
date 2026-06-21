@@ -51,6 +51,9 @@ struct BLAS_BUILD_TRIGROUP_INFO
 {
 	ID3D12Resource* pIndexBuffer;
 	ID3D12Resource* pTexResource;
+	UINT TexWidth;
+	UINT TexHeight;
+	DXGI_FORMAT TexFormat;
 	ULONG ulIndexNum;
 	bool bNotOpaque;
 };
@@ -66,5 +69,11 @@ struct BLAS_INSTANCE
 	UINT uiShaderRecordIndex; // 렌더링할 때, BLAS의 총 갯수가 바뀌거나 , BLAS의 순서가 바뀌는 경우가 있을 수 있다. 그럴 때, ShaderTable에서 BLAS에 해당하는 ShaderRecord의 인덱스가 바뀌게 된다. uiShaderRecordIndex는 BLAS와 ShaderRecord의 연결고리 역할을 한다.
 	ULONG ulVertexCount;
 	ULONG ulTriGroupCount; // Tri라고 되어있지만, 같은 텍스쳐를 사용하는 geometry의 그룹이 여러 개일 수 있다.
-	virtual ~BLAS_INSTANCE() { pBLAS->Release(); }
+
+	// Local Parameter
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle; // BLAS에 대한 SRV가 바인딩된 CPU descriptor handle. Local Root Signature에 전달된다.
+	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle; // BLAS에 대한 SRV가 바인딩된 GPU descriptor handle. Local Root Signature에 전달된다.
+	std::vector<ROOT_ARG> rootArgs; // BLAS가 참조하는 geometry description이 여러 개일 수 있다. (예시에서는 하나의 geometry description만 있지만, 일반적으로는 여러 개가 있을 수 있다.) geometry description마다 root argument가 필요하다. 그래서 배열로 만들어준다. (예시에서는 1개지만, 일반적으로는 여러 개가 있을 수 있다.)
+
+	virtual ~BLAS_INSTANCE() { if (pBLAS) pBLAS->Release(); }
 };

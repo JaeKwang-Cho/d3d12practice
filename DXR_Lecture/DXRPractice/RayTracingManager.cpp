@@ -48,9 +48,7 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 	CreateOutputDepthBuffer(m_ulWidth, m_ulHeight);
 
 	CreateRootSignatures();
-	CreateRaytracingPipelineStateObject();
-
-	BuildShaderTable();
+	CreateRaytracingPipelineStateObject();	
 
 	// build geometry
 	InitMesh();
@@ -255,24 +253,43 @@ void RayTracingManager::BuildShaderTable()
 	m_pMissShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize, L"MissShaderTable");
 	m_pMissShaderTable->CommitResource(1);
 	m_pMissShaderTable->InsertShaderRecord(&missShaderRecord);
-	m_MissShaderTableStrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
+	m_MissShaderTableStrideInBytes = static_cast<UINT>(m_pMissShaderTable->GetShaderRecordSize());
 
 	// Hit Group Shader Table
+	//  --> 나중에 실시간으로 BLAS가 추가되거나 삭제되는 경우, Hit Group Shader Table에 shader record를 추가하거나 삭제해줘야 한다.
+	//  --> 여러 이유가 있지만 가장 큰 이유는, uiShaderRecordIndex의 값이 BLAS가 참조하는 Hit Group Shader Table의 shader record 인덱스이기 때문이다.
 	// 여기서 Hit Group Name을 사용해서 export 했던 hit group subobject를 참조해서 shader identifier를 얻는다. 
 	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. 
 	// Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
 	void* pHitGroupShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_hitGroupName[0]);
 	m_pHitGroupShaderTable = std::make_unique<ShaderTable>();
 	m_pHitGroupShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize + sizeof(ROOT_ARG), L"HitGroupShaderTable");
+
+	// Hit-Group Table에 있는 Shader Record의 구성
+	// 0번: ShaderIdentifier-RootArgument
+	// 1번: ShaderIdentifier-RootArgument
+	// ...
+	// N번: ShaderIdentifier-RootArgument
+
+	// m_pBlasInstance->ShaderRecordIndex는 HitGroupShaderTable에서의 ShaderRecord 시작 인덱스
+	// 이 값은  TLAS 빌드 시에 D3D12_RAYTRACING_INSTANCE_DESC::InstanceContributionToHitGroupIndex에 대입한다. 
+	// Ray들이 TLAS를 참조할 때, InstanceContributionToHitGroupIndex를 통해서 자신이 참조해야 하는 HitGroupShaderTable의 ShaderRecord 인덱스를 알 수 있다.
+	m_pBLASInstance->uiShaderRecordIndex = 0; // 지금은 BLAS가 하나밖에 없으므로, ShaderRecordIndex를 0으로 설정한다. 
+	// 하지만 BLAS가 여러 개라면, 각각의 BLAS에 맞게 ShaderRecordIndex를 설정해줘야 한다.
+
+	ROOT_ARG rootArg = {};
+	rootArg.srvVertexBuffer = m_pBLASInstance->rootArgs[0].srvVertexBuffer;
+	rootArg.srvIndexBuffer = m_pBLASInstance->rootArgs[0].srvIndexBuffer;
+	rootArg.srvTexBuffer = m_pBLASInstance->rootArgs[0].srvTexBuffer;
+
 	m_pHitGroupShaderTable->CommitResource(1);
 	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
-	ROOT_ARG rootArg = {}; // 여기서는 hit에 전달할 파라미터가 없으므로, root argument는 비워둔다.
-	// ShaderRecord 내부적으로 shader identifier과 root argument가 결합된 레코드 버퍼를 만들어서, shader table에 넣는다.
+	// ShaderRecord 내부적으로 shader identifier과 root argument가 결합(pair)된 레코드 버퍼를 만들어서, shader table에 넣는다.
 	// D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT 사이즈 분량으로 shader identifier과 root argument가 결합된 레코드 버퍼가 만들어진다.
 	ShaderRecord hitGroupShaderRecord = ShaderRecord(pHitGroupShaderIdentifier, m_ShaderIdentifierSize, &rootArg, sizeof(ROOT_ARG));
 	m_pHitGroupShaderTable->InsertShaderRecord(&hitGroupShaderRecord);
-	m_HitGroupShaderTableStrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
-	m_ulHitGroupShaderRecordNum = m_pHitGroupShaderTable->GetShaderRecordCount();
+	m_HitGroupShaderTableStrideInBytes = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordSize());
+	m_ulHitGroupShaderRecordNum = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordCount());
 }
 
 void RayTracingManager::CreateRootSignatures()
@@ -316,6 +333,20 @@ void RayTracingManager::CreateRootSignatures()
 	);
 
 	SerializeAndCreateRaytracingRootSignature(m_pD3DDevice, &globalRootSignatureDesc, m_pRaytracingGlobalRootSignature.GetAddressOf());
+
+	// Local Root Signature도 만들어보자. Local Root Signature는 ray tracing shader가 자신의 root argument로 접근할 수 있게 해준다.
+	// space 1
+	// t0 : VertexBuffer, t1 : IndexBuffer, t2: Texture
+	CD3DX12_DESCRIPTOR_RANGE localRanges[1] = {};
+	localRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 1);
+
+	// t0 - VertexBuffer, t1 - IndexBuffer, t2 - Texture
+	CD3DX12_ROOT_PARAMETER localRootParameters[1] = {};
+	localRootParameters[0].InitAsDescriptorTable(_countof(localRanges), localRanges);
+
+	CD3DX12_ROOT_SIGNATURE_DESC localRootSignatureDesc(ARRAYSIZE(localRootParameters), localRootParameters);
+	localRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE; // Local Root Signature임을 명시적으로 설정한다.
+	SerializeAndCreateRaytracingRootSignature(m_pD3DDevice, &localRootSignatureDesc, m_pRaytracingLocalRootSignature.GetAddressOf());
 }
 
 void RayTracingManager::CreateRaytracingPipelineStateObject()
@@ -367,7 +398,16 @@ void RayTracingManager::CreateRaytracingPipelineStateObject()
 	// 4 ~ 5) Local Root Signature Subobject와 Association
 	// Local Root Signature 및 연결 객체 설정
 	// Shader Table에서 각 Shader가 고유한 parameter를 사용할 수 있게 한다.
-	// No - Implemented. RayGen Shader만 있는 간단한 예제이므로, Local Root Signature는 만들지 않는다.
+	CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT* pLocalRootSignature = raytracingPipeline.CreateSubobject<CD3DX12_LOCAL_ROOT_SIGNATURE_SUBOBJECT>();
+	pLocalRootSignature->SetRootSignature(m_pRaytracingLocalRootSignature.Get());
+	// Hit Group에 Local Root Signature 연결 하기 위한, Association Subobject를 만든다.
+	CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT* pRootSignatureAssociation = raytracingPipeline.CreateSubobject<CD3DX12_SUBOBJECT_TO_EXPORTS_ASSOCIATION_SUBOBJECT>();
+	// 생성한 Local Root Signature가 다른 subobject와 연결 될 수 있도록 설정.
+	pRootSignatureAssociation->SetSubobjectToAssociate(*pLocalRootSignature);
+	// Local Root Signature를 Hit Group에 연결 할 수 있도록, Association Subobject에 Hit Group Export 이름을 설정한다.
+	pRootSignatureAssociation->AddExports(c_hitGroupName);
+
+	// 흐름: Hit Group Shader -> SubObject -> Local Root Signature -> Descriptor Table -> GPU Descriptor Handle -> Resource (Vertex Buffer, Index Buffer, Texture)
 
 	// 6) Global Root Signature Subobject
 	// DispatchRays()에서 나온 결과를 저장할 UAV 텍스쳐를 넘겨줄, Global Root Signature를 설정한다.
@@ -411,7 +451,11 @@ void RayTracingManager::CreateDescriptorHeapCBV_SRV_UAV()
 void RayTracingManager::CreateShaderVisibleHeap()
 {
 	D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
-	HeapDesc.NumDescriptors = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count);
+	// RayGen Shader, Miss Shader, Hit Group Shader가 참조하는 descriptor heap이므로, 필요한 descriptor 개수만큼 설정한다.
+	// RayTracing에 쓰이는 CBV와 출력 UAV 2개, 그리고 VB만 넘어가는 Ray tracing이, index, texture, 그리고 vertex의 내부 정보도 함께 넘기기 위해서
+	// 이렇게 descriptor 갯수를 설정한다. 지금은 이렇게 하드코딩으로 갯수를 정해주지만, 
+	// 나중에는 Pool 같은	 구조로 만들어서, 필요한 descriptor 개수에 맞게 heap을 유동적으로 만들 수 있게 해도 좋을 것 같다.
+	HeapDesc.NumDescriptors = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count) + static_cast<UINT>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count);
 	HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	HeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -524,14 +568,15 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 		__debugbreak();
 		return nullptr;
 	}
-	// 가변 메모리 할당인데, unique_ptr는 상관이 없다.
-	ULONG ulBlasInstanceMemSize = static_cast<ULONG>(sizeof(BLAS_INSTANCE) - sizeof(ROOT_ARG)) * _ulTriGroupCount;
 
 	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = std::make_unique<BLAS_INSTANCE>();
 	pBlasInstance->ulID = 0;
 	pBlasInstance->matTransform = XMMatrixIdentity();
 	pBlasInstance->ulVertexCount = _ulVertexCount;
 
+	// 
+	// #1 Fill D3D12_RAYTRACING_GEOMETRY_DESC Array
+	// 
 	// BLAS에 들어갈 geometry description을 만든다. 여러개의 trigroup이 있다면, 각 그룹마다 geometry description이 필요하다. (예시에서는 하나의 그룹만 있지만, 일반적으로는 여러 그룹이 있을 수 있다.)
 	D3D12_RAYTRACING_GEOMETRY_DESC pGeomDescList[MAX_TRIANGLE_COUNT_PER_BLAS] = {};
 	D3D12_GPU_VIRTUAL_ADDRESS VB_GPU_Ptr = _pVertexBuffer->GetGPUVirtualAddress();
@@ -560,6 +605,9 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 		}
 	}
 
+	//
+	// #2 Create BLAS Resource and Scratch Resource, then Build BLAS
+	// 
 	// Build BLAS with pGeomDescList and store the result in pBlasInstance->pBLASResource
 	D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS inputs = {};
 	inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
@@ -643,6 +691,62 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 
 	DoFence_forRayTracing();
 	WaitForFenceValue_forRayTracing();
+
+	//
+	// #3 Set LocalRoot Parameters for BLAS_INSTANCE
+	//
+	UINT DescriptorIndex = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count);
+	DescriptorIndex += pBlasInstance->ulID * MAX_TRIANGLE_COUNT_PER_BLAS * 2; // BLAS_INSTANCE 하나당 최대 트라이앵글 그룹 수 * (VB + IB)
+	CD3DX12_CPU_DESCRIPTOR_HANDLE srvCpu(m_pShaderVisibleDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
+	CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpu(m_pShaderVisibleDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+	for (ULONG i = 0; i < _ulTriGroupCount; i++) {
+		ROOT_ARG newRootArg = {};
+		pBlasInstance->rootArgs.push_back(newRootArg);
+
+		// Create Shader Resource from Vertex Buffer
+		srvDesc.Buffer.FirstElement = 0; // Vertex Buffer의 첫 번째 요소부터 접근한다.
+		srvDesc.Buffer.NumElements = _ulVertexCount; // Vertex Buffer의 요소 개수는 vertex count로 설정한다.
+		srvDesc.Format = DXGI_FORMAT_UNKNOWN; // 일반적인 compute shader 쓰는 방법과 같다.
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+		srvDesc.Buffer.StructureByteStride = _VertexSize; // Vertex Buffer의 stride로 설정한다.
+
+		m_pD3DDevice->CreateShaderResourceView(_pVertexBuffer, &srvDesc, srvCpu);
+		pBlasInstance->rootArgs[i].srvVertexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 vertex buffer의 GPU descriptor handle을 저장한다.
+		srvCpu.Offset(1, m_DescriptorSize);
+		srvGpu.Offset(1, m_DescriptorSize);
+
+		// Create Shader Resource from Index Buffer
+		srvDesc.Buffer.FirstElement = 0; // Index Buffer의 첫 번째 요소부터 접근한다.
+		srvDesc.Buffer.NumElements = (_pTriGroupInfoList[i].ulIndexNum * 2) / 4; // Compute Shader에서 4 bytes 단위로 접근할 것이므로, 요소 개수를 4로 나눈다.
+		srvDesc.Format = DXGI_FORMAT_R32_TYPELESS; // Index Buffer는 일반적으로 R16_UINT이나 R32_UINT 포맷이지만, Compute Shader에서 4 bytes 단위로 접근할 것이므로, typeless 포맷으로 설정한다.
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW; // Index Buffer는 RAW buffer로 설정한다.
+		srvDesc.Buffer.StructureByteStride = 0; // RAW buffer이므로, stride는 0으로 설정한다.
+
+		m_pD3DDevice->CreateShaderResourceView(_pTriGroupInfoList[i].pIndexBuffer, &srvDesc, srvCpu);	
+		pBlasInstance->rootArgs[i].srvIndexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 index buffer의 GPU descriptor handle을 저장한다.
+		
+		srvCpu.Offset(1, m_DescriptorSize);
+		srvGpu.Offset(1, m_DescriptorSize);
+
+		// Create ShaderResourceView from Texture Buffer
+		if (_pTriGroupInfoList[i].pTexResource) {
+			D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
+			SRVDesc.Format = _pTriGroupInfoList[i].TexFormat;
+			SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+			SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+			SRVDesc.Texture2D.MipLevels = 1;
+
+			m_pD3DDevice->CreateShaderResourceView(_pTriGroupInfoList[i].pTexResource, &SRVDesc, srvCpu);
+		}
+		pBlasInstance->rootArgs[i].srvIndexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 texture buffer의 GPU descriptor handle을 저장한다.
+		srvCpu.Offset(1, m_DescriptorSize);
+		srvGpu.Offset(1, m_DescriptorSize);
+	}
 
 	pBlasInstance->pBLAS = pBLASResource;
 	pBlasInstance->ulTriGroupCount = _ulTriGroupCount;
@@ -776,10 +880,10 @@ bool RayTracingManager::InitMesh()
 	// Create the vertex buffer.
 	BasicVertex Vertices[] =
 	{
-		{ { -0.25f, 0.25f, 0.1f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
-		{ { 0.25f, 0.25f, 0.1f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-		{ { 0.25f, -0.25f, 0.1f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-		{ { -0.25f, -0.25f, 0.1f }, { 0.0f, 0.5f, 0.5f, 1.0f } }
+		{ { -0.25f, 0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
+		{ { 0.25f, 0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, { 1.0f, 0.0f } },
+		{ { 0.25f, -0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } }
 	};
 	WORD Indices[] =
 	{
@@ -808,6 +912,40 @@ bool RayTracingManager::InitMesh()
 		return false;
 	}
 
+	// Create Texture (흑백 격자무늬)
+	const UINT TexWidth = 16;
+	const UINT TexHeight = 16;
+	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+	std::unique_ptr<BYTE[]> pImage = std::make_unique<BYTE[]>(TexWidth * TexHeight * 4);
+
+	for (UINT y = 0; y < TexHeight; y++) {
+		for(UINT x = 0; x < TexWidth; x++) {
+			RGBA* pDest = reinterpret_cast<RGBA*>(pImage.get() + (y * TexWidth + x) * 4);
+			pDest->r = rand() % 255;
+			pDest->g = rand() % 255;
+			pDest->b = rand() % 255;
+
+			if((x + y) % 2)
+			{
+				pDest->r = 0;
+				pDest->g = 0;
+				pDest->b = 0;
+			}
+			else
+			{
+				pDest->r = 255;
+				pDest->g = 255;
+				pDest->b = 255;
+			}
+			pDest->a = 255;
+		}
+	}
+	pResourceManager->CreateTexture(&m_pTexture, TexWidth, TexHeight, TexFormat, pImage.get());
+	m_TexFormat = TexFormat;
+	m_TexHeight = TexHeight;
+	m_TexWidth = TexWidth;
+
 	return true;
 } 
 
@@ -825,6 +963,10 @@ bool RayTracingManager::InitAccelerationStructure()
 	BuildInfo.pIndexBuffer = m_pIndexBuffer.Get(); 
 	BuildInfo.bNotOpaque = false;
 	BuildInfo.ulIndexNum = 6;
+	BuildInfo.pTexResource = m_pTexture.Get();
+	BuildInfo.TexFormat = m_TexFormat;
+	BuildInfo.TexHeight = m_TexHeight;
+	BuildInfo.TexWidth = m_TexWidth;
 	
 	// 사각형 하나에 대한 BLAS를 만든다.
 	// Vertex 버퍼와, 그것을 사용하는 index buffer들을	 BLAS_BUILD_TRIGROUP_INFO에 담아서 BLAS를 만든다.
