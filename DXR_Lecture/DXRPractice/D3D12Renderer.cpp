@@ -217,6 +217,8 @@ EXIT:
 	m_pRayTracingManager = std::make_unique<RayTracingManager>();
 	m_pRayTracingManager->Initialize(this, m_ulWidth, m_ulHeight);
 
+	InitCamera();
+
 	return true;
 }
 
@@ -353,6 +355,41 @@ bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
 	return true;
 }
 
+void D3D12Renderer::SetCameraPos(const float _x, const float _y, const float _z)
+{
+	m_vCamPos = XMVectorSet(_x, _y, _z, 1.f);
+	UpdateCamera();
+}
+
+void D3D12Renderer::MoveCamera(const float _x, const float _y, const float _z)
+{
+	XMVECTOR CamMoveForward = XMVectorScale(m_vCamDir, _z);
+	XMVECTOR CamMoveRight = XMVectorScale(m_vCamRight, _x);
+	XMVECTOR CamMoveUp = XMVectorScale(m_vCamUp, _y);
+
+	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveForward);
+	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveRight);
+	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveUp);
+	m_vCamPos.m128_f32[3] = 1.f;
+
+	UpdateCamera();
+}
+
+void D3D12Renderer::GetCameraPos(float& _outX, float& _outY, float& _outZ)
+{
+	_outX = m_vCamPos.m128_f32[0];
+	_outY = m_vCamPos.m128_f32[1];
+	_outZ = m_vCamPos.m128_f32[2];
+}
+
+void D3D12Renderer::ApplyCameraRot(const float _yaw, const float _pitch, const float _roll)
+{
+	m_fCamYaw += _yaw;
+	m_fCamPitch += _pitch;
+	m_fCamRoll += _roll;
+
+	UpdateCamera();
+}
 void D3D12Renderer::CreateCommandList()
 {
 	if(FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf())))) {
@@ -536,9 +573,77 @@ void D3D12Renderer::CleanupRenderer()
 	}
 }
 
+void D3D12Renderer::InitCamera()
+{
+	m_fCamPitch = 0.f;
+	m_fCamRoll = 0.f;
+	m_fCamYaw = 0.f;
+}
+
+void D3D12Renderer::UpdateCamera()
+{
+	XMVECTOR xAxis = XMVectorSet(1.f, 0.f, 0.f, 0.f);
+	XMVECTOR yAxis = XMVectorSet(0.f, 1.f, 0.f, 0.f);
+	XMVECTOR zAxis = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+
+	XMMATRIX matRotPitch = XMMatrixRotationX(m_fCamPitch);
+	XMMATRIX matRotYaw = XMMatrixRotationY(m_fCamYaw);
+
+	XMMATRIX matCamRot = XMMatrixMultiply(matRotYaw, matRotPitch);
+
+	m_vCamDir = XMVector3Transform(zAxis, matCamRot);
+	m_vCamRight = XMVector3Cross(yAxis, m_vCamDir);
+	m_vCamUp = XMVector3Cross(m_vCamDir, m_vCamRight);
+
+	// view matrix
+	m_matView = XMMatrixLookAtLH(m_vCamPos, m_vCamPos + m_vCamDir, m_vCamUp);
+
+	// Fov (Radian)
+	float fovY = XM_PIDIV4; // 90µµ
+
+	// proj matrix
+	float fAspectRatio = static_cast<float>(m_ulWidth) / static_cast<float>(m_ulHeight);
+	float fNearZ = 0.1f;
+	float fFarZ = 1000.f;
+	m_matProj = XMMatrixPerspectiveFovLH(fovY, fAspectRatio, fNearZ, fFarZ);
+
+	XMVECTOR determinant;
+	m_matViewInv = XMMatrixInverse(&determinant, m_matView);
+
+}
+
 SimpleConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType)
 {
 	return m_pConstantBufferManager->GetConstantBufferPool(_cbType);
+}
+
+void D3D12Renderer::FillProjDecompConstant(DECOMP_PROJ* _pOutConstBuffer)
+{
+	_pOutConstBuffer->rcp_m11 = 1.f / XMMatrixExtract(&m_matProj, 1, 1);
+	_pOutConstBuffer->rcp_m22 = 1.f / XMMatrixExtract(&m_matProj, 2, 2);
+
+	_pOutConstBuffer->m21 = XMMatrixExtract(&m_matProj, 2, 1);
+	_pOutConstBuffer->m31 = XMMatrixExtract(&m_matProj, 3, 1);
+	_pOutConstBuffer->m32 = XMMatrixExtract(&m_matProj, 3, 2);
+	_pOutConstBuffer->m33 = XMMatrixExtract(&m_matProj, 3, 3);
+	_pOutConstBuffer->m43 = XMMatrixExtract(&m_matProj, 4, 3);
+}
+
+void D3D12Renderer::FillRayTraceConstant(CONSTANT_BUFFER_RAY_TRACING* _pOutBuffer)
+{
+	FillProjDecompConstant(&_pOutBuffer->DecompProj);
+	_pOutBuffer->matViewProj = XMMatrixMultiplyTranspose(m_matView, m_matProj);
+	_pOutBuffer->matViewInv = XMMatrixTranspose(m_matViewInv);
+
+	_pOutBuffer->vCameraPos = { m_vCamPos.m128_f32[0], m_vCamPos.m128_f32[1], m_vCamPos.m128_f32[2], 1.f };
+	_pOutBuffer->Near = 0.1f;
+	_pOutBuffer->Far = 1000.f;
+}
+
+void D3D12Renderer::INL_GetViewProjMatrix(XMMATRIX& _outView, XMMATRIX& _outProj)
+{
+	_outView = XMMatrixTranspose(m_matView);
+	_outProj = XMMatrixTranspose(m_matProj);
 }
 
 D3D12Renderer::D3D12Renderer()

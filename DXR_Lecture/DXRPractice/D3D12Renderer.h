@@ -17,6 +17,11 @@ public:
 	void Present();
 	bool UpdateWindowSize(ULONG _width, ULONG _Height);
 
+	void SetCameraPos(const float _x, const float _y, const float _z);
+	void MoveCamera(const float _x, const float _y, const float _z);
+	void GetCameraPos(float& _outX, float& _outY, float& _outZ);
+	void ApplyCameraRot(const float _yaw, const float _pitch, const float _roll);
+
 private:
 	void CreateCommandList();
 	bool CreateDescriptorHeapForRTV();
@@ -31,6 +36,9 @@ private:
 	void CleanUpFence();
 
 	void CleanupRenderer();
+
+	void InitCamera();
+	void UpdateCamera();
 
 public:
 
@@ -79,15 +87,33 @@ private:
 
 	ULONG m_ulCurContextIndex = 0;
 
+	// For Camera
+	XMMATRIX m_matView = {};
+	XMMATRIX m_matViewInv = {};
+	XMMATRIX m_matProj = {};
+
+	XMVECTOR m_vCamPos = {};
+	XMVECTOR m_vCamDir = {};
+	XMVECTOR m_vCamUp = {};
+	XMVECTOR m_vCamRight = {};
+
+	float m_fCamYaw = 0.f;
+	float m_fCamPitch = 0.f;
+	float m_fCamRoll = 0.f;
+
 public:
 	D3D12Device_raw INL_GetD3DDevice() const { return m_pD3DDevice.Get(); }
 	ShaderManager* INL_GetShaderManager() const { return m_pShaderManager.get(); }
 	RayTracingManager* INL_GetRayTracingManager() const { return m_pRayTracingManager.get(); }
 	SimpleConstantBufferPool* INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType);
-	D3D12ResourceManager* INL_GetResourceManager() const { return m_pResourceManager.get();; }
+	D3D12ResourceManager* INL_GetResourceManager() const { return m_pResourceManager.get(); }
+
+	void FillProjDecompConstant(DECOMP_PROJ* _pOutConstBuffer);
+	void FillRayTraceConstant(CONSTANT_BUFFER_RAY_TRACING* _pOutBuffer);
 
 	ULONG INL_GetWidth() const { return m_ulWidth; }
 	ULONG INL_GetHeight() const { return m_ulHeight; }
+	void INL_GetViewProjMatrix(XMMATRIX& _outView, XMMATRIX& _outProj);
 
 	D3D12Renderer();
 	virtual ~D3D12Renderer();

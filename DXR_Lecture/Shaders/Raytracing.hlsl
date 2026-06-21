@@ -50,16 +50,24 @@ void MyRaygenShader_RadianceRay()
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
 
-    float2 xy = launchIndex.xy + 0.5f; // 픽셀 중심에서 레이 발사 (Raygen이 정규좌표계가 아니라 픽셀 좌표계에서 실행되기 때문에 0.5를 더해준다.)
-    float2 screenPos = xy / launchDim.xy * 2.0 - 1.0f; // 화면 좌표계로 변환 (0, 0) ~ (width, height) -> (-1, -1) ~ (1, 1)
+    float2 CurPixel = (float2) launchIndex.xy + float2(0.5f, 0.5f); // 픽셀 중심에서 레이 발사 (Raygen이 정규좌표계가 아니라 픽셀 좌표계에서 실행되기 때문에 0.5를 더해준다.)
+    float2 Resolution = (float2) launchDim.xy;
     
-    float3 origin = float3(screenPos.xy, 0);
-    float3 direction = float3(0, 0, 1); // 화면으로 들어가는 레이의 방향 (z축 양의 방향)
+    float4 ray_view = float4(
+		(((2.0f * ((float) CurPixel.x) / (float) Resolution.x)) - 1.0f) * g_DecompProj.rcp_m11,
+		-(((2.0f * ((float) CurPixel.y) / (float) Resolution.y)) - 1.0f) * g_DecompProj.rcp_m22,
+		1.0, 0.0);
+    
+    float4 ray_world = mul(ray_view, g_matViewInv);
+    ray_world.xyz = normalize(ray_world.xyz);
+    
+    float3 worldDir = ray_world.xyz;
+    float3 worldOrigin = float3(g_vCameraPos.xyz);
     
     Ray ray =
     {
-        origin,
-        direction
+        worldOrigin,
+        worldDir
     };
     
     uint CurrRayRecursionDepth = 0;

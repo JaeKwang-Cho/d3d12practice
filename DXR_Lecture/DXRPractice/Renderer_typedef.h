@@ -17,6 +17,10 @@ const UINT PAYLOAD_SIZE = sizeof(RadiancePayload_Mirror);
 
 struct CONSTANT_BUFFER_RAY_TRACING
 {
+	XMMATRIX matViewProj;
+	XMMATRIX matViewInv;
+	DECOMP_PROJ DecompProj;
+	XMVECTOR vCameraPos;
 	float Near;
 	float Far;
 	UINT MaxRadianceRayRecursionDepth;

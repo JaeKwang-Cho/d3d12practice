@@ -73,9 +73,8 @@ void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 
 	// RayTracing에 필요한 상수 버퍼 데이터를 채운다.
 	CONSTANT_BUFFER_RAY_TRACING* pConstBuffer = reinterpret_cast<CONSTANT_BUFFER_RAY_TRACING*>(pCBContainer->pSysMemAddress);
+	m_pRenderer->FillRayTraceConstant(pConstBuffer);
 	pConstBuffer->MaxRadianceRayRecursionDepth = MAX_RADIANCE_RECURSION_DEPTH;
-	pConstBuffer->Near = NEAR_PLANE;
-	pConstBuffer->Far = FAR_PLANE;
 
 	// (0) CBV - RayTracing
 	m_pD3DDevice->CopyDescriptorsSimple(1, dispatchHeapHandleCPU, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -813,6 +812,8 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 	for(ULONG i = 0; i<_ulBlasInstanceNum; i++)
 	{
 		const BLAS_INSTANCE* pInstanceSrc = _ppInstanceList[i];
+
+		// instance desc 리스트의 각 entry에 BLAS 인스턴스의 변환 행렬, BLAS 인스턴스가 참조하는 BLAS의 GPU virtual address, 그리고 shader record index 등을 설정한다.
 		XMMATRIX matTranpose = XMMatrixTranspose(pInstanceSrc->matTransform);
 		memcpy(pInstanceDescEntry->Transform, &matTranpose, sizeof(pInstanceDescEntry->Transform));
 

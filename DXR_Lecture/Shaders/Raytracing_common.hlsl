@@ -20,6 +20,10 @@ Texture2D<float> l_texDiffuse : register(t2, space1);
 
 cbuffer CONSTANT_BUFFER_RAY_TRACING : register(b0)
 {
+    matrix g_matViewProj;
+    matrix g_matViewInv;
+    DECOMP_PROJ g_DecompProj;
+    float4 g_vCameraPos;
     float g_Near;
     float g_Far;
     uint g_MaxRadianceRayRecursionDepth;

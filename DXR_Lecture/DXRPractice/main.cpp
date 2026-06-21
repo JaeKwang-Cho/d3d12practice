@@ -38,6 +38,49 @@ ULONGLONG g_PrvFrameCheckTick = 0;
 ULONGLONG g_PrvUpdateTick = 0;
 DWORD	g_FrameCount = 0;
 
+// ===============================
+
+bool g_bShiftKeyDown = false;
+float g_CamOffsetX = 0.0f;
+float g_CamOffsetY = 0.0f;
+float g_CamOffsetZ = 0.0f;
+
+// Delta Time
+ULONGLONG g_PrvGameLoopTick = 0;
+float g_fDeltaTime = 0.f;
+
+constexpr float CAM_MOVE_SPEED      = 1.0f;   // units/sec
+constexpr float CAM_ROT_SENSITIVITY = 0.003f;  // rad/pixel
+
+// 마우스 델타 누적 (OnMouseMove → RunGame에서 소비)
+int g_iAccumMouseDeltaX = 0;
+int g_iAccumMouseDeltaY = 0;
+
+bool g_bMouseLButtonDown = false;
+bool g_bMouseMButtonDown = false;
+bool g_bMouseRButtonDown = false;
+bool g_bCamRotMode = false;
+int g_iMouseX_RButtonPressed = 0;
+int g_iMouseY_RButtonPressed = 0;
+int g_iPrvMouseX = 0;
+int g_iPrvMouseY = 0;
+int g_iCurMouseX = 0;
+int g_iCurMouseY = 0;
+
+void OnKeyDown(UINT _nChar, UINT _uiScanCode);
+void OnKeyUp(UINT _nChar, UINT _uiScanCode);
+void OnMouseLButtonDown(int _x, int _y, UINT _nFlags);
+void OnMouseLButtonUp(int _x, int _y, UINT _nFlags);
+void OnMouseRButtonDown(int _x, int _y, UINT _nFlags);
+void OnMouseRButtonUp(int _x, int _y, UINT _nFlags);
+void OnMouseMButtonDown(int _x, int _y, UINT _nFlags);
+void OnMouseMButtonUp(int _x, int _y, UINT _nFlags);
+void OnMouseMove(int _x, int _y, UINT _nFlags);
+void OnMouseWheel(int _x, int _y, int _iWheel);
+void OnMouseHWheel(int _x, int _y, int _iWheel);
+
+// ===============================
+
 // 윈도우 프로시져
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 
@@ -128,6 +171,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    // 마우스 좌표는 switch 전에 한 번만 추출
+    const int iMouseX = GET_X_LPARAM(lParam);
+    const int iMouseY = GET_Y_LPARAM(lParam);
+
     switch (message)
     {
     case WM_ACTIVATE:
@@ -149,32 +196,69 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     break;
     case WM_SIZE:
     {
+        if (g_pRenderer)
+        {
+            RECT	rect;
+            GetClientRect(hWnd, &rect);
+            DWORD	dwWndWidth = rect.right - rect.left;
+            DWORD	dwWndHeight = rect.bottom - rect.top;
+            g_pRenderer->UpdateWindowSize(dwWndWidth, dwWndHeight);
+        }
     }
     break;
-    case WM_LBUTTONDOWN:
+    case WM_MOUSEMOVE:
+        if (g_pRenderer)
+            OnMouseMove(iMouseX, iMouseY, (UINT)wParam);
         break;
-    case WM_MBUTTONDOWN:
+    case WM_LBUTTONDOWN:
+        if (g_pRenderer)
+            OnMouseLButtonDown(iMouseX, iMouseY, (UINT)wParam);
+        break;
+    case WM_LBUTTONUP:
+        if (g_pRenderer)
+            OnMouseLButtonUp(iMouseX, iMouseY, (UINT)wParam);
         break;
     case WM_RBUTTONDOWN:
-    {
-    }
-    return 0;
-    case WM_LBUTTONUP:
-        break;
-    case WM_MBUTTONUP:
+        if (g_pRenderer)
+            OnMouseRButtonDown(iMouseX, iMouseY, (UINT)wParam);
         break;
     case WM_RBUTTONUP:
+        if (g_pRenderer)
+            OnMouseRButtonUp(iMouseX, iMouseY, (UINT)wParam);
+        break;
+    case WM_MBUTTONDOWN:
+        if (g_pRenderer)
+            OnMouseMButtonDown(iMouseX, iMouseY, (UINT)wParam);
+        break;
+    case WM_MBUTTONUP:
+        if (g_pRenderer)
+            OnMouseMButtonUp(iMouseX, iMouseY, (UINT)wParam);
+        break;
+    case WM_KEYDOWN:
     {
+        if (g_pRenderer)
+        {
+            UINT	uiScanCode = (0x00ff0000 & lParam) >> 16;
+            UINT	vkCode = MapVirtualKey(uiScanCode, MAPVK_VSC_TO_VK);
+            if (!(lParam & 0x40000000))
+            {
+                OnKeyDown(vkCode, uiScanCode);
+            }
+        }
     }
-    return 0;
-    case WM_MOUSEMOVE:
+    break;
+    case WM_KEYUP:
     {
+        if (g_pRenderer)
+        {
+            UINT	uiScanCode = (0x00ff0000 & lParam) >> 16;
+            UINT	vkCode = MapVirtualKey(uiScanCode, MAPVK_VSC_TO_VK);
+            OnKeyUp(vkCode, uiScanCode);
+        }
     }
-    return 0;
+    break;
     case WM_DROPFILES:
-    {
-    }
-    return 0;
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
@@ -188,27 +272,44 @@ void RunGame()
 {
     g_FrameCount++;
 
-    // begin
+    // Delta time 계산
     ULONGLONG CurTick = GetTickCount64();
+    if (g_PrvGameLoopTick > 0)
+    {
+        g_fDeltaTime = static_cast<float>(CurTick - g_PrvGameLoopTick) * 0.001f;
+        g_fDeltaTime = fmin(g_fDeltaTime, 0.05f); // 최대 50ms 상한
+    }
+    g_PrvGameLoopTick = CurTick;
+
+    // 카메라 이동 — delta time 적용
+    if (g_CamOffsetX != 0.0f || g_CamOffsetY != 0.0f || g_CamOffsetZ != 0.0f)
+    {
+        g_pRenderer->MoveCamera(
+            g_CamOffsetX * CAM_MOVE_SPEED * g_fDeltaTime,
+            g_CamOffsetY * CAM_MOVE_SPEED * g_fDeltaTime,
+            g_CamOffsetZ * CAM_MOVE_SPEED * g_fDeltaTime
+        );
+    }
+
+    // 카메라 회전 — 누적 마우스 델타 소비 (delta time 불필요: 픽셀 이동량이 이미 독립적)
+    if (g_iAccumMouseDeltaX != 0 || g_iAccumMouseDeltaY != 0)
+    {
+        float fYaw   = static_cast<float>(g_iAccumMouseDeltaX) * CAM_ROT_SENSITIVITY;
+        float fPitch = static_cast<float>(g_iAccumMouseDeltaY) * CAM_ROT_SENSITIVITY;
+        g_pRenderer->ApplyCameraRot(fYaw, fPitch, 0.f);
+        g_iAccumMouseDeltaX = 0;
+        g_iAccumMouseDeltaY = 0;
+    }
 
     g_pRenderer->BeginRender();
 
-    // game business logic
     if (CurTick - g_PrvUpdateTick > 16)
     {
-        // Update Scene with 60FPS
         Update();
         g_PrvUpdateTick = CurTick;
     }
 
-    // rendering objects
-    // 
-
-
-    // end
     g_pRenderer->EndRender();
-
-    // Present
     g_pRenderer->Present();
 
     if (CurTick - g_PrvFrameCheckTick > 1000)
@@ -272,4 +373,121 @@ bool InitWindow(HINSTANCE _hInstance)
     UpdateWindow(g_hWnd);
 
     return true;
+}
+
+void OnKeyDown(UINT _nChar, UINT _uiScanCode)
+{
+    switch (_nChar)
+    {
+    case VK_SHIFT:
+        g_bShiftKeyDown = TRUE;
+        break;
+    case 'W':
+        g_CamOffsetZ = 1.0f;
+        break;
+    case 'S':
+        g_CamOffsetZ = -1.0f;
+        break;
+    case 'A':
+        g_CamOffsetX = -1.0f;
+        break;
+    case 'D':
+        g_CamOffsetX = 1.0f;
+        break;
+    case 'Q':
+        g_CamOffsetY = 1.0f;
+        break;
+    case 'E':
+        g_CamOffsetY = -1.0f;
+		break;
+    }
+}
+
+void OnKeyUp(UINT _nChar, UINT _uiScanCode)
+{
+    switch (_nChar)
+    {
+    case VK_SHIFT:
+        g_bShiftKeyDown = FALSE;
+        break;
+    case 'W':
+        g_CamOffsetZ = 0.0f;
+        break;
+    case 'S':
+        g_CamOffsetZ = 0.0f;
+        break;
+    case 'A':
+        g_CamOffsetX = 0.0f;
+        break;
+    case 'D':
+        g_CamOffsetX = 0.0f;
+        break;
+	case 'Q':
+        g_CamOffsetY = 0.0f;
+		break;
+    case 'E':
+        g_CamOffsetY = 0.0f;
+		break;
+    }
+}
+
+void OnMouseLButtonDown(int _x, int _y, UINT _nFlags)
+{
+	g_bMouseLButtonDown = true;
+}
+
+void OnMouseLButtonUp(int _x, int _y, UINT _nFlags)
+{
+	g_bMouseLButtonDown = false;
+}
+
+void OnMouseRButtonDown(int _x, int _y, UINT _nFlags)
+{
+	g_bCamRotMode = true;
+	g_iMouseX_RButtonPressed = _x;
+	g_iMouseY_RButtonPressed = _y;
+
+	g_bMouseRButtonDown = true;
+}
+
+void OnMouseRButtonUp(int _x, int _y, UINT _nFlags)
+{
+    g_bCamRotMode = false;
+	g_bMouseRButtonDown = false;
+}
+
+void OnMouseMButtonDown(int _x, int _y, UINT _nFlags)
+{
+	g_bMouseMButtonDown = true;
+}
+
+void OnMouseMButtonUp(int _x, int _y, UINT _nFlags)
+{
+	g_bMouseMButtonDown = false;
+}
+
+void OnMouseMove(int _x, int _y, UINT _nFlags)
+{
+    g_iPrvMouseX = g_iCurMouseX;
+    g_iPrvMouseY = g_iCurMouseY;
+
+    int dx = _x - g_iPrvMouseX;
+    int dy = _y - g_iPrvMouseY;
+
+    // ApplyCameraRot를 직접 호출하지 않고, RunGame에서 일괄 처리
+    if (g_bCamRotMode)
+    {
+        g_iAccumMouseDeltaX += dx;
+        g_iAccumMouseDeltaY += dy;
+    }
+    g_iCurMouseX = _x;
+    g_iCurMouseY = _y;
+}
+
+void OnMouseWheel(int _x, int _y, int _iWheel)
+{
+}
+
+void OnMouseHWheel(int _x, int _y, int _iWheel)
+{
 }

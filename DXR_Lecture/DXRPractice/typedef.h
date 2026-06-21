@@ -24,6 +24,18 @@ union RGBA
 	BYTE		bColorFactor[4];
 };
 
+struct DECOMP_PROJ
+{
+	float rcp_m11;
+	float rcp_m22;
+	float m21;
+	float m31;
+	float m32;
+	float m33;
+	float m43;
+	float Reserved0;
+};
+
 struct TVERTEX
 {
 	float u;
