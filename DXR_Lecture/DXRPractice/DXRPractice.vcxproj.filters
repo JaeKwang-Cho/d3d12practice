@@ -59,6 +59,24 @@
     <Filter Include="Renderer\Allocator\DescriptorAllocator">
       <UniqueIdentifier>{4d18f97f-d8e6-4602-b0a8-fcf7f0e7a5cb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Renderer\Objects">
+      <UniqueIdentifier>{71c5cc22-d41d-4ecf-8898-9978b2230c90}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Objects\BasicMeshObject">
+      <UniqueIdentifier>{b6f03535-4459-4779-be65-e36350f6d09a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Objects\SpriteObject">
+      <UniqueIdentifier>{a9a0eb1c-52e0-4131-bede-209e2d6554d4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\TextureManager">
+      <UniqueIdentifier>{3b3a70cb-8884-4e36-bc09-d6f1ff51880d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Game">
+      <UniqueIdentifier>{54b7adc6-9808-4102-864a-21f7e501c36c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Renderer\Managers\FontManager">
+      <UniqueIdentifier>{b9cda1ca-b60c-4e61-aa36-a744a4ffe824}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -111,6 +129,24 @@
     </ClCompile>
     <ClCompile Include="SingleDescriptorAllocator.cpp">
       <Filter>Renderer\Allocator\DescriptorAllocator</Filter>
+    </ClCompile>
+    <ClCompile Include="FontManager.cpp">
+      <Filter>Renderer\Managers\FontManager</Filter>
+    </ClCompile>
+    <ClCompile Include="TextureManager.cpp">
+      <Filter>Renderer\Managers\TextureManager</Filter>
+    </ClCompile>
+    <ClCompile Include="BasicMeshObject.cpp">
+      <Filter>Renderer\Objects\BasicMeshObject</Filter>
+    </ClCompile>
+    <ClCompile Include="SpriteObject.cpp">
+      <Filter>Renderer\Objects\SpriteObject</Filter>
+    </ClCompile>
+    <ClCompile Include="Game.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
+    <ClCompile Include="GameObject.cpp">
+      <Filter>Game</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -175,6 +211,24 @@
     <ClInclude Include="SingleDescriptorAllocator.h">
       <Filter>Renderer\Allocator\DescriptorAllocator</Filter>
     </ClInclude>
+    <ClInclude Include="FontManager.h">
+      <Filter>Renderer\Managers\FontManager</Filter>
+    </ClInclude>
+    <ClInclude Include="TextureManager.h">
+      <Filter>Renderer\Managers\TextureManager</Filter>
+    </ClInclude>
+    <ClInclude Include="BasicMeshObject.h">
+      <Filter>Renderer\Objects\BasicMeshObject</Filter>
+    </ClInclude>
+    <ClInclude Include="SpriteObject.h">
+      <Filter>Renderer\Objects\SpriteObject</Filter>
+    </ClInclude>
+    <ClInclude Include="Game.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="GameObject.h">
+      <Filter>Game</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\Shaders\Raytracing.hlsl">
@@ -187,6 +241,12 @@
       <Filter>Shaders</Filter>
     </CustomBuild>
     <CustomBuild Include="..\Shaders\Rasterization.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\shSprite.hlsl">
+      <Filter>Shaders</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\shBasicMesh.hlsl">
       <Filter>Shaders</Filter>
     </CustomBuild>
   </ItemGroup>

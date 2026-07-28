@@ -157,10 +157,14 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Use</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Utils\WriteDebugString.cpp" />
+    <ClCompile Include="BasicMeshObject.cpp" />
     <ClCompile Include="ConstantBufferManager.cpp" />
     <ClCompile Include="D3D12Renderer.cpp" />
     <ClCompile Include="D3D12ResourceManager.cpp" />
     <ClCompile Include="DescriptorPool.cpp" />
+    <ClCompile Include="FontManager.cpp" />
+    <ClCompile Include="Game.cpp" />
+    <ClCompile Include="GameObject.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="pch.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -170,6 +174,8 @@
     <ClCompile Include="ShaderTable.cpp" />
     <ClCompile Include="SimpleConstantBufferPool.cpp" />
     <ClCompile Include="SingleDescriptorAllocator.cpp" />
+    <ClCompile Include="SpriteObject.cpp" />
+    <ClCompile Include="TextureManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\D3D_Utils\D3DUtil.h" />
@@ -178,11 +184,15 @@
     <ClInclude Include="..\Utils\IndexCreator.h" />
     <ClInclude Include="..\Utils\WICTextureLoader12.h" />
     <ClInclude Include="..\Utils\WriteDebugString.h" />
+    <ClInclude Include="BasicMeshObject.h" />
     <ClInclude Include="ConstantBufferManager.h" />
     <ClInclude Include="D3D12Renderer.h" />
     <ClInclude Include="D3D12ResourceManager.h" />
     <ClInclude Include="D3D12_SmartPointer_typedef.h" />
     <ClInclude Include="DescriptorPool.h" />
+    <ClInclude Include="FontManager.h" />
+    <ClInclude Include="Game.h" />
+    <ClInclude Include="GameObject.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="RayTracingManager.h" />
     <ClInclude Include="Renderer_typedef.h" />
@@ -192,6 +202,8 @@
     <ClInclude Include="ShaderUtil.h" />
     <ClInclude Include="SimpleConstantBufferPool.h" />
     <ClInclude Include="SingleDescriptorAllocator.h" />
+    <ClInclude Include="SpriteObject.h" />
+    <ClInclude Include="TextureManager.h" />
     <ClInclude Include="typedef.h" />
   </ItemGroup>
   <ItemGroup>
@@ -218,6 +230,26 @@
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\Shaders\Rasterization.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compliing %(FileName).hlsl</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compliing %(FileName).hlsl</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../Shaders/%(FileName).csm</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">../Shaders/%(FileName).csm</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\Shaders\shBasicMesh.hlsl">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Compliing %(FileName).hlsl</Message>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Compliing %(FileName).hlsl</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">../Shaders/%(FileName).csm</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">../Shaders/%(FileName).csm</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="..\Shaders\shSprite.hlsl">
       <FileType>Document</FileType>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">dxc %(FullPath) /T lib_6_3 /res_may_alias /Fc ../Shaders/%(FileName).csm</Command>
