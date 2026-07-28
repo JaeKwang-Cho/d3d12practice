@@ -18,6 +18,7 @@ struct BasicVertex
 {
     float3 Pos;
     float3 Normal;
+    float3 Tangent;
     float4 Color;
     float2 TexCoord;
 };
@@ -54,6 +55,17 @@ struct ShadowPayload
 static const float NEAR_PLANE = 0.01;
 static const float FAR_PLANE = 800.0;
 
+struct CONSTANT_BUFFER_RT_TRIGROUP
+{
+    float Reseved0;
+    float Reseved1;
+    float Reseved2;
+    float Reseved3;
+    float Reseved4;
+    float Reseved5;
+    float Reseved6;
+    float Reseved7;
+};
 //typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 
 #endif

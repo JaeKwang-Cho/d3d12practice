@@ -5,6 +5,14 @@
 #include "D3D12ResourceManager.h"
 #include "ConstantBufferManager.h"
 #include "SimpleConstantBufferPool.h"
+#include "SingleDescriptorAllocator.h"
+#include "DescriptorPool.h"
+#include "FontManager.h"
+#include "TextureManager.h"
+
+#include "BasicMeshObject.h"
+#include "SpriteObject.h"
+
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath)
 {
@@ -20,6 +28,7 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 
 	DWORD dwCreateFlags = 0;
 	DWORD dwCreateFactoryFlags = 0;
+	m_fDPI = static_cast<float>(GetDpiForWindow(_hWnd));
 
 	// #1 GPU 디버그 레이어 설정
 	if (_bEnableDebugLayer) {
@@ -188,6 +197,10 @@ EXIT:
 
 			m_pRenderTargets[i]->SetName(L"Render Target Resource");
 		}
+
+		m_rtvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+		m_srvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		m_dsvDescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_DSV);
 	}
 	
 	// #9
@@ -200,16 +213,24 @@ EXIT:
 	// d3d12는 완전 비둥기(asynchronous) api다.
 	CreateFence();
 
-
 	// #11 Renderer에서 사용하는 Manager들을 초기화한다.
 	m_pShaderManager = std::make_unique<ShaderManager>();
 	m_pShaderManager->Initialize(this, _wchSahderPath, _bDebugShader);
 
-	m_pConstantBufferManager = std::make_unique<ConstantBufferManager>();
-	m_pConstantBufferManager->Initialize(m_pD3DDevice.Get(), 256);
+	m_pFontManager = std::make_unique<FontManager>();
+	m_pFontManager->Initialize(this, m_pCommandQueue.Get(), m_ulWidth, m_ulHeight, _bEnableDebugLayer);
 
 	m_pResourceManager = std::make_unique<D3D12ResourceManager>();
 	m_pResourceManager->Initialize(m_pD3DDevice.Get());
+
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		m_ppDescriptorPool[i] = std::make_unique<DescriptorPool>();
+		static_assert(false && "todo : DescriptorPool 초기화");
+	}
+
+	m_pConstantBufferManager = std::make_unique<ConstantBufferManager>();
+	m_pConstantBufferManager->Initialize(m_pD3DDevice.Get(), 256);
+
 
 	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
 
@@ -390,6 +411,94 @@ void D3D12Renderer::ApplyCameraRot(const float _yaw, const float _pitch, const f
 
 	UpdateCamera();
 }
+void D3D12Renderer::EnableDXR(bool _bEnable)
+{
+}
+bool D3D12Renderer::IsEnableDXR()
+{
+	return false;
+}
+void* D3D12Renderer::CreateBasicMeshObject()
+{
+	return nullptr;
+}
+void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjHandle)
+{
+}
+void* D3D12Renderer::CreateBLAS(void* _pMeshObjHandle)
+{
+	return nullptr;
+}
+void D3D12Renderer::DeleteBLAS(void* _pMeshObjHandle, void* _pBlasHandle)
+{
+}
+void D3D12Renderer::UpdateBLASTransform(void* _pBlasHandle, const XMMATRIX* _pMatWorld)
+{
+}
+void* D3D12Renderer::CreateSpriteObject()
+{
+	return nullptr;
+}
+void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _PosX, int _PosY, int _Width, int _Height)
+{
+	return nullptr;
+}
+void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
+{
+}
+BOOL D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount)
+{
+	return 0;
+}
+BOOL D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
+{
+	return 0;
+}
+void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
+{
+}
+void* D3D12Renderer::CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _r, ULONG _g, ULONG _b)
+{
+	return nullptr;
+}
+void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
+{
+	return nullptr;
+}
+void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
+{
+	return nullptr;
+}
+void* D3D12Renderer::CreateImmutableTexture(UINT _TexWidth, UINT _TexHeight, DXGI_FORMAT _format, const BYTE* _pInitImage)
+{
+	return nullptr;
+}
+void D3D12Renderer::DeleteTexture(void* _pTexHandle)
+{
+}
+void* D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
+{
+	return nullptr;
+}
+void D3D12Renderer::DeleteFontObject(void* _pFontHandle)
+{
+}
+bool D3D12Renderer::WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontObjHandle, const WCHAR* _wchString, ULONG _ulLen)
+{
+	return false;
+}
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjHandle, const XMMATRIX* pMatWorld)
+{
+}
+void D3D12Renderer::RenderSpriteWithTex(void* _pSprObjHandle, int _iPosX, int _iPosY, float _fScaleX, float _fScaleY, const RECT* _pRect, float _Z, void* _pTexHandle)
+{
+}
+void D3D12Renderer::RenderSprite(void* _pSprObjHandle, int _iPosX, int _iPosY, float _fScaleX, float _fScaleY, float _Z)
+{
+}
+void D3D12Renderer::UpdateTextureWithImage(void* _pTexHandle, const BYTE* _pSrcBits, UINT _SrcWidth, UINT _SrcHeight)
+{
+}
 void D3D12Renderer::CreateCommandList()
 {
 	if(FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf())))) {
@@ -503,7 +612,7 @@ UINT64 D3D12Renderer::DoFence()
 	return m_ui64FenceValue;
 }
 
-void D3D12Renderer::WaitForFenceValue()
+void D3D12Renderer::WaitForFenceValue(UINT64 _ExpectedFenceValue)
 {
 	const UINT64 ExpectedFenceValue = m_ui64FenceValue;
 

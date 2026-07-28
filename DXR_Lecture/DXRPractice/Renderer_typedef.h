@@ -1,5 +1,6 @@
 #pragma once
-const UINT SWAP_CHAIN_FRAME_COUNT = 2;
+const UINT SWAP_CHAIN_FRAME_COUNT = 3;
+const UINT MAX_PENDING_FRAME_COUNT = SWAP_CHAIN_FRAME_COUNT - 1;
 
 // RadiancePayload (Raytracing_typedef.hlsl) 의 C++ 미러 구조체
 // HLSL의 RadiancePayload와 레이아웃을 반드시 동일하게 유지해야 한다.
@@ -27,9 +28,33 @@ struct CONSTANT_BUFFER_RAY_TRACING
 	UINT RERSERVED0;
 };
 
+struct CONSTANT_BUFFER_DEFAULT
+{
+	XMMATRIX matWorld;
+	XMMATRIX matView;
+	XMMATRIX matProj;
+};
+
+struct CONSTANT_BUFFER_SPRITE
+{
+	XMFLOAT2 ScreenRes;
+	XMFLOAT2 Pos;
+	XMFLOAT2 Scale;
+	XMFLOAT2 TexSize;
+	XMFLOAT2 TexSamplePos;
+	XMFLOAT2 TexSampleSize;
+
+	float Z;
+	float Alpha;
+	float Reserved0;
+	float Reserved1;
+};
+
 enum class CONSTANT_BUFFER_TYPE
 {
-	RAY_TRACING = 0,
+	DEFAULT = 0,
+	SPRITE,
+	RAY_TRACING,
 	COUNT
 };
 
@@ -38,9 +63,41 @@ struct CONSTANT_BUFFER_PROPERTY
 	CONSTANT_BUFFER_TYPE cbType;
 	UINT cbSize;
 };
+
+struct TEXTURE_HANDLE
+{
+	D3D12Resource_ptr pTexResource;
+	D3D12Resource_ptr pUploadBuffer;
+	D3D12_CPU_DESCRIPTOR_HANDLE srvCpuHandle;
+	bool bUpdated;
+	bool bFromFile;
+	ULONG ulRefCount;
+	void* pSearchHandle;
+};
+
+struct FONT_HANDLE
+{
+	IDWriteTextFormat* pTextFormat;
+	float fFontSize;
+	WCHAR wchFontFamilyName[512];
+};
+
+struct CONSTANT_BUFFER_RT_TRIGROUP
+{
+	float Reseved0;
+	float Reseved1;
+	float Reseved2;
+	float Reseved3;
+	float Reseved4;
+	float Reseved5;
+	float Reseved6;
+	float Reseved7;
+};
+
 // Geometry에 대해서 Hit Group Shader가 실행 될 때, Local Root Signature에 전달할 정보 구조체.
 struct ROOT_ARG 
 {
+	CONSTANT_BUFFER_RT_TRIGROUP cbTrigroup;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvVertexBuffer;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvIndexBuffer;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvTexBuffer;
@@ -54,10 +111,7 @@ const ULONG MAX_TRIANGLE_COUNT_PER_BLAS = 16;
 struct BLAS_BUILD_TRIGROUP_INFO
 {
 	ID3D12Resource* pIndexBuffer;
-	ID3D12Resource* pTexResource;
-	UINT TexWidth;
-	UINT TexHeight;
-	DXGI_FORMAT TexFormat;
+	TEXTURE_HANDLE* pDiffuseTexHandle;
 	ULONG ulIndexNum;
 	bool bNotOpaque;
 };

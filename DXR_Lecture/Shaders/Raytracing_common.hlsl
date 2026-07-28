@@ -14,6 +14,7 @@ SamplerState samplerPoint : register(s2);
 SamplerState samplerMirror : register(s3);
 
 // Local Root Parameter
+ConstantBuffer<CONSTANT_BUFFER_RT_TRIGROUP> l_rayGeomCB : register(b0, space1);
 StructuredBuffer<BasicVertex> l_Vertices : register(t0, space1); // read-only uav
 ByteAddressBuffer l_Indices : register(t1, space1); // read-only binary
 Texture2D<float> l_texDiffuse : register(t2, space1);

@@ -1,5 +1,104 @@
+// BasicMeshObject.h from "megayuchi"
 #pragma once
+
+// Descriptor Handle Offset을 이렇게 enum 값으로 정한다.
+/*
+enum class BASIC_MESH_DESCRIPTOR_INDEX
+{
+	CBV = 0, // Contant Buffer View
+	TEX = 1, 
+	END
+};
+*/
+enum class E_BASIC_MESH_DESCRIPTOR_INDEX_PER_OBJ
+{
+	CBV = 0,
+	END
+};
+
+enum class E_BASIC_MESH_DESCRIPTOR_INDEX_PER_TRI_GROUP
+{
+	TEX = 0,
+	END
+};
+
+// 인덱싱 된 삼각형 그룹이다.
+// 바로 Pipeline에 bind 할 수 있도록 맴버를 구성하고 있다.
+struct INDEXED_TRI_GROUP
+{
+	D3D12Resource_ptr pIndexBuffer = nullptr;
+	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
+	ULONG ulTriCount = -1;
+	ULONG ulAlignedIndexCount = -1; // 256-bytes aligned index count
+	TEXTURE_HANDLE* pTexHandle = nullptr;
+};
+
+class D3D12Renderer;
+struct TEXTURE_HANDLE;
+struct SHADER_HANDLE;
+
 class BasicMeshObject
 {
+public:
+	//static const UINT DESCRIPTOR_COUNT_FOR_DRAW = 2; // CB와 Tex를 가지고 있다.
+	static const UINT DESCRIPTOR_COUNT_PER_OBJ = 1; // Object마다 들어가는 Descriptor 개수 -> 일단은 CB 하나이다.
+	static const UINT DESCRIPTOR_COUNT_PER_TRI_GROUP = 1; // Triangle Group 마다 들어가는 Descriptor 개수 -> 일단은 SRV(Texture) 하나다.
+	static const UINT MAX_TRI_GROUP_COUNT_PER_OBJ = 8; // Object 마다 가질 수 있는 최대 Triangle Group 개수
+	static const UINT MAX_DESCRIPTOR_COUNT_FOR_DRAW = DESCRIPTOR_COUNT_PER_OBJ + (MAX_TRI_GROUP_COUNT_PER_OBJ * DESCRIPTOR_COUNT_PER_TRI_GROUP);
+
+private:
+	// 일단 지금은 단순히 테스트용으로 하기 때문에
+	// 요롷게 클래스 맴버로 root signature와 PSO, RefCount를 관리한다.
+	static D3D12RootSignature_ptr m_pRootSignature;
+	static D3D12PipelineState_ptr m_pPipelineState;
+	static ULONG m_ulInitRefCount;
+	// 모든 MeshObject가 공유하는 Shader
+	static SHADER_HANDLE* m_pVS;
+	static SHADER_HANDLE* m_pPS;
+
+
+public:
+	bool Initialize(D3D12Renderer* _pRenderer);
+	// 외부에서 Texture를 받지 않는다. MeshObject를 생성할때 이미 맴버로 가지고 있는 것들을 bind한다.
+	void Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
+
+	bool BeginCreateMesh(const BasicVertex* _pVertexList, ULONG _ulVertexNum, ULONG _ulTriGroupCount);
+	bool InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName);
+	void EndCreateMesh();
+
+	void* CreateBLAS();
+	void DeleteBLAS(void* _pBlasHandle);
+
+protected:
+private:
+	bool InitCommonResources();
+	void CleanupSharedResources();
+
+	bool InitRootSignature();
+	bool InitPipelineState();
+
+	// Texture Resource를 Shader로 넘기기 위한 Table을 생성한다.
+	//bool CreateDescriptorTable();
+
+	void DeleteTriGroup(INDEXED_TRI_GROUP* _pTriGroup);
+	void CleanUp();
+public:
+protected:
+private:
+	D3D12Renderer* m_pRenderer;
+
+	// vertex data
+	D3D12Resource_ptr m_pVertexBuffer;
+	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
+	// index data
+	std::vector<std::unique_ptr<INDEXED_TRI_GROUP>> m_pTriGroupList;
+	ULONG m_ulTriGroupCount;
+	ULONG m_ulMaxTriGroupCount;
+	ULONG m_ulVertexCount;
+
+public:
+	BasicMeshObject();
+	~BasicMeshObject();
+
 };
 
