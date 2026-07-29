@@ -15,7 +15,7 @@ public:
 
 	void Reset();
 
-	D3D12DescriptorHeap_ptr INL_GetDescriptorHeap() { return m_pDescriptorHeap; }
+	D3D12DescriptorHeap_raw INL_GetDescriptorHeap() { return m_pDescriptorHeap.Get(); }
 protected:
 private:
 	void CleanUpPool();

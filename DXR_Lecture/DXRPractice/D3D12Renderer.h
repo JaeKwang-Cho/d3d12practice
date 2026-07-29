@@ -164,7 +164,7 @@ public:
 	D3D12ResourceManager* INL_GetResourceManager() const { return m_pResourceManager.get(); }
 	DescriptorPool* INL_GetDescriptorPool() { return m_ppDescriptorPool[m_ulCurContextIndex].get(); }
 
-	UINT INL_GetSrvDesctiproSize() { return m_srvDescriptorSize; }
+	UINT INL_GetSrvDescriptorSize() { return m_srvDescriptorSize; }
 	SingleDescriptorAllocator* INL_GetSingleDescriptorAllocator() { return m_pSingleDescriptorAllocator.get(); }
 
 

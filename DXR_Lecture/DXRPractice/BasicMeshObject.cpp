@@ -26,6 +26,49 @@ bool BasicMeshObject::Initialize(D3D12Renderer* _pRenderer)
 
 void BasicMeshObject::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld)
 {
+	// 각각의 draw() 작업의 무결성을 보장하려면, draw() 작업마다 다른 영역의 descriptor table(shader visible)과 다른 영역의 CBV를 사용해아 한다.
+	// 따라서 draw() 할 때 마다, CBV는 ConstantBufferPool에서 할당 받고, 렌더링용 descriptor table(shader visible)은 desriptor pool로 부터 할당 받는다.
+
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
+
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool();
+	D3D12DescriptorHeap_raw pDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
+
+	SimpleConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::DEFAULT);
+
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuDescriptorTable = {};
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTable = {};
+	ULONG ulRequiredDescriptorCount = DESCRIPTOR_COUNT_PER_OBJ + (m_ulTriGroupCount * DESCRIPTOR_COUNT_PER_TRI_GROUP);
+
+	if (!pDescriptorPool->AllocDescriptorTable(&cpuDescriptorTable, &gpuDescriptorTable, ulRequiredDescriptorCount)) {
+		OutputDebugStringA("Failed to allocate descriptor table for BasicMeshObject::Draw().\n");
+		__debugbreak();
+		return;
+	}
+
+	// 각각의 draw()에 대해 독립적인 constant buffer를 할당 받는다.
+	// 같은 resource 안에 다른 영역을 사용한다.
+	CB_CONTAINER* pCBContainer = pConstantBufferPool->AllocCBContainer();
+	if(!pCBContainer) {
+		OutputDebugStringA("Failed to allocate constant buffer for BasicMeshObject::Draw().\n");
+		__debugbreak();
+		return;
+	}
+	CONSTANT_BUFFER_DEFAULT* pConstantBufferDefault = reinterpret_cast<CONSTANT_BUFFER_DEFAULT*>(pCBContainer->pSysMemAddress);
+
+	// CB 내용 채우기 
+	// - view/projMat
+	m_pRenderer->INL_GetViewProjMatrix(pConstantBufferDefault->matView, pConstantBufferDefault->matProj);
+	// - worldMat
+	pConstantBufferDefault->matWorld = XMMatrixTranspose(*_pMatWorld);
+
+	// Descriptor Table 구성
+	// 이번에 사용할 CB의 descriptor를 렌더링용(shader visible) descriptor table에 복사한다.
+
+	// per obj
+	CD3DX12_CPU_DESCRIPTOR_HANDLE Dest(cpuDescriptorTable, static_cast<UINT>(E_BASIC_MESH_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
+	pD3DDevice->CopyDescriptorsSimple(1, Dest, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE::)
 
 }
 
