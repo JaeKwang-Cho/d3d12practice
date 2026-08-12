@@ -1,13 +1,15 @@
 #pragma once
 
+class IndexCreator;
 class ShaderTable;
 class D3D12Renderer;
+class SingleDescriptorAllocator;
 struct SHADER_HANDLE;
 
 class RayTracingManager
 {
 private:
-	enum class COMMON_DESCRIPTOR_INDEX { 
+	enum class COMMON_DESCRIPTOR_INDEX {
 		OUTPUT_DIFFUSE_UAV = 0, // UAV - Output - Diffuse
 		OUTPUT_DEPTH_UAV,   // UAV - Output - Depth
 		Count,
@@ -28,16 +30,26 @@ private:
 		Count,
 	};
 
+	enum class UPDATE_ACCELERATION_STRUCTURE_TYPE
+	{
+		None = 0,
+		HIT_GROUP_SHADER_TABLE = 0b01,
+		TLAS = 0b10
+	};
 	static const DWORD MAX_RECURSION_DEPTH = 1;
 	static const DWORD MAX_RADIANCE_RECURSION_DEPTH = std::min<DWORD>(MAX_RECURSION_DEPTH, 1);
 
 public:
-	bool Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight);
+	bool Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight, ULONG _ulMaxBlasCount);
 
 	void DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList);
+	bool UpdateAccelerationStructure();
+	bool IsUpdatedAccelerationStructure() const { return m_UpdateAccelerationStructureTypeFlags != 0; }
 	void UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight);
 
 	BLAS_INSTANCE* AllocBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate);
+	void FreeBLAS(BLAS_INSTANCE* _pBlasInstance);
+	void UpdateBLASTransform(BLAS_INSTANCE* _pBlasInstance, const XMMATRIX* _pMatWorld);
 
 private:
 	void CreateCommandList_forRayTracing();
@@ -53,7 +65,7 @@ private:
 	void CreateRaytracingPipelineStateObject();
 
 	void CreateDescriptorHeapCBV_SRV_UAV();
-	void CreateShaderVisibleHeap();
+	void CreateShaderVisibleHeap(ULONG _ulMaxDescritorCount);
 
 	bool CreateOutputDiffuseBuffer(UINT _uiWidth, UINT _uiHeight);
 	void CleanupOutputDiffuseBuffer();
@@ -62,9 +74,10 @@ private:
 
 	std::unique_ptr<BLAS_INSTANCE> BuildBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate);
 	D3D12Resource_ptr BuildTLAS(D3D12Resource_raw _pInstanceDescResource, BLAS_INSTANCE** _ppInstanceList, ULONG _ulBlasInstanceNum, bool _bAllowUpdate, UINT _CurrContextIndex);
-	bool InitMesh();
-	
-	bool InitAccelerationStructure();
+
+	void UpdateHitGroupShaderTable(ULONG _ulShaderRecordCount);
+	void FreeBlasImmediately(BLAS_INSTANCE* _pBlasInstance);
+	void CleanupPendingFreeBlasInstances();
 
 	void CleanupRayTracingManager();
 
@@ -77,6 +90,7 @@ private:
 	D3D12CommandQueue_ptr m_pCommandQueue = nullptr;
 	D3D12CommandAllocator_ptr m_pCommandAllocator = nullptr;
 	D3D12GraphicsCommandList_ptr m_pCommandList = nullptr;
+	std::unique_ptr<IndexCreator> m_pIndexCreator = nullptr;
 	
 	HANDLE m_hFenceEvent = nullptr;
 	D3D12Fence_ptr m_pFence = nullptr;
@@ -109,22 +123,20 @@ private:
 	ULONG m_ulHitGroupShaderRecordNum = 0;
 
 	UINT m_ShaderIdentifierSize = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES;
+	UINT m_HitGroupShaderRecordSize = 0;
 
+	ULONG m_ulMaxShaderVisibileDescriptorCount = 0;
+	ULONG m_ulMaxBlasCount = 0;
 	// BLAS_INSTANCE는 RayTracingManager이 소유한다.
 	std::vector<std::unique_ptr<BLAS_INSTANCE>> m_arrBLASInstance;
+	std::vector<BLAS_INSTANCE*> m_pArrWaitUpdateBLASInstance;
+	std::vector<std::unique_ptr<BLAS_INSTANCE>> m_arrDeletedBLASInstance;
+	ULONG m_ulCurrBlasCount = 0;
+
+	ULONG m_UpdateAccelerationStructureTypeFlags = 0;
 
 	D3D12Resource_ptr m_pBLASInstanceDescResource = nullptr;
 	D3D12Resource_ptr m_pTLAS = nullptr;
-	BLAS_INSTANCE* m_pBLASInstance = nullptr;
-
-	// 테스트용 mesh 데이터
-	D3D12Resource_ptr m_pVertexBuffer = nullptr;
-	D3D12Resource_ptr m_pIndexBuffer = nullptr;
-	D3D12Resource_ptr m_pTexture = nullptr;
-
-	UINT m_TexWidth = 0;
-	UINT m_TexHeight = 0;
-	DXGI_FORMAT m_TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 
 	// RayTracingManager이 소유 - end
 public:

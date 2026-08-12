@@ -26,12 +26,12 @@ bool D3D12ResourceManager::Initialize(D3D12Device_ptr _pD3DDevice)
 	return true;
 }
 
-HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData)
+HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView, D3D12Resource_raw* _ppOutBuffer, void* _pInitData)
 {
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 	// 업로드 버퍼를 이용해서, 기본 버퍼로 데이터를 전달한다.
-	D3D12Resource_ptr pVertexBuffer = nullptr;
-	D3D12Resource_ptr pUploadBuffer = nullptr;
+	D3D12Resource_raw pVertexBuffer = nullptr;
+	D3D12Resource_raw pUploadBuffer = nullptr;
 	UINT vertexBufferSize = _sizePerVertex * _dwVertexNum;
 
 	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -45,7 +45,7 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 		&vbDesc_BuffSize,
 		D3D12_RESOURCE_STATE_COMMON,
 		nullptr,
-		IID_PPV_ARGS(pVertexBuffer.GetAddressOf())
+		IID_PPV_ARGS(&pVertexBuffer)
 	);
 
 	if (FAILED(hr)) {
@@ -67,7 +67,7 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 			&vbDesc_BuffSize,
 			D3D12_RESOURCE_STATE_COMMON,
 			nullptr,
-			IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+			IID_PPV_ARGS(&pUploadBuffer)
 		);
 
 		if (FAILED(hr)) {
@@ -88,11 +88,11 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 		pUploadBuffer->Unmap(0, nullptr);
 
 		// 이제 Upload Buffer에 있는 값을 Default 버퍼로 복사한다.
-		D3D12_RESOURCE_BARRIER vbRB_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(pVertexBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
-		D3D12_RESOURCE_BARRIER vbRB_DEST_BUFF = CD3DX12_RESOURCE_BARRIER::Transition(pVertexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		D3D12_RESOURCE_BARRIER vbRB_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(pVertexBuffer, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+		D3D12_RESOURCE_BARRIER vbRB_DEST_BUFF = CD3DX12_RESOURCE_BARRIER::Transition(pVertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
 		m_pCommandList->ResourceBarrier(1, &vbRB_COMM_DEST);
-		m_pCommandList->CopyBufferRegion(pVertexBuffer.Get(), 0, pUploadBuffer.Get(), 0, vertexBufferSize);
+		m_pCommandList->CopyBufferRegion(pVertexBuffer, 0, pUploadBuffer, 0, vertexBufferSize);
 		m_pCommandList->ResourceBarrier(1, &vbRB_DEST_BUFF);
 
 		m_pCommandList->Close();
@@ -117,11 +117,11 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 	return hr;
 }
 
-HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, D3D12Resource_ptr* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize)
+HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView, D3D12Resource_raw* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize)
 {
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
-	D3D12Resource_ptr pIndexBuffer = nullptr;
-	D3D12Resource_ptr pUploadBuffer = nullptr;
+	D3D12Resource_raw pIndexBuffer = nullptr;
+	D3D12Resource_raw pUploadBuffer = nullptr;
 	UINT indexBufferSize = _indexTypeSize * _dwIndexNum;
 
 	// Index도 upload heap buffer를 이용해서 default heap buffer에 데이터를 올린다.
@@ -135,7 +135,7 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 		&ibDesc_BuffSize,
 		D3D12_RESOURCE_STATE_COMMON,
 		nullptr,
-		IID_PPV_ARGS(pIndexBuffer.GetAddressOf())
+		IID_PPV_ARGS(&pIndexBuffer)
 	);
 	if (FAILED(hr)) {
 		__debugbreak();
@@ -156,7 +156,7 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 			&ibDesc_BuffSize,
 			D3D12_RESOURCE_STATE_COMMON,
 			nullptr,
-			IID_PPV_ARGS(pUploadBuffer.GetAddressOf())
+			IID_PPV_ARGS(&pUploadBuffer)
 		);
 		if (FAILED(hr)) {
 			__debugbreak();
@@ -176,11 +176,11 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 		pUploadBuffer->Unmap(0, nullptr);
 
 		// 이제 Upload Buffer에 있는 값을 Default 버퍼로 복사한다.
-		D3D12_RESOURCE_BARRIER ibRB_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer.Get(), D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
-		D3D12_RESOURCE_BARRIER ibRB_DEST_INDEX = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer.Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
+		D3D12_RESOURCE_BARRIER ibRB_COMM_DEST = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer, D3D12_RESOURCE_STATE_COMMON, D3D12_RESOURCE_STATE_COPY_DEST);
+		D3D12_RESOURCE_BARRIER ibRB_DEST_INDEX = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
 		m_pCommandList->ResourceBarrier(1, &ibRB_COMM_DEST);
-		m_pCommandList->CopyBufferRegion(pIndexBuffer.Get(), 0, pUploadBuffer.Get(), 0, indexBufferSize);
+		m_pCommandList->CopyBufferRegion(pIndexBuffer, 0, pUploadBuffer, 0, indexBufferSize);
 		m_pCommandList->ResourceBarrier(1, &ibRB_DEST_INDEX);
 
 		m_pCommandList->Close();

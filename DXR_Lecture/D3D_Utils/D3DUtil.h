@@ -34,3 +34,5 @@ inline UINT Align(UINT size, UINT alignment)
 }
 
 void UpdateTexture(D3D12Device_ptr _pD3DDevice, D3D12GraphicsCommandList_ptr _pCommandList, D3D12Resource_ptr _pDestTexResource, D3D12Resource_ptr _pSrcTexResource);
+
+#define SizeOfInUint32(obj) ((sizeof(obj) - 1) / sizeof(UINT32) + 1)

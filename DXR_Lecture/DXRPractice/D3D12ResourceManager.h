@@ -6,11 +6,11 @@ public:
 
 	HRESULT CreateVertexBuffer(
 		UINT _sizePerVertex, ULONG _dwVertexNum, D3D12_VERTEX_BUFFER_VIEW* _pOutVertexBufferView,
-		D3D12Resource_ptr* _ppOutBuffer, void* _pInitData);
+		D3D12Resource_raw* _ppOutBuffer, void* _pInitData);
 
 	HRESULT CreateIndexBuffer(
 		DWORD _dwIndexNum, D3D12_INDEX_BUFFER_VIEW* _pOutIndexBufferView,
-		D3D12Resource_ptr* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize = sizeof(uint16_t));
+		D3D12Resource_raw* _ppOutBuffer, void* _pInitData, UINT _indexTypeSize = sizeof(uint16_t));
 
 	HRESULT CreateTexture(D3D12Resource_ptr* _ppOutResource, UINT _width, UINT _height, DXGI_FORMAT _format, const BYTE* _pInitImage);
 	HRESULT CreateTextureFromFile(D3D12Resource_ptr* _ppOutResource, D3D12_RESOURCE_DESC* _pOutDesc, const WCHAR* _wchFileName);

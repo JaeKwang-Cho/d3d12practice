@@ -25,17 +25,26 @@ bool SingleDescriptorAllocator::Initialize(D3D12Device_raw _pDevice, DWORD _dwMa
 }
 
 bool SingleDescriptorAllocator::AllocDescriptorHandle(D3D12_CPU_DESCRIPTOR_HANDLE* _pOutCPUHandle)
-{
-	bool bResult = false;
-	
-	DWORD dwIndex = m_IndexCreator.Alloc();
-	if (-1 != dwIndex) {
-		CD3DX12_CPU_DESCRIPTOR_HANDLE descriptorHandle(m_pHeap->GetCPUDescriptorHandleForHeapStart(), dwIndex, m_DescriptorSize);
+{	
+	ULONG ulIndex = m_IndexCreator.Alloc();
+	if (-1 != ulIndex) {
+		CD3DX12_CPU_DESCRIPTOR_HANDLE descriptorHandle(m_pHeap->GetCPUDescriptorHandleForHeapStart(), ulIndex, m_DescriptorSize);
 		*_pOutCPUHandle = descriptorHandle;
-		bResult = true;
+		return true;
 	}
 
-	return bResult;
+	return false;
+}
+
+bool SingleDescriptorAllocator::AllocDescriptorHandle(D3D12_GPU_DESCRIPTOR_HANDLE* _pOutGPUHandle)
+{
+	ULONG ulIndex = m_IndexCreator.Alloc();
+	if (-1 != ulIndex) {
+		CD3DX12_GPU_DESCRIPTOR_HANDLE descriptorHandle(m_pHeap->GetGPUDescriptorHandleForHeapStart(), ulIndex, m_DescriptorSize);
+		*_pOutGPUHandle = descriptorHandle;
+		return true;
+	}
+	return false;
 }
 
 void SingleDescriptorAllocator::FreeDescriptorHandle(D3D12_CPU_DESCRIPTOR_HANDLE _descriptorHandle)
@@ -47,8 +56,21 @@ void SingleDescriptorAllocator::FreeDescriptorHandle(D3D12_CPU_DESCRIPTOR_HANDLE
 	}
 #endif
 	// 인자로 들어온 Handle의 offset으로 index를 구해, IndexCreate 클래스에서도 해제해준다.
-	DWORD dwIndex = (DWORD)(_descriptorHandle.ptr - hBase.ptr) / m_DescriptorSize;
-	m_IndexCreator.Free(dwIndex);
+	ULONG ulIndex = static_cast<ULONG>(_descriptorHandle.ptr - hBase.ptr) / m_DescriptorSize;
+	m_IndexCreator.Free(ulIndex);
+}
+
+void SingleDescriptorAllocator::FreeDescriptorHandle(D3D12_GPU_DESCRIPTOR_HANDLE _descriptorHandle)
+{
+	D3D12_GPU_DESCRIPTOR_HANDLE hBase = m_pHeap->GetGPUDescriptorHandleForHeapStart();
+#ifdef _DEBUG
+	if (hBase.ptr > _descriptorHandle.ptr) {
+		__debugbreak();
+	}
+#endif
+	// 인자로 들어온 Handle의 offset으로 index를 구해, IndexCreate 클래스에서도 해제해준다.
+	ULONG ulIndex = static_cast<ULONG>(_descriptorHandle.ptr - hBase.ptr) / m_DescriptorSize;
+	m_IndexCreator.Free(ulIndex);
 }
 
 bool SingleDescriptorAllocator::Check(D3D12_CPU_DESCRIPTOR_HANDLE _descriptorHandle)

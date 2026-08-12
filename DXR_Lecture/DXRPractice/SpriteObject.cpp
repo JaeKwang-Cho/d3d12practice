@@ -3,14 +3,17 @@
 #include "pch.h"
 #include "SpriteObject.h"
 #include "D3D12Renderer.h"
-#include "ConstantBufferPool.h"
+#include "SimpleConstantBufferPool.h"
 #include "SingleDescriptorAllocator.h"
 #include "DescriptorPool.h"
 #include "D3D12ResourceManager.h"
-#include "D3DUtil.h"
+#include "ShaderManager.h"
 
-Microsoft::WRL::ComPtr<ID3D12RootSignature> SpriteObject::m_pRootSignature = nullptr;
-//Microsoft::WRL::ComPtr<ID3D12PipelineState> SpriteObject::m_pPipelineState = nullptr;
+SHADER_HANDLE* SpriteObject::m_pVertexShaderHandle = nullptr;
+SHADER_HANDLE* SpriteObject::m_pPixelShaderHandle = nullptr;
+
+D3D12RootSignature_ptr SpriteObject::m_pRootSignature = nullptr;
+D3D12PipelineState_ptr SpriteObject::m_pPipelineState = nullptr;
 
 D3D12Resource_ptr SpriteObject::m_pVertexBuffer = nullptr;
 D3D12_VERTEX_BUFFER_VIEW SpriteObject::m_VertexBufferView = {};
@@ -18,16 +21,13 @@ D3D12_VERTEX_BUFFER_VIEW SpriteObject::m_VertexBufferView = {};
 D3D12Resource_ptr SpriteObject::m_pIndexBuffer = nullptr;
 D3D12_INDEX_BUFFER_VIEW SpriteObject::m_IndexBufferView = {};
 
-DWORD SpriteObject::m_dwInitRefCount = 0;
+ULONG SpriteObject::m_ulInitRefCount = 0;
 
 bool SpriteObject::Initialize(D3D12Renderer* _pRenderer)
 {
 	m_pRenderer = _pRenderer;
 
-	bool bResult = InitCommonResources();
-	// 일단은 인스턴스마다 PSO를 가지도록 한다.
-	bResult = InitPipelineState();
-	return bResult;
+	return InitCommonResources();
 }
 
 bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFileName, const RECT* _pRect)
@@ -35,8 +35,6 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFil
 	m_pRenderer = _pRenderer;
 
 	bool bResult = InitCommonResources();
-	// 일단은 인스턴스마다 PSO를 가지도록 한다.
-	bResult = InitPipelineState();
 	if (bResult) {
 		UINT texWidth = 1;
 		UINT texHeight = 1;
@@ -67,14 +65,14 @@ bool SpriteObject::Initialize(D3D12Renderer* _pRenderer, const WCHAR* _wchTexFil
 	return bResult;
 }
 
-void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
+void SpriteObject::DrawWithTex(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, const RECT* _pRect, float _z, TEXTURE_HANDLE* _pTexHandle)
 {
 	D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	// Renderer가 관리하는 Pool
-	ConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(E_CONSTANT_BUFFER_TYPE::SPRITE, _ulThreadIndex);
-	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool(_ulThreadIndex);
+	SimpleConstantBufferPool* pConstantBufferPool = m_pRenderer->INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE::SPRITE);
+	DescriptorPool* pDescriptorPool = m_pRenderer->INL_GetDescriptorPool();
 	D3D12DescriptorHeap_ptr pPoolDescriptorHeap = pDescriptorPool->INL_GetDescriptorHeap();
 
 	// 텍스쳐 정보를 받는다.
@@ -86,7 +84,7 @@ void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_pt
 		D3D12_RESOURCE_DESC desc = _pTexHandle->pTexResource->GetDesc();
 		texWidth = (UINT)desc.Width;
 		texHeight = (UINT)desc.Height;
-		srv = _pTexHandle->srv;
+		srv = _pTexHandle->srvCpuHandle;
 	}
 
 	RECT rect;
@@ -106,25 +104,25 @@ void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_pt
 		__debugbreak();
 	}
 
-	CB_CONTAINER* pCB = pConstantBufferPool->Alloc();
+	CB_CONTAINER* pCB = pConstantBufferPool->AllocCBContainer();
 	if (!pCB) {
 		__debugbreak();
 	}
 
-	CONSTANT_BUFFER_SPRITE* pCBSprite = (CONSTANT_BUFFER_SPRITE*)pCB->pSystemMemAddr;
+	CONSTANT_BUFFER_SPRITE* pCBSprite = (CONSTANT_BUFFER_SPRITE*)pCB->pSysMemAddress;
 	// CB 값을 업데이트 한다.
-	pCBSprite->screenResol.x = (float)m_pRenderer->INL_GetScreenWidth();
-	pCBSprite->screenResol.y = (float)m_pRenderer->INL_GetScreenHeight();
-	pCBSprite->pos = *_pPos;
-	pCBSprite->scale = *_pScale;
-	pCBSprite->texSize.x = (float)texWidth;
-	pCBSprite->texSize.y = (float)texHeight;
-	pCBSprite->texSamplePos.x = (float)_pRect->left;
-	pCBSprite->texSamplePos.y = (float)_pRect->top;
+	pCBSprite->ScreenRes.x = (float)m_pRenderer->INL_GetScreenWidth();
+	pCBSprite->ScreenRes.y = (float)m_pRenderer->INL_GetScreenHeight();
+	pCBSprite->Pos = *_pPos;
+	pCBSprite->Scale = *_pScale;
+	pCBSprite->TexSize.x = (float)texWidth;
+	pCBSprite->TexSize.y = (float)texHeight;
+	pCBSprite->TexSamplePos.x = (float)_pRect->left;
+	pCBSprite->TexSamplePos.y = (float)_pRect->top;
 	pCBSprite->TexSampleSize.x = (float)(_pRect->right - _pRect->left);
 	pCBSprite->TexSampleSize.y = (float)(_pRect->bottom - _pRect->top);
-	pCBSprite->z = _z;
-	pCBSprite->alpha = 1.f;
+	pCBSprite->Z = _z;
+	pCBSprite->Alpha= 1.f;
 
 	// 루트 시그니처를 세팅한다.
 	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
@@ -133,7 +131,7 @@ void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_pt
 
 	// CBV와 SRV를 pooling 한 Descriptor에 복사하고
 	CD3DX12_CPU_DESCRIPTOR_HANDLE cbvDest(cpuDescriptorTable, (UINT)E_SPRITE_DESCRIPTOR_INDEX::CBV, srvDescriptorSize);
-	pD3DDevice->CopyDescriptorsSimple(1, cbvDest, pCB->cbvHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+	pD3DDevice->CopyDescriptorsSimple(1, cbvDest, pCB->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
 	if (srv.ptr) {
 		CD3DX12_CPU_DESCRIPTOR_HANDLE srvDest(cpuDescriptorTable, (UINT)E_SPRITE_DESCRIPTOR_INDEX::TEX, srvDescriptorSize);
@@ -152,33 +150,34 @@ void SpriteObject::DrawWithTex(ULONG _ulThreadIndex, D3D12GraphicsCommandList_pt
 	_pCommandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
 }
 
-void SpriteObject::Draw(ULONG _ulThreadIndex, D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
+void SpriteObject::Draw(D3D12GraphicsCommandList_ptr _pCommandList, const XMFLOAT2* _pPos, const XMFLOAT2* _pScale, float _z)
 {
 	XMFLOAT2 scale = { m_Scale.x * _pScale->x,  m_Scale.y * _pScale->y };
-	DrawWithTex(_ulThreadIndex, _pCommandList, _pPos, &scale, &m_Rect, _z, m_pTexHandle);
+	DrawWithTex(_pCommandList, _pPos, &scale, &m_Rect, _z, m_pTexHandle);
 }
 
 bool SpriteObject::InitCommonResources()
 {
-	if (m_dwInitRefCount) {
+	if (m_ulInitRefCount) {
 		goto RETURN;
 	}
 
 	InitRootSignature();
+	InitPipelineState();
 	InitMesh();
 
 RETURN:
-	m_dwInitRefCount++;
+	m_ulInitRefCount++;
 	return true;
 }
 
 void SpriteObject::CleanUpSharedResources()
 {
-	if (!m_dwInitRefCount) {
+	if (!m_ulInitRefCount) {
 		return;
 	}
 
-	DWORD refCount = --m_dwInitRefCount;
+	DWORD refCount = --m_ulInitRefCount;
 	// 아직 참조하는 Object가 있다면 삭제하지 않기
 	if (!refCount) {
 		// 얘네는 data section에 있는 애들이라 직접 해제를 해줘야 한다.
@@ -212,12 +211,18 @@ bool SpriteObject::InitRootSignature()
 	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
 	rootSignatureDesc.Init(_countof(rootParameters), rootParameters, 1, &sampler, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-	if (FAILED(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, pSignature.GetAddressOf(), pError.GetAddressOf()))) {
+	HRESULT hr = D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, pSignature.GetAddressOf(), pError.GetAddressOf());
+	if (FAILED(hr)) {
+		OutputDebugString((LPCWSTR)pError->GetBufferPointer());
 		__debugbreak();
+		return false;
 	}
 
-	if (FAILED(pD3DDevice->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(m_pRootSignature.GetAddressOf())))) {
+	hr = pD3DDevice->CreateRootSignature(0, pSignature->GetBufferPointer(), pSignature->GetBufferSize(), IID_PPV_ARGS(m_pRootSignature.GetAddressOf()));
+	if (FAILED(hr)) {
+		OutputDebugString((LPCWSTR)pError->GetBufferPointer());
 		__debugbreak();
+		return false;
 	}
 
 	return true;
@@ -225,98 +230,73 @@ bool SpriteObject::InitRootSignature()
 
 bool SpriteObject::InitPipelineState()
 {
-	Microsoft::WRL::ComPtr<ID3D12PipelineState> pPipelineState = nullptr;
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 
-	std::string psoKey = g_PSOKeys[(UINT)E_PSO_KEYS_INDEX::SPRITE_FILL];
-	pPipelineState = m_pRenderer->GetPSO(psoKey);
-	if (pPipelineState != nullptr) {
-		m_pPipelineState = pPipelineState;
-		goto RETURN;
+	m_pVertexShaderHandle = pShaderManager->CreateShaderDXC(L"shSprite.hlsl", L"VSMain", L"vs_6_0", 0);
+	if (!m_pVertexShaderHandle)
+		__debugbreak();
+	m_pPixelShaderHandle = pShaderManager->CreateShaderDXC(L"shSprite.hlsl", L"PSMain", L"ps_6_0", 0);
+	if (!m_pPixelShaderHandle)
+		__debugbreak();
+
+
+	// Define the vertex input layout.
+	D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
+	{
+		{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TANGENT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 36, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+		{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT,	0, 52,	D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+	};
+
+
+	// Describe and create the graphics pipeline state object (PSO).
+	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+	psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+	psoDesc.pRootSignature = m_pRootSignature.Get();
+	psoDesc.VS = CD3DX12_SHADER_BYTECODE(m_pVertexShaderHandle->pCodeBuffer, m_pVertexShaderHandle->ullCodeSize);
+	psoDesc.PS = CD3DX12_SHADER_BYTECODE(m_pPixelShaderHandle->pCodeBuffer, m_pPixelShaderHandle->ullCodeSize);
+	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
+	psoDesc.DepthStencilState.StencilEnable = FALSE;
+	//psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+	psoDesc.RasterizerState.CullMode = D3D12_CULL_MODE_BACK;
+	psoDesc.SampleMask = UINT_MAX;
+	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+	psoDesc.NumRenderTargets = 1;
+	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
+	psoDesc.SampleDesc.Count = 1;
+	HRESULT hr = pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pPipelineState));
+	if (FAILED(hr))
+	{
+		OutputDebugString((LPCWSTR)psoDesc.pRootSignature);
+		__debugbreak();
+		return false;
 	}
-	else {
-		D3D12Device_ptr pD3DDevice = m_pRenderer->INL_GetD3DDevice();
-
-		Microsoft::WRL::ComPtr<ID3DBlob> pVertexShader = nullptr;
-		Microsoft::WRL::ComPtr<ID3DBlob> pPixelShader = nullptr;
-		Microsoft::WRL::ComPtr<ID3DBlob> pErrorBlob = nullptr;
-
-#if defined(_DEBUG)
-		UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#else
-		UINT compileFlags = 0;
-#endif
-		// 스프라이트 전용 쉐이더를 컴파일 한다.
-		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "VS", "vs_5_0", compileFlags, 0, pVertexShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
-		{
-			if (pErrorBlob != nullptr) {
-				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
-			}
-			__debugbreak();
-		}
-
-		if (FAILED(D3DCompileFromFile(L"./Shaders/Sprite.hlsl", nullptr, nullptr, "PS", "ps_5_0", compileFlags, 0, pPixelShader.GetAddressOf(), pErrorBlob.GetAddressOf())))
-		{
-			if (pErrorBlob != nullptr) {
-				OutputDebugStringA((char*)pErrorBlob->GetBufferPointer());
-				pErrorBlob->Release();
-			}
-			__debugbreak();
-		}
-
-		// input layout를 세팅한다.
-		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
-		{
-			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(XMFLOAT3),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, sizeof(XMFLOAT3) + sizeof(XMFLOAT4),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		};
-
-		// PSO 생성한다.
-		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
-		psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
-		psoDesc.pRootSignature = m_pRootSignature.Get();
-		psoDesc.VS = CD3DX12_SHADER_BYTECODE(pVertexShader->GetBufferPointer(), pVertexShader->GetBufferSize());
-		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShader->GetBufferPointer(), pPixelShader->GetBufferSize());
-		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
-		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
-		psoDesc.DepthStencilState.DepthFunc = D3D12_COMPARISON_FUNC_LESS_EQUAL;
-		psoDesc.DepthStencilState.StencilEnable = FALSE;
-		psoDesc.SampleMask = UINT_MAX;
-		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
-		psoDesc.NumRenderTargets = 1;
-		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-		psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
-		psoDesc.SampleDesc.Count = 1;
-
-		if (FAILED(pD3DDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(m_pPipelineState.GetAddressOf())))) {
-			__debugbreak();
-		}
-
-
-		m_pRenderer->CachePSO(psoKey, m_pPipelineState.Get());
-	}
-RETURN:
-
 	return true;
 }
 
 bool SpriteObject::InitMesh()
 {
 	bool bResult = false;
-	D3D12Device_ptr pD3DDeivce = m_pRenderer->INL_GetD3DDevice();
+	D3D12Device_raw pD3DDeivce = m_pRenderer->INL_GetD3DDevice();
 
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 
 	// Quad로 표현한다. (정규좌표계로 하고, 외부에서 스케일과 위치로 조절한다.)
-	ColorVertex Vertices[] =
+	BasicVertex Vertices[] =
 	{
-		{ { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
-		{ { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
-		{ { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
-		{ { 1.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
+		{ { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
+		{ { 1.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
+		{ { 1.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
 	};
 
 	WORD Indices[] =
@@ -327,14 +307,18 @@ bool SpriteObject::InitMesh()
 
 	const UINT VertexBufferSize = sizeof(Vertices);
 
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(ColorVertex), (DWORD)_countof(Vertices), &m_VertexBufferView, &m_pVertexBuffer, Vertices)))
+	HRESULT hr = pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<ULONG>(_countof(Vertices)), &m_VertexBufferView, &m_pVertexBuffer, Vertices);
+	if (FAILED(hr))
 	{
+		OutputDebugString(L"Failed to create vertex buffer.");
 		__debugbreak();
 		goto RETURN;
 	}
 
-	if (FAILED(pResourceManager->CreateIndexBuffer((DWORD)_countof(Indices), &m_IndexBufferView, &m_pIndexBuffer, Indices)))
+	hr = pResourceManager->CreateIndexBuffer(static_cast<ULONG>(_countof(Indices)), &m_IndexBufferView, &m_pIndexBuffer, Indices);
+	if (FAILED(hr))
 	{
+		OutputDebugString(L"Failed to create index buffer.");
 		__debugbreak();
 		goto RETURN;
 	}
@@ -356,8 +340,7 @@ void SpriteObject::CleanUp()
 SpriteObject::SpriteObject()
 	:m_pTexHandle(nullptr), m_pRenderer(nullptr),
 	m_Rect{}, m_Scale{1.f, 1.f}, 
-	m_dwTriGroupCount(0), m_dwMaxTriGroupCount(),
-	m_pPipelineState(nullptr)
+	m_dwTriGroupCount(0), m_dwMaxTriGroupCount()
 {
 }
 

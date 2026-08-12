@@ -84,14 +84,14 @@ struct FONT_HANDLE
 
 struct CONSTANT_BUFFER_RT_TRIGROUP
 {
-	float Reseved0;
-	float Reseved1;
-	float Reseved2;
-	float Reseved3;
-	float Reseved4;
-	float Reseved5;
-	float Reseved6;
-	float Reseved7;
+	float Reserved0;
+	float Reserved1;
+	float Reserved2;
+	float Reserved3;
+	float Reserved4;
+	float Reserved5;
+	float Reserved6;
+	float Reserved7;
 };
 
 // Geometry에 대해서 Hit Group Shader가 실행 될 때, Local Root Signature에 전달할 정보 구조체.
@@ -103,7 +103,7 @@ struct ROOT_ARG
 	D3D12_GPU_DESCRIPTOR_HANDLE srvTexBuffer;
 };
 
-const ULONG MAX_TRIANGLE_COUNT_PER_BLAS = 16;
+const ULONG MAX_TRIGROUP_COUNT_PER_BLAS = 16;
 
 // BLAS를 빌드 할 때, 전달해야할	정보 구조체. 
 // BLAS 빌드 함수에 전달된다.

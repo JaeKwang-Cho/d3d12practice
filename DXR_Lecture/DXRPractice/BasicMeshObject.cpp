@@ -68,18 +68,117 @@ void BasicMeshObject::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMM
 
 	// per obj
 	CD3DX12_CPU_DESCRIPTOR_HANDLE Dest(cpuDescriptorTable, static_cast<UINT>(E_BASIC_MESH_DESCRIPTOR_INDEX_PER_OBJ::CBV), srvDescriptorSize);
-	pD3DDevice->CopyDescriptorsSimple(1, Dest, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE::)
+	// cpu측 코드에서는 cpu descriptor handle에만 write가 가능하다.
+	pD3DDevice->CopyDescriptorsSimple(1, Dest, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV); 
+	Dest.Offset(1, srvDescriptorSize);
+
+	// per tri-group
+	for(ULONG i = 0; i < m_ulTriGroupCount; i++) {
+		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList[i].get();
+		TEXTURE_HANDLE* pTexHandle = pTriGroup->pTexHandle;
+		if (pTexHandle) {
+			// 마찬가지로 cpu측 코드에서는 cpu descriptor handle에만 write가 가능하다.
+			pD3DDevice->CopyDescriptorsSimple(1, Dest, pTexHandle->srvCpuHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+		}
+		else {
+			OutputDebugStringA("BasicMeshObject::Draw() - TriGroup has no texture.\n");
+			__debugbreak();
+		}
+		Dest.Offset(1, srvDescriptorSize);
+	}
+
+	// set RootSignature
+	_pCommandList->SetGraphicsRootSignature(m_pRootSignature.Get());
+	_pCommandList->SetDescriptorHeaps(1, &pDescriptorHeap);
+
+	// ex) TriGroup이 3개일 때
+	// OBJ마다 - CBV 1개
+	// TriGroup마다 - SRV 1개 (총 3개)
+
+	_pCommandList->SetPipelineState(m_pPipelineState.Get());
+	_pCommandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	_pCommandList->IASetVertexBuffers(0, 1, &m_VertexBufferView);
+
+	// descriptor table을 RootParam(0)에 bind한다.
+	_pCommandList->SetGraphicsRootDescriptorTable(0, gpuDescriptorTable); // RootParam(0) : CBV per Object
+	// offset을 cbv 갯수만큼 이동시켜서 helper 생성자에 넣는다.
+	CD3DX12_GPU_DESCRIPTOR_HANDLE gpuDescriptorTableForTriGroup(gpuDescriptorTable, DESCRIPTOR_COUNT_PER_OBJ, srvDescriptorSize);
+	for (ULONG i = 0; i < m_ulTriGroupCount; i++) {
+		// descriptor table을 RootParam(1)에 bind한다. 
+		_pCommandList->SetGraphicsRootDescriptorTable(1, gpuDescriptorTableForTriGroup);
+		gpuDescriptorTableForTriGroup.Offset(1, srvDescriptorSize);
+
+		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList[i].get();
+		_pCommandList->IASetIndexBuffer(&pTriGroup->indexBufferView);
+		_pCommandList->DrawIndexedInstanced(pTriGroup->ulTriCount * 3, 1, 0, 0, 0);
+	}
 
 }
 
 bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, ULONG _ulVertexNum, ULONG _ulTriGroupCount)
 {
-	return false;
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+
+	if (_ulTriGroupCount > MAX_TRI_GROUP_COUNT_PER_OBJ) {
+		OutputDebugStringA("BasicMeshObject::BeginCreateMesh() - Too many triangle groups.\n");
+		__debugbreak();
+		return false;
+	}
+
+	HRESULT hr = pResourceManager->CreateVertexBuffer(
+		sizeof(BasicVertex), _ulVertexNum, &m_VertexBufferView, &m_pVertexBuffer, const_cast<void*>(reinterpret_cast<const void*>(_pVertexList)));
+	if (FAILED(hr)) {
+		OutputDebugStringA("BasicMeshObject::BeginCreateMesh() - Failed to create vertex buffer.\n");
+		__debugbreak();
+		return false;
+	}
+
+	m_ulMaxTriGroupCount = _ulTriGroupCount;
+	m_pTriGroupList.resize(m_ulMaxTriGroupCount);
+	m_ulVertexCount = _ulVertexNum;
+
+	return true;
 }
 
 bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
 {
-	return false;
+	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
+	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
+	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
+
+	D3D12Resource_raw pIndexBuffer = nullptr;
+	D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
+
+	if (m_ulTriGroupCount >= m_ulMaxTriGroupCount) {
+		OutputDebugStringA("BasicMeshObject::BeginCreateMesh() - Too many triangle groups.\n");
+		__debugbreak();
+		return false;
+	}
+
+	ULONG ulIndicesSize = _ulTriCount * 3 * sizeof(USHORT);
+	ULONG ulAlignedIndexSize = (ulIndicesSize / 16 + ((ulIndicesSize % 16) ? 1 : 0)) * 16; // 16-bytes aligned size
+	ULONG ulAlignedIndexNum = ulAlignedIndexSize / sizeof(USHORT);
+
+	HRESULT hr = pResourceManager->CreateIndexBuffer(
+		ulAlignedIndexNum, &IndexBufferView, &pIndexBuffer, const_cast<void*>(reinterpret_cast<const void*>(_pIndexList)), sizeof(USHORT) * _ulTriCount * 3);
+	if (FAILED(hr)) {
+		OutputDebugStringA("BasicMeshObject::InsertIndexedTriList() - Failed to create index buffer.\n");
+		__debugbreak();
+		return false;
+	}
+
+	INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList[m_ulTriGroupCount].get();
+	pTriGroup->pIndexBuffer = pIndexBuffer;
+	pTriGroup->indexBufferView = IndexBufferView;
+	pTriGroup->ulTriCount = _ulTriCount;
+	pTriGroup->ulAlignedIndexCount = ulAlignedIndexNum;
+	pTriGroup->pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(_wchTexFileName));
+
+	m_ulTriGroupCount++;
+
+	return true;
 }
 
 void BasicMeshObject::EndCreateMesh()
@@ -88,11 +187,30 @@ void BasicMeshObject::EndCreateMesh()
 
 void* BasicMeshObject::CreateBLAS()
 {
-	return nullptr;
+	BLAS_INSTANCE* pBlasInstance = nullptr;
+	RayTracingManager* pRayTracingManager = m_pRenderer->INL_GetRayTracingManager();
+
+	std::vector<BLAS_BUILD_TRIGROUP_INFO> buildInfoList(m_ulTriGroupCount);
+
+	DWORD dwBuildInfoCount = 0;
+	for (DWORD i = 0; i < m_ulTriGroupCount; i++)
+	{
+		buildInfoList[dwBuildInfoCount].pIndexBuffer = m_pTriGroupList[i]->pIndexBuffer.Get();
+		buildInfoList[dwBuildInfoCount].bNotOpaque = FALSE;
+		buildInfoList[dwBuildInfoCount].ulIndexNum = m_pTriGroupList[i]->ulAlignedIndexCount;
+		buildInfoList[dwBuildInfoCount].pDiffuseTexHandle = m_pTriGroupList[i]->pTexHandle;
+		dwBuildInfoCount++;
+	}
+	pBlasInstance = pRayTracingManager->AllocBLAS(m_pVertexBuffer.Get(), sizeof(BasicVertex), m_ulVertexCount, buildInfoList.data(), dwBuildInfoCount, true);
+
+	return reinterpret_cast<void*>(pBlasInstance);
 }
 
 void BasicMeshObject::DeleteBLAS(void* _pBlasHandle)
 {
+	RayTracingManager* pRayTracingManager = m_pRenderer->INL_GetRayTracingManager();
+	BLAS_INSTANCE* pBlasInstance = reinterpret_cast<BLAS_INSTANCE*>(_pBlasHandle);
+	pRayTracingManager->FreeBLAS(pBlasInstance);
 }
 
 bool BasicMeshObject::InitCommonResources()

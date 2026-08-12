@@ -7,6 +7,7 @@
 #include "SimpleConstantBufferPool.h"
 #include "ConstantBufferManager.h"
 #include "D3D12ResourceManager.h"
+#include "SingleDescriptorAllocator.h"
 
 const wchar_t* c_raygenShaderName = { L"MyRaygenShader_RadianceRay" };
 const wchar_t* c_closestHitShaderName[] = { L"MyClosestHitShader_RadianceRay" };
@@ -16,12 +17,21 @@ const wchar_t* c_anyHitShaderName[] = { L"MyAnyHitShader_RadianceRay" };
 // Hit groups
 const wchar_t* c_hitGroupName[] = { L"MyHitGroup_Triangle_RadianceRay" };
 
-bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight)
+bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UINT _ulHeight, ULONG _ulMaxBlasCount)
 {
 	m_pRenderer = _pRenderer;
 	m_pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
+
+	m_ulMaxBlasCount = _ulMaxBlasCount;
+	m_arrBLASInstance.resize(m_ulMaxBlasCount, nullptr);
+	m_pArrWaitUpdateBLASInstance.resize(m_ulMaxBlasCount, nullptr);
+
+	m_ulMaxShaderVisibileDescriptorCount = static_cast<ULONG>(DISPATCH_DESCRIPTOR_INDEX::Count) + (static_cast<ULONG>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count) * MAX_TRIGROUP_COUNT_PER_BLAS * _ulMaxBlasCount);
+
+	m_pIndexCreator = std::make_unique<IndexCreator>();
+	m_pIndexCreator->Initialize(m_ulMaxBlasCount);
 
 	D3D12_COMMAND_QUEUE_DESC queueDesc = {};
 	queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
@@ -40,7 +50,7 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 	m_ulWidth = _ulWidth;
 
 	CreateDescriptorHeapCBV_SRV_UAV();
-	CreateShaderVisibleHeap();
+	CreateShaderVisibleHeap(m_ulMaxShaderVisibileDescriptorCount);
 
 	m_pRayShaderHandle = pShaderManager->CreateShaderDXC(L"Raytracing.hlsl", L"", L"lib_6_3", 0);
 
@@ -49,13 +59,9 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 
 	CreateRootSignatures();
 	CreateRaytracingPipelineStateObject();	
-
-	// build geometry
-	InitMesh();
 	
-	// build accelration structure
-	InitAccelerationStructure();
-
+	BuildShaderTable();
+	
 	return true;
 }
 
@@ -147,6 +153,49 @@ void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 	_pCommandList->ResourceBarrier(static_cast<UINT>(_countof(rcBarrier2)), rcBarrier2);
 }
 
+bool RayTracingManager::UpdateAccelerationStructure()
+{
+	// 삭제 대기중인 BLAS를 한꺼번에 삭제
+	CleanupPendingFreeBlasInstances();
+	
+	// TLAS 빌드를 위해 유효한 BLAS 들을 수집 및 HitGroup Shader Table에 몇 개의 ShaderRecord가 필요한지 계산한다.
+	ULONG ulBlasInstanceCount = 0;
+
+	// BLAS에서 필요한 ShaderRecord 개수를 카운트
+	ULONG ulRequiredShaderRecordCount = 0;
+	for(UINT i = 0; i < m_arrBLASInstance.size(); i++)
+	{
+		BLAS_INSTANCE* pBlasInstance = m_arrBLASInstance[i].get();
+		if (ulBlasInstanceCount >= m_ulMaxBlasCount) {
+			OutputDebugString(L"RayTracingManager::UpdateAccelerationStructure() - BLAS instance count exceeds maximum limit.\n");
+			__debugbreak();
+			return false;
+		}
+		ulRequiredShaderRecordCount += pBlasInstance->ulTriGroupCount;
+		m_pArrWaitUpdateBLASInstance[ulBlasInstanceCount] = pBlasInstance;
+		ulBlasInstanceCount++;
+	}
+
+	if(m_UpdateAccelerationStructureTypeFlags & static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::HIT_GROUP_SHADER_TABLE))
+	{
+		// HitGroupShaderTable 갱신과 함께 BLAS 별로 ShaderRecordIndex를 설정한다.
+		UpdateHitGroupShaderTable(ulRequiredShaderRecordCount);
+		m_UpdateAccelerationStructureTypeFlags &= (~static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::HIT_GROUP_SHADER_TABLE));
+	}
+
+	if(m_UpdateAccelerationStructureTypeFlags & static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS))
+	{
+		m_pTLAS = nullptr;
+		m_pBLASInstanceDescResource = nullptr;
+
+		CreateUploadBuffer(m_pD3DDevice, nullptr, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * ulBlasInstanceCount, m_pBLASInstanceDescResource.GetAddressOf(), L"TLASInstanceDescs");
+
+		m_pTLAS = BuildTLAS(m_pBLASInstanceDescResource.Get(), m_pArrWaitUpdateBLASInstance.data(), ulBlasInstanceCount, false, 0);
+		m_UpdateAccelerationStructureTypeFlags &= (~static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS));
+	}
+	return false;
+}
+
 void RayTracingManager::UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight)
 {
 	CleanupOutputDiffuseBuffer();
@@ -161,11 +210,63 @@ void RayTracingManager::UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHe
 
 BLAS_INSTANCE* RayTracingManager::AllocBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate)
 {
-	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = BuildBLAS(_pVertexBuffer, _VertexSize, _ulVertexCount, _pTriGroupInfoList, _ulTriGroupCount, _bAllowUpdate);
-	BLAS_INSTANCE* pBlasInstanceRaw = pBlasInstance.get();
-	m_arrBLASInstance.push_back(std::move(pBlasInstance));
+	if (m_ulCurrBlasCount >= m_ulMaxBlasCount) {
+		OutputDebugString(L"RayTracingManager::AllocBLAS() - BLAS instance count exceeds maximum limit.\n");
+		__debugbreak();
+		return nullptr;
+	}
 
-	return pBlasInstanceRaw;
+	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = BuildBLAS(_pVertexBuffer, _VertexSize, _ulVertexCount, _pTriGroupInfoList, _ulTriGroupCount, _bAllowUpdate);
+	m_ulCurrBlasCount++;
+	m_UpdateAccelerationStructureTypeFlags = static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS) | static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::HIT_GROUP_SHADER_TABLE);
+
+	m_arrBLASInstance.push_back(std::move(pBlasInstance));
+	return m_arrBLASInstance.back().get();
+}
+
+void RayTracingManager::FreeBLAS(BLAS_INSTANCE* _pBlasInstance)
+{
+	// m_arrBLASInstance에서 _pBlasInstance를 찾아서 m_arrDeletedBLASInstance로 옮긴다.
+	auto it = std::find_if(m_arrBLASInstance.begin(), m_arrBLASInstance.end(),
+		[_pBlasInstance](const std::unique_ptr<BLAS_INSTANCE>& pInstance) {
+			return pInstance.get() == _pBlasInstance;
+		});
+
+	if (it != m_arrBLASInstance.end()) {
+		m_arrDeletedBLASInstance.push_back(std::move(*it));
+		m_arrBLASInstance.erase(it);
+		m_ulCurrBlasCount--;
+	}
+	m_UpdateAccelerationStructureTypeFlags = static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS) | static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::HIT_GROUP_SHADER_TABLE);
+}
+
+void RayTracingManager::FreeBlasImmediately(BLAS_INSTANCE* _pBlasInstance)
+{
+	ULONG ulIndex = _pBlasInstance->ulID;
+	m_pIndexCreator->Free(ulIndex);
+
+	_pBlasInstance->ulID = -1;
+	// m_arrDeletedBLASInstance에서 _pBlasInstance를 찾아서 즉시 해제한다.
+	for (ULONG i = 0; i < m_arrDeletedBLASInstance.size(); i++) {
+		if (m_arrDeletedBLASInstance[i].get() == _pBlasInstance) {
+			m_arrDeletedBLASInstance.erase(m_arrDeletedBLASInstance.begin() + i);
+			break;
+		}
+	}
+}
+
+void RayTracingManager::CleanupPendingFreeBlasInstances()
+{
+	// m_arrDeletedBLASInstance에 있는 BLAS들을 즉시 해제한다.
+	for (ULONG i = 0; i < m_arrDeletedBLASInstance.size(); i++) {
+		FreeBlasImmediately(m_arrDeletedBLASInstance[i].get());
+	}
+}
+
+void RayTracingManager::UpdateBLASTransform(BLAS_INSTANCE* _pBlasInstance, const XMMATRIX* _pMatWorld)
+{
+	_pBlasInstance->matTransform = *_pMatWorld;
+	m_UpdateAccelerationStructureTypeFlags |= static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS);
 }
 
 void RayTracingManager::CreateCommandList_forRayTracing()
@@ -260,35 +361,9 @@ void RayTracingManager::BuildShaderTable()
 	// 여기서 Hit Group Name을 사용해서 export 했던 hit group subobject를 참조해서 shader identifier를 얻는다. 
 	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. 
 	// Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
-	void* pHitGroupShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_hitGroupName[0]);
 	m_pHitGroupShaderTable = std::make_unique<ShaderTable>();
 	m_pHitGroupShaderTable->Initialize(m_pD3DDevice, m_ShaderIdentifierSize + sizeof(ROOT_ARG), L"HitGroupShaderTable");
-
-	// Hit-Group Table에 있는 Shader Record의 구성
-	// 0번: ShaderIdentifier-RootArgument
-	// 1번: ShaderIdentifier-RootArgument
-	// ...
-	// N번: ShaderIdentifier-RootArgument
-
-	// m_pBlasInstance->ShaderRecordIndex는 HitGroupShaderTable에서의 ShaderRecord 시작 인덱스
-	// 이 값은  TLAS 빌드 시에 D3D12_RAYTRACING_INSTANCE_DESC::InstanceContributionToHitGroupIndex에 대입한다. 
-	// Ray들이 TLAS를 참조할 때, InstanceContributionToHitGroupIndex를 통해서 자신이 참조해야 하는 HitGroupShaderTable의 ShaderRecord 인덱스를 알 수 있다.
-	m_pBLASInstance->uiShaderRecordIndex = 0; // 지금은 BLAS가 하나밖에 없으므로, ShaderRecordIndex를 0으로 설정한다. 
-	// 하지만 BLAS가 여러 개라면, 각각의 BLAS에 맞게 ShaderRecordIndex를 설정해줘야 한다.
-
-	ROOT_ARG rootArg = {};
-	rootArg.srvVertexBuffer = m_pBLASInstance->rootArgs[0].srvVertexBuffer;
-	rootArg.srvIndexBuffer = m_pBLASInstance->rootArgs[0].srvIndexBuffer;
-	rootArg.srvTexBuffer = m_pBLASInstance->rootArgs[0].srvTexBuffer;
-
-	m_pHitGroupShaderTable->CommitResource(1);
-	// Hit Group Shader Table의 각 레코드는 shader identifier과 root argument로 구성된다. Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
-	// ShaderRecord 내부적으로 shader identifier과 root argument가 결합(pair)된 레코드 버퍼를 만들어서, shader table에 넣는다.
-	// D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT 사이즈 분량으로 shader identifier과 root argument가 결합된 레코드 버퍼가 만들어진다.
-	ShaderRecord hitGroupShaderRecord = ShaderRecord(pHitGroupShaderIdentifier, m_ShaderIdentifierSize, &rootArg, sizeof(ROOT_ARG));
-	m_pHitGroupShaderTable->InsertShaderRecord(&hitGroupShaderRecord);
-	m_HitGroupShaderTableStrideInBytes = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordSize());
-	m_ulHitGroupShaderRecordNum = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordCount());
+	m_HitGroupShaderRecordSize = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordSize());
 }
 
 void RayTracingManager::CreateRootSignatures()
@@ -340,8 +415,9 @@ void RayTracingManager::CreateRootSignatures()
 	localRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 1);
 
 	// t0 - VertexBuffer, t1 - IndexBuffer, t2 - Texture
-	CD3DX12_ROOT_PARAMETER localRootParameters[1] = {};
-	localRootParameters[0].InitAsDescriptorTable(_countof(localRanges), localRanges);
+	CD3DX12_ROOT_PARAMETER localRootParameters[2] = {};
+	localRootParameters[0].InitAsConstants(SizeOfInUint32(CONSTANT_BUFFER_RT_TRIGROUP), 0, 1); // b0 : CBV Per TriGroup
+	localRootParameters[1].InitAsDescriptorTable(_countof(localRanges), localRanges); // t0 : VertexBuffer, t1 : IndexBuffer, t2 : Tex Diffuse
 
 	CD3DX12_ROOT_SIGNATURE_DESC localRootSignatureDesc(ARRAYSIZE(localRootParameters), localRootParameters);
 	localRootSignatureDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_LOCAL_ROOT_SIGNATURE; // Local Root Signature임을 명시적으로 설정한다.
@@ -447,14 +523,14 @@ void RayTracingManager::CreateDescriptorHeapCBV_SRV_UAV()
 	m_DescriptorSize = m_pD3DDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 }
 
-void RayTracingManager::CreateShaderVisibleHeap()
+void RayTracingManager::CreateShaderVisibleHeap(ULONG _ulMaxDescritorCount)
 {
 	D3D12_DESCRIPTOR_HEAP_DESC HeapDesc = {};
 	// RayGen Shader, Miss Shader, Hit Group Shader가 참조하는 descriptor heap이므로, 필요한 descriptor 개수만큼 설정한다.
 	// RayTracing에 쓰이는 CBV와 출력 UAV 2개, 그리고 VB만 넘어가는 Ray tracing이, index, texture, 그리고 vertex의 내부 정보도 함께 넘기기 위해서
 	// 이렇게 descriptor 갯수를 설정한다. 지금은 이렇게 하드코딩으로 갯수를 정해주지만, 
 	// 나중에는 Pool 같은	 구조로 만들어서, 필요한 descriptor 개수에 맞게 heap을 유동적으로 만들 수 있게 해도 좋을 것 같다.
-	HeapDesc.NumDescriptors = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count) + static_cast<UINT>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count);
+	HeapDesc.NumDescriptors = _ulMaxDescritorCount;
 	HeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 	HeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -563,13 +639,20 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	D3D12Resource_raw pBLASResource = nullptr; // BLAS_INSTANCE에 들어갈 BLAS 리소스
 
 	// 일단은 VB 하나에 IB 여러개 (물론 나중에 구조를 바꿀 수 있다.)
-	if (_ulTriGroupCount > MAX_TRIANGLE_COUNT_PER_BLAS) {
+	if (_ulTriGroupCount > MAX_TRIGROUP_COUNT_PER_BLAS) {
+		__debugbreak();
+		return nullptr;
+	}
+
+	ULONG ulIndex = m_pIndexCreator->Alloc();
+	if (-1 == ulIndex) {
+		OutputDebugString(L"RayTracingManager::BuildBLAS() - Failed to allocate index for BLAS instance.\n");
 		__debugbreak();
 		return nullptr;
 	}
 
 	std::unique_ptr<BLAS_INSTANCE> pBlasInstance = std::make_unique<BLAS_INSTANCE>();
-	pBlasInstance->ulID = 0;
+	pBlasInstance->ulID = ulIndex;
 	pBlasInstance->matTransform = XMMatrixIdentity();
 	pBlasInstance->ulVertexCount = _ulVertexCount;
 
@@ -577,7 +660,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	// #1 Fill D3D12_RAYTRACING_GEOMETRY_DESC Array
 	// 
 	// BLAS에 들어갈 geometry description을 만든다. 여러개의 trigroup이 있다면, 각 그룹마다 geometry description이 필요하다. (예시에서는 하나의 그룹만 있지만, 일반적으로는 여러 그룹이 있을 수 있다.)
-	D3D12_RAYTRACING_GEOMETRY_DESC pGeomDescList[MAX_TRIANGLE_COUNT_PER_BLAS] = {};
+	D3D12_RAYTRACING_GEOMETRY_DESC pGeomDescList[MAX_TRIGROUP_COUNT_PER_BLAS] = {};
 	D3D12_GPU_VIRTUAL_ADDRESS VB_GPU_Ptr = _pVertexBuffer->GetGPUVirtualAddress();
 	for (ULONG i = 0; i < _ulTriGroupCount; i++) {
 		D3D12_GPU_VIRTUAL_ADDRESS IB_GPU_Ptr = _pTriGroupInfoList[i].pIndexBuffer->GetGPUVirtualAddress();
@@ -694,8 +777,8 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	//
 	// #3 Set LocalRoot Parameters for BLAS_INSTANCE
 	//
-	UINT DescriptorIndex = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count);
-	DescriptorIndex += pBlasInstance->ulID * MAX_TRIANGLE_COUNT_PER_BLAS * 2; // BLAS_INSTANCE 하나당 최대 트라이앵글 그룹 수 * (VB + IB)
+	ULONG DescriptorIndex = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count) + (static_cast<UINT>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count) * MAX_TRIGROUP_COUNT_PER_BLAS) * pBlasInstance->ulID;
+	DescriptorIndex += pBlasInstance->ulID * MAX_TRIGROUP_COUNT_PER_BLAS * 2; // BLAS_INSTANCE 하나당 최대 트라이앵글 그룹 수 * (VB + IB)
 	CD3DX12_CPU_DESCRIPTOR_HANDLE srvCpu(m_pShaderVisibleDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpu(m_pShaderVisibleDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
 
@@ -706,6 +789,11 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	for (ULONG i = 0; i < _ulTriGroupCount; i++) {
 		ROOT_ARG newRootArg = {};
 		pBlasInstance->rootArgs.push_back(newRootArg);
+
+		pBlasInstance->rootArgs[i].cbTrigroup.Reserved0 = 1.0f;
+		pBlasInstance->rootArgs[i].cbTrigroup.Reserved1 = 1.0f;
+		pBlasInstance->rootArgs[i].cbTrigroup.Reserved2 = 1.0f;
+		pBlasInstance->rootArgs[i].cbTrigroup.Reserved3 = 1.0f;
 
 		// Create Shader Resource from Vertex Buffer
 		srvDesc.Buffer.FirstElement = 0; // Vertex Buffer의 첫 번째 요소부터 접근한다.
@@ -731,18 +819,21 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 		
 		srvCpu.Offset(1, m_DescriptorSize);
 		srvGpu.Offset(1, m_DescriptorSize);
-
-		// Create ShaderResourceView from Texture Buffer
-		if (_pTriGroupInfoList[i].pTexResource) {
-			D3D12_SHADER_RESOURCE_VIEW_DESC SRVDesc = {};
-			SRVDesc.Format = _pTriGroupInfoList[i].TexFormat;
-			SRVDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-			SRVDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-			SRVDesc.Texture2D.MipLevels = 1;
-
-			m_pD3DDevice->CreateShaderResourceView(_pTriGroupInfoList[i].pTexResource, &SRVDesc, srvCpu);
+		
+		// diffuse texture buffer를 위한 SRV
+		if (_pTriGroupInfoList[i].pDiffuseTexHandle) {
+			D3D12_CPU_DESCRIPTOR_HANDLE srvTexSrc = _pTriGroupInfoList[i].pDiffuseTexHandle->srvCpuHandle;
+			if (srvTexSrc.ptr) {
+				m_pD3DDevice->CopyDescriptorsSimple(1, srvCpu, srvTexSrc, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			}
+			else {
+				OutputDebugString(L"RayTracingManager::BuildBLAS() - Failed to copy diffuse texture SRV to shader visible descriptor heap.\n");
+				__debugbreak();
+				return nullptr;
+			}
 		}
-		pBlasInstance->rootArgs[i].srvIndexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 texture buffer의 GPU descriptor handle을 저장한다.
+
+		pBlasInstance->rootArgs[i].srvTexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 texture buffer의 GPU descriptor handle을 저장한다.
 		srvCpu.Offset(1, m_DescriptorSize);
 		srvGpu.Offset(1, m_DescriptorSize);
 	}
@@ -873,128 +964,39 @@ D3D12Resource_ptr RayTracingManager::BuildTLAS(D3D12Resource_raw _pInstanceDescR
 	return pTLASResource;
 }
 
-bool RayTracingManager::InitMesh()
+void RayTracingManager::UpdateHitGroupShaderTable(ULONG _ulShaderRecordCount)
 {
-	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
-	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
+	// WaitForFenceValue_forRayTracing() 가 필요하다.
 
-	// Create the vertex buffer.
-	BasicVertex Vertices[] =
+	// ShaderRecord in HitGroup Table
+	// |                 0               |                 1               | .... |                 N-1             |        
+	// | [ShaderIdntifier-RootArguments] | [ShaderIdntifier-RootArguments] | .... | [ShaderIdntifier-RootArguments] |
+
+
+	// Shader Identifier를 얻는다.
+	Microsoft::WRL::ComPtr<ID3D12StateObjectProperties> pStateObjectProperties = nullptr;
+	m_pDXRStateObject->QueryInterface(IID_PPV_ARGS(pStateObjectProperties.GetAddressOf()));
+
+	// hit group shader identifier를 얻는다. Hit group shader identifier는 Hit group shader table에서 각 레코드를 참조할 때 사용된다.
+	void* pHitGroupShaderIdentifier = pStateObjectProperties->GetShaderIdentifier(c_hitGroupName[0]);
+	m_pHitGroupShaderTable->CommitResource(_ulShaderRecordCount);
+
+	// RayTracingManager에서 관리하는 BLAS_INSTANCE 리스트를 순회하면서, 각 BLAS_INSTANCE의 root argument를 hit group shader table에 복사한다.
+	UINT uiShaderRecordIndex = 0;
+	for (UINT i = 0; i < m_arrBLASInstance.size(); i++)
 	{
-		{ { -0.25f, 0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f } },
-		{ { 0.25f, 0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f }, { 1.0f, 0.0f } },
-		{ { 0.25f, -0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
-		{ { -0.25f, -0.25f, 0.1f }, { 0.0f, -1.0f, 0.0f }, { 1.0f, 1.0f, 0.0f, 1.0f }, { 0.0f, 1.0f } }
-	};
-	WORD Indices[] =
-	{
-		0, 1, 2,
-		0, 2, 3
-	};
-
-	D3D12_VERTEX_BUFFER_VIEW VertexBufferView = {};
-	D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
-
-	const UINT VertexBufferSize = sizeof(Vertices);
-
-	if (FAILED(pResourceManager->CreateVertexBuffer(sizeof(BasicVertex), static_cast<ULONG>(_countof(Vertices)), &VertexBufferView, &m_pVertexBuffer, Vertices)))
-	{
-		__debugbreak();
-		return false;
-	}
-	const DWORD ulFacesNum = 2;
-	ULONG ulIndicesSize = ulFacesNum * 3 * static_cast<ULONG>(sizeof(USHORT));
-	ULONG ulAlignedIndicesSize = (ulIndicesSize / 16 + ((ulIndicesSize % 16) != 0)) * 16; 
-	// GPU에서 Access 하기 편하도록 16바이트 Align을 해준다.
-	ULONG ulAlignedIndexNum = ulAlignedIndicesSize / sizeof(USHORT);
-	if (FAILED(pResourceManager->CreateIndexBuffer(ulAlignedIndexNum, &IndexBufferView, &m_pIndexBuffer, Indices, sizeof(Indices))))
-	{
-		__debugbreak();
-		return false;
-	}
-
-	// Create Texture (흑백 격자무늬)
-	const UINT TexWidth = 16;
-	const UINT TexHeight = 16;
-	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-	std::unique_ptr<BYTE[]> pImage = std::make_unique<BYTE[]>(TexWidth * TexHeight * 4);
-
-	for (UINT y = 0; y < TexHeight; y++) {
-		for(UINT x = 0; x < TexWidth; x++) {
-			RGBA* pDest = reinterpret_cast<RGBA*>(pImage.get() + (y * TexWidth + x) * 4);
-			pDest->r = rand() % 255;
-			pDest->g = rand() % 255;
-			pDest->b = rand() % 255;
-
-			if((x + y) % 2)
-			{
-				pDest->r = 0;
-				pDest->g = 0;
-				pDest->b = 0;
-			}
-			else
-			{
-				pDest->r = 255;
-				pDest->g = 255;
-				pDest->b = 255;
-			}
-			pDest->a = 255;
+		BLAS_INSTANCE* pBlasInstance = m_arrBLASInstance[i].get();
+		// pBlasInstance->uiShaderRecordIndex 는 HitGroupShaderTable에서의 ShaderRecord의 시작 인덱스이다.
+		pBlasInstance->uiShaderRecordIndex = uiShaderRecordIndex;
+		for(ULONG j = 0; j < pBlasInstance->ulTriGroupCount; j++)
+		{
+			ShaderRecord record = ShaderRecord(pHitGroupShaderIdentifier, m_ShaderIdentifierSize, &(pBlasInstance->rootArgs[j]), sizeof(ROOT_ARG));
+			m_pHitGroupShaderTable->InsertShaderRecord(&record);
+			uiShaderRecordIndex++;
 		}
 	}
-	pResourceManager->CreateTexture(&m_pTexture, TexWidth, TexHeight, TexFormat, pImage.get());
-	m_TexFormat = TexFormat;
-	m_TexHeight = TexHeight;
-	m_TexWidth = TexWidth;
-
-	return true;
-} 
-
-bool RayTracingManager::InitAccelerationStructure()
-{
-	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
-	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
-
-	// Build BLAS
-	BLAS_BUILD_TRIGROUP_INFO BuildInfo = {};
-	// 사용할 Primitive type을 넣어준다.
-	// rasterization에서는 index buffer가 하나만 필요하지만, 
-	// ray tracing에서는 geometry description마다 index buffer가 필요하다. 
-	// (예시에서는 하나의 geometry description만 있지만, 일반적으로는 여러 개가 있을 수 있다.)
-	BuildInfo.pIndexBuffer = m_pIndexBuffer.Get(); 
-	BuildInfo.bNotOpaque = false;
-	BuildInfo.ulIndexNum = 6;
-	BuildInfo.pTexResource = m_pTexture.Get();
-	BuildInfo.TexFormat = m_TexFormat;
-	BuildInfo.TexHeight = m_TexHeight;
-	BuildInfo.TexWidth = m_TexWidth;
-	
-	// 사각형 하나에 대한 BLAS를 만든다.
-	// Vertex 버퍼와, 그것을 사용하는 index buffer들을	 BLAS_BUILD_TRIGROUP_INFO에 담아서 BLAS를 만든다.
-	m_pBLASInstance = AllocBLAS(m_pVertexBuffer.Get(), sizeof(BasicVertex), 4, &BuildInfo, 1, false);
-	
-	// Shader Table을 만든다. Shader Table은 RayGen, Miss, Hit Group shader 각각에 대해서 만들어야 한다. 
-	// Shader Table을 만들 때, shader identifier과 root argument를 넣어준다. 
-	// Shader identifier는 RayTracing Pipeline State Object를 만들 때 export했던 이름으로 참조할 수 있다. 
-	// Root argument는 shader에서 접근할 수 있는 GPU descriptor handle이다.
-	BuildShaderTable();
-
-	// BLAS update를 바뀐 친구들만 모아서 하기 위해, BLAS instance들을 리스트로 만들어서,
-	// 그리고 TLAS를 만들 때 같이 넘겨준다.
-	BLAS_INSTANCE* ppBLASInstanceList[256] = {};
-	ULONG ulBLASInstanceCount = 0;
-
-	for(auto iter = m_arrBLASInstance.begin(); iter != m_arrBLASInstance.end(); iter++)
-	{
-		ppBLASInstanceList[ulBLASInstanceCount++] = iter->get();
-	}
-	// TLAS를 만들 때, BLAS instance 리스트와, 그리고 BLAS instance 리스트가 들어있는 GPU 리소스를 같이 넘겨준다.
-	// 그러기 위해서 BLAS instance 리스트를 GPU에서 접근할 수 있는 리소스에 복사한다. BLAS instance 리스트는 TLAS desc로 사용된다.
-	CreateUploadBuffer(m_pD3DDevice, nullptr, sizeof(D3D12_RAYTRACING_INSTANCE_DESC) * ulBLASInstanceCount, m_pBLASInstanceDescResource.GetAddressOf(), L"InstanceDescs");
-
-	m_pTLAS = BuildTLAS(m_pBLASInstanceDescResource.Get(), ppBLASInstanceList, ulBLASInstanceCount, false, 0);
-
-	return true;
+	m_HitGroupShaderTableStrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
+	m_ulHitGroupShaderRecordNum = m_pHitGroupShaderTable->GetShaderRecordCount();	
 }
 
 void RayTracingManager::CleanupRayTracingManager()

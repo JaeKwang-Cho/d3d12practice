@@ -12,7 +12,10 @@ public:
 	bool Initialize(D3D12Device_raw _pDevice, DWORD _dwMaxCount, D3D12_DESCRIPTOR_HEAP_FLAGS _flags);
 
 	bool AllocDescriptorHandle(D3D12_CPU_DESCRIPTOR_HANDLE* _pOutCPUHandle);
+	bool AllocDescriptorHandle(D3D12_GPU_DESCRIPTOR_HANDLE* _pOutGPUHandle);
+
 	void FreeDescriptorHandle(D3D12_CPU_DESCRIPTOR_HANDLE _descriptorHandle);
+	void FreeDescriptorHandle(D3D12_GPU_DESCRIPTOR_HANDLE _descriptorHandle);
 
 	bool Check(D3D12_CPU_DESCRIPTOR_HANDLE _descriptorHandle);
 	D3D12_GPU_DESCRIPTOR_HANDLE GetGPUHandleFromCPUHandle(D3D12_CPU_DESCRIPTOR_HANDLE _cpuHandle);

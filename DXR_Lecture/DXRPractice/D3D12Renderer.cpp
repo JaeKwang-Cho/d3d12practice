@@ -14,7 +14,7 @@
 #include "SpriteObject.h"
 
 
-bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath)
+bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath, ULONG _ulMaxBlasCount)
 {
 	HRESULT hr = E_FAIL;
 	// debug layer를 켜는데 사용하는 interface
@@ -223,20 +223,25 @@ EXIT:
 	m_pResourceManager = std::make_unique<D3D12ResourceManager>();
 	m_pResourceManager->Initialize(m_pD3DDevice.Get());
 
+	m_pTextureManager = std::make_unique<TextureManager>();
+	m_pTextureManager->Initialize(this);
+
 	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
 		m_ppDescriptorPool[i] = std::make_unique<DescriptorPool>();
-		static_assert(false && "todo : DescriptorPool 초기화");
+		m_ppDescriptorPool[i]->Initialize(m_pD3DDevice.Get(), MAX_DRAW_COUNT_PER_FRAME * BasicMeshObject::MAX_DESCRIPTOR_COUNT_FOR_DRAW);
+
+		m_ppConstantBufferManager[i] = std::make_unique<ConstantBufferManager>();
+		m_ppConstantBufferManager[i]->Initialize(m_pD3DDevice.Get(), MAX_DRAW_COUNT_PER_FRAME);
 	}
 
-	m_pConstantBufferManager = std::make_unique<ConstantBufferManager>();
-	m_pConstantBufferManager->Initialize(m_pD3DDevice.Get(), 256);
-
+	m_pSingleDescriptorAllocator = std::make_unique<SingleDescriptorAllocator>();
+	m_pSingleDescriptorAllocator->Initialize(m_pD3DDevice.Get(), MAX_DESCRIPTOR_COUNT, D3D12_DESCRIPTOR_HEAP_FLAG_NONE);
 
 	CreateDepthStencilBuffer(m_ulWidth, m_ulHeight);
 
 	// for ray tracing
 	m_pRayTracingManager = std::make_unique<RayTracingManager>();
-	m_pRayTracingManager->Initialize(this, m_ulWidth, m_ulHeight);
+	m_pRayTracingManager->Initialize(this, m_ulWidth, m_ulHeight, _ulMaxBlasCount);
 
 	InitCamera();
 
@@ -245,10 +250,13 @@ EXIT:
 
 void D3D12Renderer::BeginRender()
 {
-	if(FAILED(m_pCommandAllocator->Reset())) {
+	D3D12CommandAllocator_raw pCommandAllocator = m_ppCommandAllocator[m_ulCurContextIndex].Get();
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_ulCurContextIndex].Get();
+
+	if(FAILED(pCommandAllocator->Reset())) {
 		__debugbreak();
 	}
-	if (FAILED(m_pCommandList->Reset(m_pCommandAllocator.Get(), nullptr))) {
+	if (FAILED(pCommandList->Reset(pCommandAllocator, nullptr))) {
 		__debugbreak();
 	}
 
@@ -257,53 +265,65 @@ void D3D12Renderer::BeginRender()
 	auto barrier_PresentToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
 		D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	m_pCommandList->ResourceBarrier(1, &barrier_PresentToRT);
+	pCommandList->ResourceBarrier(1, &barrier_PresentToRT);
 
-	m_pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::SteelBlue, 0, nullptr);
+	pCommandList->ClearRenderTargetView(rtvHandle, DirectX::Colors::SteelBlue, 0, nullptr);
+	pCommandList->ClearDepthStencilView(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart(), D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
-	m_pCommandList->RSSetViewports(1, &m_viewport);
-	m_pCommandList->RSSetScissorRects(1, &m_scissorRect);
-	m_pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+	pCommandList->RSSetViewports(1, &m_viewport);
+	pCommandList->RSSetScissorRects(1, &m_scissorRect);
+	pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 }
 
 void D3D12Renderer::EndRender()
 {
-	// === Geometry Rendering ===
-	
-	// ==========================
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_ulCurContextIndex].Get();
 
-	// === Ray Tracing Rendering ===
-	m_pRayTracingManager->DoRayTracing(m_pCommandList.Get());
-	// =============================
+	if (m_bDXREnabled) {
+		if (m_pRayTracingManager->IsUpdatedAccelerationStructure())
+		{
+			for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++)
+			{
+				WaitForFenceValue(m_pui64FenceValue[i]);
+			}
+			m_pRayTracingManager->UpdateAccelerationStructure();
+		}
+		m_pRayTracingManager->DoRayTracing(pCommandList);
 
-	D3D12Resource_raw pRayTracingOutputResource = m_pRayTracingManager->INL_GetOutputResource();
+		D3D12Resource_raw pRayTracingOutputResource = m_pRayTracingManager->INL_GetOutputResource();
 
-	D3D12_RESOURCE_BARRIER preCopyBarrier[2];
-	preCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
-		D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
-	preCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
-	m_pCommandList->ResourceBarrier(ARRAYSIZE(preCopyBarrier), preCopyBarrier);
+		D3D12_RESOURCE_BARRIER preCopyBarrier[2];
+		preCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_pRenderTargets[m_uiRenderTargetIndex].Get(),
+			D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_DEST);
+		preCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+		pCommandList->ResourceBarrier(ARRAYSIZE(preCopyBarrier), preCopyBarrier);
 
-	m_pCommandList->CopyResource(m_pRenderTargets[m_uiRenderTargetIndex].Get(), pRayTracingOutputResource);
+		pCommandList->CopyResource(m_pRenderTargets[m_uiRenderTargetIndex].Get(), pRayTracingOutputResource);
 
-	D3D12_RESOURCE_BARRIER postCopyBarrier[2];
-	postCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
-		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
-		D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
-	postCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
+		D3D12_RESOURCE_BARRIER postCopyBarrier[2];
+		postCopyBarrier[0] = CD3DX12_RESOURCE_BARRIER::Transition(
+			m_pRenderTargets[m_uiRenderTargetIndex].Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+		postCopyBarrier[1] = CD3DX12_RESOURCE_BARRIER::Transition(pRayTracingOutputResource, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE);
 
-	m_pCommandList->ResourceBarrier(ARRAYSIZE(postCopyBarrier), postCopyBarrier);
+		pCommandList->ResourceBarrier(ARRAYSIZE(postCopyBarrier), postCopyBarrier);
+	}
+	else {
+		D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(m_pRenderTargets[m_uiRenderTargetIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+		pCommandList->ResourceBarrier(1, &barrier);
+	}
+	pCommandList->Close();
 
-	m_pCommandList->Close();
-
-	ID3D12CommandList* ppCommandLists[] = { m_pCommandList.Get()};
+	ID3D12CommandList* ppCommandLists[] = { pCommandList };
 	m_pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
 }
 
 void D3D12Renderer::Present()
 {
+	DoFence();
+
 	UINT uiSyncInterval = 0; // VSync Off / 1이면 VSync On
 	UINT uiPresentFlags = 0;
 	
@@ -319,11 +339,13 @@ void D3D12Renderer::Present()
 	
 	m_uiRenderTargetIndex = m_pSwapChain->GetCurrentBackBufferIndex();
 
-	DoFence();
+	ULONG ulNextContextIndex = (m_ulCurContextIndex + 1) % MAX_PENDING_FRAME_COUNT;
+	WaitForFenceValue(m_pui64FenceValue[ulNextContextIndex]);
 
-	WaitForFenceValue();
-
-	m_pConstantBufferManager->Reset_ConstantBufferManager();
+	// reset resources per frame
+	m_ppConstantBufferManager[ulNextContextIndex]->Reset_ConstantBufferManager();
+	m_ppDescriptorPool[ulNextContextIndex]->Reset();
+	m_ulCurContextIndex = ulNextContextIndex;
 }
 
 bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
@@ -332,6 +354,12 @@ bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
 		return false;
 	if(m_ulHeight == _width && m_ulHeight == _height)
 		return false;
+
+	DoFence();
+
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64FenceValue[i]);
+	}
 
 	CleanupDepthStencilBuffer();
 
@@ -413,103 +441,266 @@ void D3D12Renderer::ApplyCameraRot(const float _yaw, const float _pitch, const f
 }
 void D3D12Renderer::EnableDXR(bool _bEnable)
 {
+	m_bDXREnabled = _bEnable;
 }
 bool D3D12Renderer::IsEnableDXR()
 {
-	return false;
+	return m_bDXREnabled;
 }
 void* D3D12Renderer::CreateBasicMeshObject()
 {
-	return nullptr;
+	BasicMeshObject* pMeshObj = new BasicMeshObject();
+	pMeshObj->Initialize(this);
+	return pMeshObj;
 }
-void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjHandle)
-{
-}
-void* D3D12Renderer::CreateBLAS(void* _pMeshObjHandle)
-{
-	return nullptr;
-}
-void D3D12Renderer::DeleteBLAS(void* _pMeshObjHandle, void* _pBlasHandle)
-{
-}
-void D3D12Renderer::UpdateBLASTransform(void* _pBlasHandle, const XMMATRIX* _pMatWorld)
-{
-}
-void* D3D12Renderer::CreateSpriteObject()
-{
-	return nullptr;
-}
-void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _PosX, int _PosY, int _Width, int _Height)
-{
-	return nullptr;
-}
-void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
-{
-}
+
 BOOL D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount)
 {
-	return 0;
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	BOOL bResult = pMeshObj->BeginCreateMesh(_pVertexList, _ulVertexCount, _ulTriGroupCount);
+	return bResult;
 }
+
 BOOL D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
 {
-	return 0;
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	BOOL bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _ulTriCount, _wchTexFileName);
+	return bResult;
 }
+
 void D3D12Renderer::EndCreateMesh(void* _pMeshObjHandle)
 {
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	pMeshObj->EndCreateMesh();
 }
+
+void D3D12Renderer::DeleteBasicMeshObject(void* _pMeshObjHandle)
+{
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64FenceValue[i]);
+	}
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	delete pMeshObj;
+}
+
+void* D3D12Renderer::CreateBLAS(void* _pMeshObjHandle)
+{
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	void* pBlasHandle = pMeshObj->CreateBLAS();
+	return pBlasHandle;
+}
+
+void D3D12Renderer::DeleteBLAS(void* _pMeshObjHandle, void* _pBlasHandle)
+{
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	pMeshObj->DeleteBLAS(_pBlasHandle);
+}
+
+void D3D12Renderer::UpdateBLASTransform(void* _pBlasHandle, const XMMATRIX* _pMatWorld)
+{
+	BLAS_INSTANCE* pBlasInstance = reinterpret_cast<BLAS_INSTANCE*>(_pBlasHandle);
+	m_pRayTracingManager->UpdateBLASTransform(pBlasInstance, _pMatWorld);
+}
+
+void* D3D12Renderer::CreateSpriteObject()
+{
+	SpriteObject* pSprObj = new SpriteObject();
+	pSprObj->Initialize(this);
+	return pSprObj;
+}
+
+void* D3D12Renderer::CreateSpriteObject(const WCHAR* _wchTexFileName, int _PosX, int _PosY, int _Width, int _Height)
+{
+	SpriteObject* pSprObj = new SpriteObject();
+	RECT rect;
+	rect.left = _PosX;
+	rect.top = _PosY;
+	rect.right = _Width;
+	rect.bottom = _Height;
+	pSprObj->Initialize(this, _wchTexFileName, &rect);
+	return pSprObj;
+}
+
+void D3D12Renderer::DeleteSpriteObject(void* _pSpriteObjHandle)
+{
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64FenceValue[i]);
+	}
+	SpriteObject* pSprObj = reinterpret_cast<SpriteObject*>(_pSpriteObjHandle);
+	delete pSprObj;
+}
+
 void* D3D12Renderer::CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _r, ULONG _g, ULONG _b)
 {
-	return nullptr;
+	DXGI_FORMAT TexFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	BYTE* pImage = reinterpret_cast<BYTE*>(malloc(_TexWidth * _TexHeight * 4));
+	memset(pImage, 0, _TexWidth * _TexHeight * 4);
+
+	BOOL bFirstColorIsWhite = TRUE;
+	for (UINT y = 0; y < _TexHeight; y++) {
+		for (UINT x = 0; x < _TexWidth; x++) {
+			RGBA* pDest = reinterpret_cast<RGBA*>(pImage + (x + y * _TexWidth) * 4);
+			if ((bFirstColorIsWhite + x) % 2) {
+				pDest->r = static_cast<BYTE>(_r);
+				pDest->g = static_cast<BYTE>(_g);
+				pDest->b = static_cast<BYTE>(_b);
+			}
+			else {
+				pDest->r = 0;
+				pDest->g = 0;
+				pDest->b = 0;
+			}
+			pDest->a = 255;
+		}
+		bFirstColorIsWhite++;
+		bFirstColorIsWhite %= 2;
+	}
+
+	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateImmutableTexture_ITL(_TexWidth, _TexHeight, TexFormat, pImage);
+	free(pImage);
+	pImage = nullptr;
+	return pTexHandle;
 }
+
 void* D3D12Renderer::CreateDynamicTexture(UINT _TexWidth, UINT _TexHeight)
 {
-	return nullptr;
+	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateDynamicTexture_ITL(_TexWidth, _TexHeight);
+	return pTexHandle;
 }
+
 void* D3D12Renderer::CreateTextureFromFile(const WCHAR* _wchFileName)
 {
-	return nullptr;
+	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateTextureFromFile_ITL(_wchFileName);
+	return pTexHandle;
 }
+
 void* D3D12Renderer::CreateImmutableTexture(UINT _TexWidth, UINT _TexHeight, DXGI_FORMAT _format, const BYTE* _pInitImage)
 {
-	return nullptr;
+	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateImmutableTexture_ITL(_TexWidth, _TexHeight, _format, _pInitImage);
+	return pTexHandle;
 }
+
 void D3D12Renderer::DeleteTexture(void* _pTexHandle)
 {
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		WaitForFenceValue(m_pui64FenceValue[i]);
+	}
+	m_pTextureManager->DeleteTexture_ITL(reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle));
 }
+
 void* D3D12Renderer::CreateFontObject(const WCHAR* _wchFontFamilyName, float _fFontSize)
 {
-	return nullptr;
+	FONT_HANDLE* pFontHandle = m_pFontManager->CreateFontObject_ITL(_wchFontFamilyName, _fFontSize);
+	return pFontHandle;
 }
+
 void D3D12Renderer::DeleteFontObject(void* _pFontHandle)
 {
+	m_pFontManager->DeleteFontObject_ITL(reinterpret_cast<FONT_HANDLE*>(_pFontHandle));
 }
+
 bool D3D12Renderer::WriteTextToBitmap(BYTE* _pDestImage, UINT _DestWidth, UINT _DestHeight, UINT _DestPitch, int* _piOutWidth, int* _piOutHeight, void* _pFontObjHandle, const WCHAR* _wchString, ULONG _ulLen)
 {
-	return false;
+	bool bResult = m_pFontManager->WriteTextToBitmap_ITL(_pDestImage, _DestWidth, _DestHeight, _DestPitch, _piOutWidth, _piOutHeight, reinterpret_cast<FONT_HANDLE*>(_pFontObjHandle), _wchString, _ulLen);
+	return bResult;
 }
-void D3D12Renderer::RenderMeshObject(void* _pMeshObjHandle, const XMMATRIX* pMatWorld)
+void D3D12Renderer::RenderMeshObject(void* _pMeshObjHandle, const XMMATRIX* _pMatWorld)
 {
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_ulCurContextIndex].Get();
+	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
+	pMeshObj->Draw(pCommandList, _pMatWorld);
 }
 void D3D12Renderer::RenderSpriteWithTex(void* _pSprObjHandle, int _iPosX, int _iPosY, float _fScaleX, float _fScaleY, const RECT* _pRect, float _Z, void* _pTexHandle)
 {
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_ulCurContextIndex].Get();
+	TEXTURE_HANDLE* pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle);
+
+	SpriteObject* pSpriteObj = reinterpret_cast<SpriteObject*>(_pSprObjHandle);
+
+	XMFLOAT2 Pos(static_cast<float>(_iPosX), static_cast<float>(_iPosY));
+	XMFLOAT2 Scale(_fScaleX, _fScaleY);
+
+	if (pTexHandle->pUploadBuffer) {
+		if (pTexHandle->bUpdated) {
+			UpdateTexture(m_pD3DDevice, pCommandList, pTexHandle->pTexResource, pTexHandle->pUploadBuffer);
+		}
+		pTexHandle->bUpdated = false;
+	}
+	pSpriteObj->DrawWithTex(pCommandList, &Pos, &Scale, _pRect, _Z, pTexHandle);
 }
 void D3D12Renderer::RenderSprite(void* _pSprObjHandle, int _iPosX, int _iPosY, float _fScaleX, float _fScaleY, float _Z)
 {
+	D3D12GraphicsCommandList_raw pCommandList = m_ppCommandList[m_ulCurContextIndex].Get();
+	SpriteObject* pSpriteObj = reinterpret_cast<SpriteObject*>(_pSprObjHandle);
+
+	XMFLOAT2 Pos = { static_cast<float>(_iPosX), static_cast<float>(_iPosY) };
+	XMFLOAT2 Scale = { _fScaleX, _fScaleY };
+	pSpriteObj->Draw(pCommandList, &Pos, &Scale, _Z);
 }
 void D3D12Renderer::UpdateTextureWithImage(void* _pTexHandle, const BYTE* _pSrcBits, UINT _SrcWidth, UINT _SrcHeight)
 {
+	TEXTURE_HANDLE* pTextureHandle = reinterpret_cast<TEXTURE_HANDLE*>(_pTexHandle);
+	D3D12Resource_raw pDestTexResource = pTextureHandle->pTexResource.Get();
+	D3D12Resource_raw pUploadBuffer = pTextureHandle->pUploadBuffer.Get();
+
+	D3D12_RESOURCE_DESC Desc = pDestTexResource->GetDesc();
+	if (_SrcWidth > Desc.Width)
+	{
+		__debugbreak();
+	}
+	if (_SrcHeight > Desc.Height)
+	{
+		__debugbreak();
+	}
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT Footprint;
+	UINT	Rows = 0;
+	UINT64	RowSize = 0;
+	UINT64	TotalBytes = 0;
+
+	m_pD3DDevice->GetCopyableFootprints(&Desc, 0, 1, 0, &Footprint, &Rows, &RowSize, &TotalBytes);
+
+	BYTE* pMappedPtr = nullptr;
+	CD3DX12_RANGE readRange(0, 0);
+
+	HRESULT hr = pUploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pMappedPtr));
+	if (FAILED(hr))
+		__debugbreak();
+
+	const BYTE* pSrc = _pSrcBits;
+	BYTE* pDest = pMappedPtr;
+	for (UINT y = 0; y < _SrcWidth; y++)
+	{
+		memcpy(pDest, pSrc, _SrcHeight * 4);
+		pSrc += (_SrcWidth * 4);
+		pDest += Footprint.Footprint.RowPitch;
+	}
+	// Unmap
+	pUploadBuffer->Unmap(0, nullptr);
+
+	pTextureHandle->bUpdated = TRUE;
 }
 void D3D12Renderer::CreateCommandList()
 {
-	if(FAILED(m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_pCommandAllocator.GetAddressOf())))) {
-		__debugbreak();
-	}
+	for (ULONG i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		D3D12CommandAllocator_ptr pCommandAllocator = nullptr;
+		D3D12GraphicsCommandList_ptr pCommandList = nullptr;
 
-	if(FAILED(m_pD3DDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCommandAllocator.Get(), nullptr, IID_PPV_ARGS(m_pCommandList.GetAddressOf())))) {
-		__debugbreak();
-	}
+		HRESULT hr = m_pD3DDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(pCommandAllocator.GetAddressOf()));
+		if (FAILED(hr)) {
+			OutputDebugString(L"Failed to create command allocator\n");
+			__debugbreak();
+		}
 
-	m_pCommandList->Close();
+		hr = m_pD3DDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pCommandAllocator.Get(), nullptr, IID_PPV_ARGS(pCommandList.GetAddressOf()));
+		if (FAILED(hr)) {
+			OutputDebugString(L"Failed to create command list\n");
+			__debugbreak();
+		}
+		pCommandList->Close();
+
+		m_ppCommandAllocator[i] = std::move(pCommandAllocator);
+		m_ppCommandList[i] = std::move(pCommandList);
+	}
 }
 
 bool D3D12Renderer::CreateDescriptorHeapForRTV()
@@ -634,17 +825,11 @@ void D3D12Renderer::CleanUpFence()
 
 void D3D12Renderer::CleanupRenderer()
 {
-	WaitForFenceValue();
-
-	CleanUpFence();
-
-	WaitForFenceValue();
-	CleanUpFence();
+	DoFence();
 
 	// ① RayTracingManager 먼저 (내부에서 CommandQueue 등 사용)
 	m_pRayTracingManager = nullptr;
 	m_pResourceManager = nullptr;
-	m_pConstantBufferManager = nullptr;
 	m_pShaderManager = nullptr;
 
 	// ② Depth Stencil
@@ -655,10 +840,6 @@ void D3D12Renderer::CleanupRenderer()
 		m_pRenderTargets[i] = nullptr;
 	m_pRTVHeap = nullptr;
 	m_pDSVHeap = nullptr;
-
-	// ④ CommandList, CommandAllocator
-	m_pCommandList = nullptr;
-	m_pCommandAllocator = nullptr;
 
 	// ⑤ SwapChain을 CommandQueue보다 먼저! (SwapChain이 CommandQueue에 AddRef함)
 	m_pSwapChain = nullptr;
@@ -723,7 +904,7 @@ void D3D12Renderer::UpdateCamera()
 
 SimpleConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType)
 {
-	return m_pConstantBufferManager->GetConstantBufferPool(_cbType);
+	return m_ppConstantBufferManager[m_ulCurContextIndex]->GetConstantBufferPool(_cbType);
 }
 
 void D3D12Renderer::FillProjDecompConstant(DECOMP_PROJ* _pOutConstBuffer)

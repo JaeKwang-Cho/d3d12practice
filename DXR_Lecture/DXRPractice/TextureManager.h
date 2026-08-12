@@ -7,7 +7,7 @@ class D3D12ResourceManager;
 class TextureManager
 {
 public:
-	bool Initalize(D3D12Renderer* _pRenderer);
+	bool Initialize(D3D12Renderer* _pRenderer);
 	TEXTURE_HANDLE* CreateTextureFromFile_ITL(const WCHAR* _wchFileName);
 	TEXTURE_HANDLE* CreateDynamicTexture_ITL(UINT _TexWidth, UINT _TexHeight);
 	TEXTURE_HANDLE* CreateImmutableTexture_ITL(UINT _TexWidth, UINT _TexHeight, DXGI_FORMAT _format, const BYTE* _pInitImage);

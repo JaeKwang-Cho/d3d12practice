@@ -14,7 +14,7 @@ TextureManager::~TextureManager()
 	CleanUpTextureManager();
 }
 
-bool TextureManager::Initalize(D3D12Renderer* _pRenderer)
+bool TextureManager::Initialize(D3D12Renderer* _pRenderer)
 {
 	m_pRenderer = _pRenderer;
 	m_pResourceManager = m_pRenderer->INL_GetResourceManager();
@@ -64,7 +64,7 @@ TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileN
 	pTexHandle = AllocTextureHandle_ITL();
 	pTexHandle->pTexResource = pTexResource;
 	pTexHandle->bFromFile = true;
-	pTexHandle->srv = srv;
+	pTexHandle->srvCpuHandle = srv;
 	wcsncpy_s(pTexHandle->wchFilePath_debug, _wchFileName, wcslen(_wchFileName) * sizeof(WCHAR));
 
 	m_TextureReverseHashTable.insert(std::make_pair(pTexHandle.get(), strFileName));

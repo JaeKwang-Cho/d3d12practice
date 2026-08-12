@@ -6,9 +6,9 @@
 class IndexCreator
 {
 public:
-	bool Initialize(DWORD _dwNum);
-	DWORD Alloc();
-	void Free(DWORD _dwIndex);
+	bool Initialize(ULONG _dwNum);
+	ULONG Alloc();
+	void Free(ULONG _dwIndex);
 
 	void Check() const; 
 protected:
@@ -17,9 +17,9 @@ private:
 public:
 protected:
 private:
-	DWORD* m_pdwIndexTable;
-	DWORD m_dwMaxNum;
-	DWORD m_dwAllocatedCount;
+	ULONG* m_pulIndexTable;
+	ULONG m_ulMaxNum;
+	ULONG m_ulAllocatedCount;
 
 	HANDLE m_hSema;
 public:

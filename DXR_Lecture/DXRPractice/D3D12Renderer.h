@@ -18,7 +18,7 @@ class D3D12Renderer
 	static const UINT MAX_DESCRIPTOR_COUNT = 4096;
 
 public:
-	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath);
+	bool Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath, ULONG _ulMaxBlasCount);
 	void BeginRender();
 	void EndRender();
 
@@ -93,11 +93,11 @@ private:
 	D3D12Device_ptr m_pD3DDevice = nullptr;
 	D3D12CommandQueue_ptr m_pCommandQueue = nullptr;
 	
-	D3D12CommandAllocator_ptr* m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT] = {};
-	D3D12GraphicsCommandList_ptr* m_ppCommandList[MAX_PENDING_FRAME_COUNT] = {};
+	D3D12CommandAllocator_ptr m_ppCommandAllocator[MAX_PENDING_FRAME_COUNT] = {};
+	D3D12GraphicsCommandList_ptr m_ppCommandList[MAX_PENDING_FRAME_COUNT] = {};
 	std::array<std::unique_ptr<DescriptorPool>, MAX_PENDING_FRAME_COUNT> m_ppDescriptorPool = {};
-	std::unique_ptr<ConstantBufferManager> m_pConstantBufferManager = nullptr;
-	UINT64 m_ui64FenceValue[MAX_PENDING_FRAME_COUNT] = {};
+	std::array<std::unique_ptr<ConstantBufferManager>, MAX_PENDING_FRAME_COUNT> m_ppConstantBufferManager = {};
+	UINT64 m_pui64FenceValue[MAX_PENDING_FRAME_COUNT] = {};
 	UINT64 m_ui64FenceValue = 0;
 
 	// Manager도 Render가 소유한다.
