@@ -80,7 +80,7 @@ bool FontManager::WriteTextToBitmap_ITL(BYTE* _pDestImage, UINT _DestWidth, UINT
     int iTextWidth = 0;
     int iTextHeight = 0;
 
-	bool bResult = CreateBitmapFromText(&iTextWidth, &iTextHeight, _pFontHandle->pTextFormat.Get(), _wchString, _dwLen);
+	bool bResult = CreateBitmapFromText(&iTextWidth, &iTextHeight, _pFontHandle->pTextFormat, _wchString, _dwLen);
     if (bResult) {
         //clamp
         if(iTextHeight > static_cast<int>(_DestHeight)) {

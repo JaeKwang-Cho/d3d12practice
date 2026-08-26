@@ -443,7 +443,7 @@ void D3D12Renderer::EnableDXR(bool _bEnable)
 {
 	m_bDXREnabled = _bEnable;
 }
-bool D3D12Renderer::IsEnableDXR()
+bool D3D12Renderer::IsEnabledDXR()
 {
 	return m_bDXREnabled;
 }

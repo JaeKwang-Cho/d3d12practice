@@ -1,4 +1,6 @@
 #pragma once
+#include "D3D12_SmartPointer_typedef.h"
+
 const UINT SWAP_CHAIN_FRAME_COUNT = 3;
 const UINT MAX_PENDING_FRAME_COUNT = SWAP_CHAIN_FRAME_COUNT - 1;
 

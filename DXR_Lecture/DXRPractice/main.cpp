@@ -120,19 +120,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
     MSG msg = {};
 
-    WCHAR wchAppPath[_MAX_PATH];
-    GetCurrentDirectory(_MAX_PATH, wchAppPath);
-
-    WCHAR wchExePath[_MAX_PATH];
-    GetModuleFileNameW(nullptr, wchExePath, _MAX_PATH);
-
-    std::filesystem::path shaderPath =
-        std::filesystem::path(wchExePath).parent_path() / L"..\\Shaders";
-    shaderPath = std::filesystem::canonical(shaderPath);
-
-    g_pRenderer = new D3D12Renderer;
-    g_pRenderer->Initialize(g_hWnd, true, true, true, shaderPath.wstring().c_str());
-
     // 기본으로 PeekMessage를 사용
     while (msg.message != WM_QUIT) {
         if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -140,15 +127,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
             DispatchMessage(&msg);
         }
         else {
-            RunGame();
         }
     }
 
-    if (g_pRenderer)
-    {
-        delete g_pRenderer;
-        g_pRenderer = nullptr;
-    }
+
 
     // resource leak!!!
     IDXGIDebug1* pDebug = nullptr;

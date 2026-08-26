@@ -24,7 +24,7 @@ private:
 	std::map<TEXTURE_HANDLE*, std::wstring> m_TextureReverseHashTable;
 	std::map<TEXTURE_HANDLE*, std::unique_ptr<TEXTURE_HANDLE>> m_TextureHashSet;
 
-	std::unique_ptr<TEXTURE_HANDLE> AllocTextureHandle_ITL();
+	TEXTURE_HANDLE* AllocTextureHandle_ITL();
 	void CleanUpTextureManager();
 };
 

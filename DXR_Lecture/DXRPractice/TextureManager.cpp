@@ -28,7 +28,7 @@ bool TextureManager::Initialize(D3D12Renderer* _pRenderer)
 
 TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileName)
 {
-	std::unique_ptr<TEXTURE_HANDLE> pTexHandle = nullptr;
+	TEXTURE_HANDLE* pTexHandle = nullptr;
 
 	std::wstring strFileName(_wchFileName);
 	std::map<std::wstring, std::unique_ptr<TEXTURE_HANDLE>>::iterator iter =  m_TextureHashTable.find(strFileName);
@@ -65,9 +65,8 @@ TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileN
 	pTexHandle->pTexResource = pTexResource;
 	pTexHandle->bFromFile = true;
 	pTexHandle->srvCpuHandle = srv;
-	wcsncpy_s(pTexHandle->wchFilePath_debug, _wchFileName, wcslen(_wchFileName) * sizeof(WCHAR));
 
-	m_TextureReverseHashTable.insert(std::make_pair(pTexHandle.get(), strFileName));
+	m_TextureReverseHashTable.insert(std::make_pair(pTexHandle, strFileName));
 	m_TextureHashTable.insert(std::make_pair(strFileName, std::move(pTexHandle)));
 
 	return m_TextureHashTable.find(strFileName)->second.get();
@@ -77,7 +76,7 @@ TEXTURE_HANDLE* TextureManager::CreateDynamicTexture_ITL(UINT _TexWidth, UINT _T
 {
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
-	std::unique_ptr<TEXTURE_HANDLE> pTexHandle = nullptr;
+	TEXTURE_HANDLE* pTexHandle = nullptr;
 
 	D3D12Resource_ptr pTexResource = nullptr;
 	D3D12Resource_ptr pUploadBuffer = nullptr;
@@ -103,7 +102,7 @@ TEXTURE_HANDLE* TextureManager::CreateDynamicTexture_ITL(UINT _TexWidth, UINT _T
 		pTexHandle = AllocTextureHandle_ITL();
 		pTexHandle->pTexResource = pTexResource;
 		pTexHandle->pUploadBuffer = pUploadBuffer;
-		pTexHandle->srv = srv;
+		pTexHandle->srvCpuHandle = srv;
 	}
 	else
 	{
@@ -114,20 +113,15 @@ TEXTURE_HANDLE* TextureManager::CreateDynamicTexture_ITL(UINT _TexWidth, UINT _T
 		pUploadBuffer = nullptr;
 	}
 
-	const WCHAR* debugName = L"DynamicTexture";
-	wcsncpy_s(pTexHandle->wchFilePath_debug, debugName, wcslen(debugName) * sizeof(WCHAR));
 
-	TEXTURE_HANDLE* pTexHandlePtr = pTexHandle.get();
-	m_TextureHashSet.insert(std::make_pair(pTexHandlePtr, std::move(pTexHandle)));
-
-	return pTexHandlePtr;
+	return pTexHandle;
 }
 
 TEXTURE_HANDLE* TextureManager::CreateImmutableTexture_ITL(UINT _TexWidth, UINT _TexHeight, DXGI_FORMAT _format, const BYTE* _pInitImage)
 {
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
-	std::unique_ptr<TEXTURE_HANDLE> pTexHandle = nullptr;
+	TEXTURE_HANDLE* pTexHandle = nullptr;
 
 	D3D12Resource_ptr pTexResource = nullptr;
 	D3D12_CPU_DESCRIPTOR_HANDLE srv = {};
@@ -150,7 +144,7 @@ TEXTURE_HANDLE* TextureManager::CreateImmutableTexture_ITL(UINT _TexWidth, UINT 
 
 		pTexHandle = AllocTextureHandle_ITL();
 		pTexHandle->pTexResource = pTexResource;
-		pTexHandle->srv = srv;
+		pTexHandle->srvCpuHandle = srv;
 	}
 	else
 	{
@@ -158,13 +152,7 @@ TEXTURE_HANDLE* TextureManager::CreateImmutableTexture_ITL(UINT _TexWidth, UINT 
 		pTexResource = nullptr;
 	}
 
-	const WCHAR* debugName = L"ImmutableTexture";
-	wcsncpy_s(pTexHandle->wchFilePath_debug, debugName, wcslen(debugName) * sizeof(WCHAR));
-
-	TEXTURE_HANDLE* pTexHandlePtr = pTexHandle.get();
-	m_TextureHashSet.insert(std::make_pair(pTexHandlePtr, std::move(pTexHandle)));
-
-	return pTexHandlePtr;
+	return pTexHandle;
 }
 
 void TextureManager::DeleteTexture_ITL(TEXTURE_HANDLE* _pTexHandle)
@@ -172,12 +160,12 @@ void TextureManager::DeleteTexture_ITL(TEXTURE_HANDLE* _pTexHandle)
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 
-	if (_pTexHandle->dwRefCount <= 0) {
+	if (_pTexHandle->ulRefCount <= 0) {
 		__debugbreak();
 		return;
 	}
 
-	ULONG ref_Count = --_pTexHandle->dwRefCount;
+	ULONG ref_Count = --_pTexHandle->ulRefCount;
 	if (ref_Count <= 0) {
 		std::map<TEXTURE_HANDLE*, std::wstring>::iterator iter =  m_TextureReverseHashTable.find(_pTexHandle);
 		if(iter != m_TextureReverseHashTable.end()) {
@@ -191,15 +179,15 @@ void TextureManager::DeleteTexture_ITL(TEXTURE_HANDLE* _pTexHandle)
 	}
 } 
 
-std::unique_ptr<TEXTURE_HANDLE> TextureManager::AllocTextureHandle_ITL()
+TEXTURE_HANDLE* TextureManager::AllocTextureHandle_ITL()
 {
 	std::unique_ptr<TEXTURE_HANDLE> pTexHandle = std::make_unique<TEXTURE_HANDLE>();
 	//memset(pTexHandle.get(), 0, sizeof(TEXTURE_HANDLE));
 
-	pTexHandle->dwRefCount = 1;
-	pTexHandle->OuterAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
+	pTexHandle->ulRefCount = 1;
+	m_TextureHashSet.insert(std::make_pair(pTexHandle.get(), std::move(pTexHandle)));
 
-	return pTexHandle;
+	return pTexHandle.get();
 }
 
 void TextureManager::CleanUpTextureManager()

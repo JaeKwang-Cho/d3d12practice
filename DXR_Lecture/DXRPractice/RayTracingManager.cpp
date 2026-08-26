@@ -995,8 +995,8 @@ void RayTracingManager::UpdateHitGroupShaderTable(ULONG _ulShaderRecordCount)
 			uiShaderRecordIndex++;
 		}
 	}
-	m_HitGroupShaderTableStrideInBytes = m_pHitGroupShaderTable->GetShaderRecordSize();
-	m_ulHitGroupShaderRecordNum = m_pHitGroupShaderTable->GetShaderRecordCount();	
+	m_HitGroupShaderTableStrideInBytes = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordSize());
+	m_ulHitGroupShaderRecordNum = static_cast<UINT>(m_pHitGroupShaderTable->GetShaderRecordCount());
 }
 
 void RayTracingManager::CleanupRayTracingManager()

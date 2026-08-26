@@ -32,7 +32,7 @@ public:
 
 	// DXR On-Off
 	void EnableDXR(bool _bEnable);
-	bool IsEnableDXR();
+	bool IsEnabledDXR();
 
 public:
 	void* CreateBasicMeshObject();
