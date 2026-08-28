@@ -148,6 +148,9 @@
     <ClCompile Include="GameObject.cpp">
       <Filter>Game</Filter>
     </ClCompile>
+    <ClCompile Include="..\Utils\VertexUtil.cpp">
+      <Filter>Utils</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="pch.h">
@@ -228,6 +231,9 @@
     </ClInclude>
     <ClInclude Include="GameObject.h">
       <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Utils\VertexUtil.h">
+      <Filter>Utils</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

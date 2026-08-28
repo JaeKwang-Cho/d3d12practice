@@ -6,7 +6,7 @@ class D3D12Renderer;
 class GameObject
 {
 public:
-	BOOL Initialize(Game* _pGame);
+	bool Initialize(Game* _pGame);
 	void* CreateBoxMeshObject();
 	void* CreateQuadMesh();
 	void* CreateBottomMeshObject();

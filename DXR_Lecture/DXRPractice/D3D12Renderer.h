@@ -46,8 +46,8 @@ public:
 	void* CreateSpriteObject(const WCHAR* _wchTexFileName, int _PosX, int _PosY, int _Width, int _Height);
 	void DeleteSpriteObject(void* _pSpriteObjHandle);
 
-	BOOL BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount);
-	BOOL InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName);
+	bool BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount);
+	bool InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName);
 	void EndCreateMesh(void* _pMeshObjHandle);
 
 	void* CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _r, ULONG _g, ULONG _b);

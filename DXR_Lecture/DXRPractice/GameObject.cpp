@@ -1,7 +1,7 @@
 #include "pch.h"
 #include <Windows.h>
 #include <DirectXMath.h>
-#include "../Util/VertexUtil.h"
+#include "../Utils/VertexUtil.h"
 #include "D3D12Renderer.h"
 #include "Game.h"
 #include "GameObject.h"
@@ -19,9 +19,9 @@ GameObject::~GameObject()
 	Cleanup_ITL();
 }
 
-BOOL GameObject::Initialize(Game* _pGame)
+bool GameObject::Initialize(Game* _pGame)
 {
-	BOOL bResult = FALSE;
+	bool bResult = false;
 	m_pGame = _pGame;
 	m_pRenderer = _pGame->INL_GetRenderer();
 
@@ -38,7 +38,7 @@ void GameObject::UpdateTransform_ITL()
 	{
 		m_pRenderer->UpdateBLASTransform(m_pBlasHandle, &m_matWorld);
 	}
-	m_bUpdateTransform = FALSE;
+	m_bUpdateTransform = false;
 }
 
 void GameObject::SetPosition(float _x, float _y, float _z)
@@ -49,7 +49,7 @@ void GameObject::SetPosition(float _x, float _y, float _z)
 
 	m_matTrans = XMMatrixTranslation(_x, _y, _z);
 
-	m_bUpdateTransform = TRUE;
+	m_bUpdateTransform = true;
 }
 
 void GameObject::SetScale(float _x, float _y, float _z)
@@ -60,7 +60,7 @@ void GameObject::SetScale(float _x, float _y, float _z)
 
 	m_matScale = XMMatrixScaling(_x, _y, _z);
 
-	m_bUpdateTransform = TRUE;
+	m_bUpdateTransform = true;
 }
 
 void GameObject::SetRotationY(float _fRotY)
@@ -68,7 +68,7 @@ void GameObject::SetRotationY(float _fRotY)
 	m_fRotY = _fRotY;
 	m_matRot = XMMatrixRotationY(_fRotY);
 
-	m_bUpdateTransform = TRUE;
+	m_bUpdateTransform = true;
 }
 
 void GameObject::Run()
@@ -103,11 +103,11 @@ void* GameObject::CreateBoxMeshObject()
 {
 	// create box mesh
 	// create vertices and indices
-	WORD pIndexList[36] = {};
+	USHORT pIndexList[36] = {};
 	BasicVertex* pVertexList = nullptr;
 
 	float fScale = (float)((rand() % 4) + 1);
-	ULONG ulVertexCount = CreateBoxMesh(&pVertexList, pIndexList, (ULONG)_countof(pIndexList), 0.25f * fScale);
+	ULONG ulVertexCount = VertexUtil::CreateBoxMesh(&pVertexList, pIndexList, (ULONG)_countof(pIndexList), 0.25f * fScale);
 
 	// create BasicMeshObject from Renderer
 	m_pMeshObj = m_pRenderer->CreateBasicMeshObject();
@@ -124,7 +124,7 @@ void* GameObject::CreateBoxMeshObject()
 
 	// Set meshes to the BasicMeshObject
 	m_pRenderer->BeginCreateMesh(m_pMeshObj, pVertexList, ulVertexCount, 6);
-	for (ULONG i = 0; i < 6; i++)
+	for (ULONG i = 0; i < 6; ++i)
 	{
 		ULONG ulTexIndex = rand() % 6;
 		m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList + i * 6, 2, wchDiffuseTexFileNameList[ulTexIndex]);
@@ -134,7 +134,7 @@ void* GameObject::CreateBoxMeshObject()
 	// delete vertices and indices
 	if (pVertexList)
 	{
-		DeleteBoxMesh(pVertexList);
+		VertexUtil::DeleteBoxMesh(pVertexList);
 		pVertexList = nullptr;
 	}
 	if (m_pMeshObj)
@@ -148,10 +148,10 @@ void* GameObject::CreateBottomMeshObject()
 {
 	// create bottom mesh
 	// create vertices and indices
-	WORD pIndexList[6] = {};
+	USHORT pIndexList[6] = {};
 	BasicVertex pVertexList[4] = {};
 
-	CreateBottomMesh(pVertexList, 4, pIndexList, 6, 10.0f, -1.0f);
+	VertexUtil::CreateBottomMesh(pVertexList, 4, pIndexList, 6, 10.0f, -1.0f);
 
 	// create BasicMeshObject from Renderer
 	m_pMeshObj = m_pRenderer->CreateBasicMeshObject();
@@ -178,11 +178,11 @@ void* GameObject::CreateQuadMesh()
 	{
 		{ { -0.25f, 0.25f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f } },
 		{ { 0.25f, 0.25f, 0.0f }, { 0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f } },
-		{ { 0.25f, -0.25f, 0.0f }, {0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
-		{ { -0.25f, -0.25f, 0.0f }, {0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
+		{ { 0.25f, -0.25f, 0.0f }, {0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f } },
+		{ { -0.25f, -0.25f, 0.0f }, {0.0f, 0.0f, -1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f } },
 	};
 
-	WORD pIndexList[] =
+	USHORT pIndexList[] =
 	{
 		0, 1, 2,
 		0, 2, 3

@@ -152,6 +152,7 @@
     <ClCompile Include="..\Utils\IndexCreator.cpp">
       <PrecompiledHeaderFile Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">pch.h</PrecompiledHeaderFile>
     </ClCompile>
+    <ClCompile Include="..\Utils\VertexUtil.cpp" />
     <ClCompile Include="..\Utils\WICTextureLoader12.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Use</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Use</PrecompiledHeader>
@@ -182,6 +183,7 @@
     <ClInclude Include="..\D3D_Utils\ShaderUtil.h" />
     <ClInclude Include="..\Utils\DDSTextureLoader12.h" />
     <ClInclude Include="..\Utils\IndexCreator.h" />
+    <ClInclude Include="..\Utils\VertexUtil.h" />
     <ClInclude Include="..\Utils\WICTextureLoader12.h" />
     <ClInclude Include="..\Utils\WriteDebugString.h" />
     <ClInclude Include="BasicMeshObject.h" />

@@ -454,17 +454,17 @@ void* D3D12Renderer::CreateBasicMeshObject()
 	return pMeshObj;
 }
 
-BOOL D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount)
+bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _pVertexList, ULONG _ulVertexCount, ULONG _ulTriGroupCount)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
-	BOOL bResult = pMeshObj->BeginCreateMesh(_pVertexList, _ulVertexCount, _ulTriGroupCount);
+	bool bResult = pMeshObj->BeginCreateMesh(_pVertexList, _ulVertexCount, _ulTriGroupCount);
 	return bResult;
 }
 
-BOOL D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
+bool D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
-	BOOL bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _ulTriCount, _wchTexFileName);
+	bool bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _ulTriCount, _wchTexFileName);
 	return bResult;
 }
 
@@ -536,7 +536,7 @@ void* D3D12Renderer::CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _
 	BYTE* pImage = reinterpret_cast<BYTE*>(malloc(_TexWidth * _TexHeight * 4));
 	memset(pImage, 0, _TexWidth * _TexHeight * 4);
 
-	BOOL bFirstColorIsWhite = TRUE;
+	bool bFirstColorIsWhite = false;
 	for (UINT y = 0; y < _TexHeight; y++) {
 		for (UINT x = 0; x < _TexWidth; x++) {
 			RGBA* pDest = reinterpret_cast<RGBA*>(pImage + (x + y * _TexWidth) * 4);
@@ -552,7 +552,7 @@ void* D3D12Renderer::CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _
 			}
 			pDest->a = 255;
 		}
-		bFirstColorIsWhite++;
+		bFirstColorIsWhite = !bFirstColorIsWhite;
 		bFirstColorIsWhite %= 2;
 	}
 
