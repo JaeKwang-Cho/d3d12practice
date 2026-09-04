@@ -1,6 +1,11 @@
 #pragma once
 #include <array>
 
+#ifdef __INTELLISENSE__
+#include "pch.h"
+#endif
+
+
 struct SHADER_HANDLE;
 class ShaderManager;
 class RayTracingManager;

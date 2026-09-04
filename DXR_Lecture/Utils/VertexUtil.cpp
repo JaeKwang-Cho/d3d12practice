@@ -2,6 +2,9 @@
 #include <Windows.h>
 #include <DirectXMath.h>
 #include "VertexUtil.h"
+#ifdef __INTELLISENSE__
+#include "../DXRPractice/pch.h"
+#endif
 
 using namespace DirectX;
 

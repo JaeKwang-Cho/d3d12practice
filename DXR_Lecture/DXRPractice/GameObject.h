@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef __INTELLISENSE__
+#include "pch.h"
+#endif
+
 class Game;
 class D3D12Renderer;
 

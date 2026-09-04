@@ -1,5 +1,6 @@
 // SpriteObject.h from "megayuchi"
 #pragma once
+#include "ShaderManager.h"
 
 enum class E_SPRITE_DESCRIPTOR_INDEX : UINT
 {

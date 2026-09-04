@@ -25,7 +25,7 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 
 	m_ulMaxBlasCount = _ulMaxBlasCount;
-	m_arrBLASInstance.resize(m_ulMaxBlasCount, nullptr);
+	m_arrBLASInstance.resize(m_ulMaxBlasCount);
 	m_pArrWaitUpdateBLASInstance.resize(m_ulMaxBlasCount, nullptr);
 
 	m_ulMaxShaderVisibileDescriptorCount = static_cast<ULONG>(DISPATCH_DESCRIPTOR_INDEX::Count) + (static_cast<ULONG>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count) * MAX_TRIGROUP_COUNT_PER_BLAS * _ulMaxBlasCount);

@@ -1,6 +1,6 @@
 #pragma once
-#include <DirectXMath.h>
-#include "typedef.h"
+
+struct BasicVertex;
 
 namespace VertexUtil
 {
