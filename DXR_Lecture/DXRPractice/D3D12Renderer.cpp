@@ -261,6 +261,7 @@ void D3D12Renderer::BeginRender()
 	}
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_pRTVHeap->GetCPUDescriptorHandleForHeapStart(), m_uiRenderTargetIndex, m_rtvDescriptorSize);
+	CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(m_pDSVHeap->GetCPUDescriptorHandleForHeapStart());
 
 	auto barrier_PresentToRT = CD3DX12_RESOURCE_BARRIER::Transition(
 		m_pRenderTargets[m_uiRenderTargetIndex].Get(),
@@ -272,7 +273,7 @@ void D3D12Renderer::BeginRender()
 
 	pCommandList->RSSetViewports(1, &m_viewport);
 	pCommandList->RSSetScissorRects(1, &m_scissorRect);
-	pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
+	pCommandList->OMSetRenderTargets(1, &rtvHandle, FALSE, &dsvHandle);
 }
 
 void D3D12Renderer::EndRender()
@@ -553,7 +554,6 @@ void* D3D12Renderer::CreateTiledTexture(UINT _TexWidth, UINT _TexHeight, ULONG _
 			pDest->a = 255;
 		}
 		bFirstColorIsWhite = !bFirstColorIsWhite;
-		bFirstColorIsWhite %= 2;
 	}
 
 	TEXTURE_HANDLE* pTexHandle = m_pTextureManager->CreateImmutableTexture_ITL(_TexWidth, _TexHeight, TexFormat, pImage);
@@ -668,9 +668,9 @@ void D3D12Renderer::UpdateTextureWithImage(void* _pTexHandle, const BYTE* _pSrcB
 
 	const BYTE* pSrc = _pSrcBits;
 	BYTE* pDest = pMappedPtr;
-	for (UINT y = 0; y < _SrcWidth; y++)
+	for (UINT y = 0; y < _SrcHeight; y++)
 	{
-		memcpy(pDest, pSrc, _SrcHeight * 4);
+		memcpy(pDest, pSrc, _SrcWidth * 4);
 		pSrc += (_SrcWidth * 4);
 		pDest += Footprint.Footprint.RowPitch;
 	}
@@ -826,26 +826,30 @@ void D3D12Renderer::CleanUpFence()
 void D3D12Renderer::CleanupRenderer()
 {
 	DoFence();
+	for (DWORD i = 0; i < MAX_PENDING_FRAME_COUNT; i++)
+	{
+		WaitForFenceValue(m_pui64FenceValue[i]);
+	}
 
 	// ① RayTracingManager 먼저 (내부에서 CommandQueue 등 사용)
-	m_pRayTracingManager = nullptr;
-	m_pResourceManager = nullptr;
-	m_pShaderManager = nullptr;
+	//m_pRayTracingManager = nullptr;
+	//m_pResourceManager = nullptr;
+	//m_pShaderManager = nullptr;
 
 	// ② Depth Stencil
-	m_pDepthStencilBuffer = nullptr;
+	//m_pDepthStencilBuffer = nullptr;
 
 	// ③ RenderTarget, DescriptorHeap
-	for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
-		m_pRenderTargets[i] = nullptr;
-	m_pRTVHeap = nullptr;
-	m_pDSVHeap = nullptr;
+	//for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
+		//m_pRenderTargets[i] = nullptr;
+	//m_pRTVHeap = nullptr;
+	//m_pDSVHeap = nullptr;
 
 	// ⑤ SwapChain을 CommandQueue보다 먼저! (SwapChain이 CommandQueue에 AddRef함)
-	m_pSwapChain = nullptr;
+	//m_pSwapChain = nullptr;
 
 	// ⑥ CommandQueue
-	m_pCommandQueue = nullptr;
+	//m_pCommandQueue = nullptr;
 
 	// ⑦ Device를 QueryInterface 후 Release, 그 다음 Report
 	{

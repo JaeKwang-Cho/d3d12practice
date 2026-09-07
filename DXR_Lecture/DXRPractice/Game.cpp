@@ -63,7 +63,7 @@ bool Game::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, boo
 	}
 	GameObject* pBottom = CreateGameObjectAsBottom_ITL();
 
-	return TRUE;
+	return true;
 }
 
 GameObject* Game::CreateGameObjectAsBox_ITL()

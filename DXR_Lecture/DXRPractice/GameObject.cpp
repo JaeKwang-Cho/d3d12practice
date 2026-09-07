@@ -114,12 +114,12 @@ void* GameObject::CreateBoxMeshObject()
 
 	const WCHAR* wchDiffuseTexFileNameList[6] =
 	{
-		L"tex_00.dds",
-		L"tex_01.dds",
-		L"tex_02.dds",
-		L"tex_03.dds",
-		L"tex_04.dds",
-		L"tex_05.dds"
+		L"../images/tex_00.dds",
+		L"../images/tex_01.dds",
+		L"../images/tex_02.dds",
+		L"../images/tex_03.dds",
+		L"../images/tex_04.dds",
+		L"../images/tex_05.dds"
 	};
 
 	// Set meshes to the BasicMeshObject
@@ -158,7 +158,7 @@ void* GameObject::CreateBottomMeshObject()
 
 	// Set meshes to the BasicMeshObject
 	m_pRenderer->BeginCreateMesh(m_pMeshObj, pVertexList, 4, 1);
-	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"tilemap_008.dds");
+	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"../images/tilemap_008.dds");
 	m_pRenderer->EndCreateMesh(m_pMeshObj);
 
 	if (m_pMeshObj)

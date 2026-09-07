@@ -182,12 +182,12 @@ void TextureManager::DeleteTexture_ITL(TEXTURE_HANDLE* _pTexHandle)
 TEXTURE_HANDLE* TextureManager::AllocTextureHandle_ITL()
 {
 	std::unique_ptr<TEXTURE_HANDLE> pTexHandle = std::make_unique<TEXTURE_HANDLE>();
-	//memset(pTexHandle.get(), 0, sizeof(TEXTURE_HANDLE));
+	TEXTURE_HANDLE* returnHandle = pTexHandle.get();
 
 	pTexHandle->ulRefCount = 1;
 	m_TextureHashSet.insert(std::make_pair(pTexHandle.get(), std::move(pTexHandle)));
 
-	return pTexHandle.get();
+	return returnHandle;
 }
 
 void TextureManager::CleanUpTextureManager()

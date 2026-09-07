@@ -1,9 +1,6 @@
 // D3DUtil.cpp from "megayuchi"
 
-#include "pch.h"
-#ifdef __INTELLISENSE__
 #include "../DXRPractice/pch.h"
-#endif
 
 
 void GetHardwareAdaptor(IDXGIFactory7* _pFactory, IDXGIAdapter4** _ppAdaptor)

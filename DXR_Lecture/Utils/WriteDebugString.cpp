@@ -1,4 +1,4 @@
-#include "pch.h"
+#include "../DXRPractice/pch.h"
 #include <Windows.h>
 #include <stdio.h>
 #include "WriteDebugString.h"

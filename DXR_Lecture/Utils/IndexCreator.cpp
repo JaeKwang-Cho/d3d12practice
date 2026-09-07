@@ -1,10 +1,7 @@
 // IndexCreator.cpp from "megayuchi"
 
-#include "pch.h"
-#include "IndexCreator.h"
-#ifdef __INTELLISENSE__
 #include "../DXRPractice/pch.h"
-#endif
+#include "IndexCreator.h"
 
 bool IndexCreator::Initialize(ULONG _ulNum)
 {

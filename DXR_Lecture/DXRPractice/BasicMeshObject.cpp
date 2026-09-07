@@ -136,6 +136,9 @@ bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, ULONG _ul
 
 	m_ulMaxTriGroupCount = _ulTriGroupCount;
 	m_pTriGroupList.resize(m_ulMaxTriGroupCount);
+	for (ULONG i = 0; i < m_ulMaxTriGroupCount; i++) {
+		m_pTriGroupList[i] = std::make_unique<INDEXED_TRI_GROUP>();
+	}
 	m_ulVertexCount = _ulVertexNum;
 
 	return true;
@@ -285,8 +288,7 @@ bool BasicMeshObject::InitRootSignature()
 		D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 		D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS |
-		D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 	// 깡통 Root Signature를 생성한다.
 	CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;

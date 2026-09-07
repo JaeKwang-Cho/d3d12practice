@@ -1,9 +1,6 @@
-#include "pch.h"
+#include "../DXRPractice/pch.h"
 #include "ShaderUtil.h"
 #include "../Utils/WriteDebugString.h"
-#ifdef __INTELLISENSE__
-#include "../DXRPractice/pch.h"
-#endif
 
 
 bool CreateShaderCodeFromFile(BYTE** _ppOutCodeBuffer, ULONG* _pulOutCodesize, SYSTEMTIME* _pOutLastWriteTime, const WCHAR* _wchFileName)

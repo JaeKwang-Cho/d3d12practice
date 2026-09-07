@@ -67,7 +67,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     MSG msg = {};
 
     g_pGame = new Game;
-    if (!g_pGame->Initialize(g_hWnd, true, true, false))
+    if (!g_pGame->Initialize(g_hWnd, true, true, true))
     {
         __debugbreak();
         return FALSE;

@@ -25,7 +25,7 @@ bool RayTracingManager::Initialize(D3D12Renderer* _pRenderer, UINT _ulWidth, UIN
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 
 	m_ulMaxBlasCount = _ulMaxBlasCount;
-	m_arrBLASInstance.resize(m_ulMaxBlasCount);
+	m_arrBLASInstance.reserve(m_ulMaxBlasCount);
 	m_pArrWaitUpdateBLASInstance.resize(m_ulMaxBlasCount, nullptr);
 
 	m_ulMaxShaderVisibileDescriptorCount = static_cast<ULONG>(DISPATCH_DESCRIPTOR_INDEX::Count) + (static_cast<ULONG>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count) * MAX_TRIGROUP_COUNT_PER_BLAS * _ulMaxBlasCount);
@@ -129,7 +129,7 @@ void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 	D3D12Resource_raw pMissShaderTableResource = m_pMissShaderTable->GetResource();
 	dispatchDesc.MissShaderTable.StartAddress = pMissShaderTableResource->GetGPUVirtualAddress();
 	dispatchDesc.MissShaderTable.SizeInBytes = m_pMissShaderTable->GetShaderRecordSize();
-	dispatchDesc.HitGroupTable.StrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
+	dispatchDesc.MissShaderTable.StrideInBytes = m_pMissShaderTable->GetShaderRecordSize();
 
 	// Raygen shader table
 	D3D12Resource_raw pRayGenShaderTableResource = m_pRayGenShaderTable->GetResource();
@@ -193,7 +193,7 @@ bool RayTracingManager::UpdateAccelerationStructure()
 		m_pTLAS = BuildTLAS(m_pBLASInstanceDescResource.Get(), m_pArrWaitUpdateBLASInstance.data(), ulBlasInstanceCount, false, 0);
 		m_UpdateAccelerationStructureTypeFlags &= (~static_cast<ULONG>(UPDATE_ACCELERATION_STRUCTURE_TYPE::TLAS));
 	}
-	return false;
+	return true;
 }
 
 void RayTracingManager::UpdateWindowSize_forRayTracing(UINT _ulWidth, UINT _ulHeight)
@@ -257,10 +257,11 @@ void RayTracingManager::FreeBlasImmediately(BLAS_INSTANCE* _pBlasInstance)
 
 void RayTracingManager::CleanupPendingFreeBlasInstances()
 {
-	// m_arrDeletedBLASInstance에 있는 BLAS들을 즉시 해제한다.
-	for (ULONG i = 0; i < m_arrDeletedBLASInstance.size(); i++) {
+	// 수정: 루프 중 원소 삭제 버그 회피를 위해, 역순으로 비우거나 전부 비우도록 변경
+	for (int i = static_cast<int>(m_arrDeletedBLASInstance.size()) - 1; i >= 0; --i) {
 		FreeBlasImmediately(m_arrDeletedBLASInstance[i].get());
 	}
+	m_arrDeletedBLASInstance.clear();
 }
 
 void RayTracingManager::UpdateBLASTransform(BLAS_INSTANCE* _pBlasInstance, const XMMATRIX* _pMatWorld)
@@ -778,7 +779,6 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	// #3 Set LocalRoot Parameters for BLAS_INSTANCE
 	//
 	ULONG DescriptorIndex = static_cast<UINT>(DISPATCH_DESCRIPTOR_INDEX::Count) + (static_cast<UINT>(LOCAL_ROOT_PARAM_DESCRIPTOR_INDEX::Count) * MAX_TRIGROUP_COUNT_PER_BLAS) * pBlasInstance->ulID;
-	DescriptorIndex += pBlasInstance->ulID * MAX_TRIGROUP_COUNT_PER_BLAS * 2; // BLAS_INSTANCE 하나당 최대 트라이앵글 그룹 수 * (VB + IB)
 	CD3DX12_CPU_DESCRIPTOR_HANDLE srvCpu(m_pShaderVisibleDescriptorHeap->GetCPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
 	CD3DX12_GPU_DESCRIPTOR_HANDLE srvGpu(m_pShaderVisibleDescriptorHeap->GetGPUDescriptorHandleForHeapStart(), DescriptorIndex, m_DescriptorSize);
 
