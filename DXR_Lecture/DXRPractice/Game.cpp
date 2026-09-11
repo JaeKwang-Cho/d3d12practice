@@ -6,6 +6,8 @@
 #include "Game.h"
 #include <filesystem>
 
+using namespace DirectX;
+
 Game::Game()
 {
 }
@@ -36,9 +38,11 @@ bool Game::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, boo
 	m_pRenderer->Initialize(_hWnd, _bEnableDebugLayer, _bEnableGBV, _bDebugShader, shaderPath.wstring().c_str(), GAME_OBJ_COUNT);
 	m_hWnd = _hWnd;
 
+	memset(m_KeyState, 0, sizeof(m_KeyState));
+
 	// Create Font
 	m_pFontObj = m_pRenderer->CreateFontObject(L"Tahoma", 18.0f);
-	
+
 	// create texture for draw text
 	m_TextImageWidth = 512;
 	m_TextImageHeight = 256;
@@ -53,118 +57,70 @@ bool Game::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, boo
 		GameObject* pGameObj = CreateGameObjectAsBox_ITL();
 		if (pGameObj)
 		{
-			float x = (float)((rand() % 21) - 10);	// -10m - 10m 
+			float x = (float)((rand() % 21) - 10);	// -10m - 10m
 			float y = (float)((rand() % 13) - 2) * 0.1f;	// -20cm - 1m
-			float z = (float)((rand() % 21) - 10);	// -10m - 10m 
+			float z = (float)((rand() % 21) - 10);	// -10m - 10m
 			pGameObj->SetPosition(x, y, z);
 			float rad = (rand() % 181) * (3.1415f / 180.0f);
 			pGameObj->SetRotationY(rad);
 		}
 	}
-	GameObject* pBottom = CreateGameObjectAsBottom_ITL();
+	CreateGameObjectAsBottom_ITL();
 
 	return true;
 }
 
-GameObject* Game::CreateGameObjectAsBox_ITL()
-{
-	std::unique_ptr<GameObject> pGameObj = std::make_unique<GameObject>();
-	pGameObj->Initialize(this);
-	pGameObj->CreateBoxMeshObject();
-
-	GameObject* pRawPtr = pGameObj.get();
-	m_GameObjects.insert(std::make_pair(pRawPtr, std::move(pGameObj)));
-
-	return pRawPtr;
-}
-
-GameObject* Game::CreateGameObjectAsBottom_ITL()
-{
-	std::unique_ptr<GameObject> pGameObj = std::make_unique<GameObject>();
-	pGameObj->Initialize(this);
-	pGameObj->CreateBottomMeshObject();
-
-	GameObject* pRawPtr = pGameObj.get();
-	m_GameObjects.insert(std::make_pair(pRawPtr, std::move(pGameObj)));
-
-	return pRawPtr;
-}
-
 void Game::OnKeyDown(UINT _nChar, UINT _uiScanCode)
 {
+	if (_nChar < 256)
+	{
+		m_KeyState[_nChar] = true;
+	}
+
 	switch (_nChar)
 	{
-		case VK_SHIFT:
-			m_bShiftKeyDown = TRUE;
-			break;
-		case 'W':
-			if (m_bShiftKeyDown)
-			{
-				m_CamOffsetY = 0.05f;
-			}
-			else
-			{
-				m_CamOffsetZ = 0.05f;
-			}
-			break;
-		case 'S':
-			if (m_bShiftKeyDown)
-			{
-				m_CamOffsetY = -0.05f;
-			}
-			else
-			{
-				m_CamOffsetZ = -0.05f;
-			}
-			break;
-		case 'A':
-			m_CamOffsetX = -0.05f;
-			break;
-		case 'D':
-			m_CamOffsetX = 0.05f;
-			break;
-		case 'R':
-			{
-				bool bUseDXR = m_pRenderer->IsEnabledDXR();
-				bUseDXR = bUseDXR == 0;
-				m_pRenderer->EnableDXR(bUseDXR);
-			}
-			break;
+	case VK_SHIFT:
+		m_bShiftKeyDown = TRUE;
+		break;
+	case 'R':
+	{
+		bool bUseDXR = m_pRenderer->IsEnabledDXR();
+		bUseDXR = bUseDXR == 0;
+		m_pRenderer->EnableDXR(bUseDXR);
+	}
+	break;
+	default:
+		break;
 	}
 }
 
 void Game::OnKeyUp(UINT _nChar, UINT _uiScanCode)
 {
-	switch (_nChar)
+	if (_nChar < 256)
 	{
-		case VK_SHIFT:
-			m_bShiftKeyDown = FALSE;
-			break;
-		case 'W':
-			m_CamOffsetY = 0.0f;
-			m_CamOffsetZ = 0.0f;
-			break;
-		case 'S':
-			m_CamOffsetY = 0.0f;
-			m_CamOffsetZ = 0.0f;
-			break;
-		case 'A':
-			m_CamOffsetX = 0.0f;
-			break;
-		case 'D':
-			m_CamOffsetX = 0.0f;
-			break;
+		m_KeyState[_nChar] = false;
+	}
+
+	if (_nChar == VK_SHIFT)
+	{
+		m_bShiftKeyDown = FALSE;
 	}
 }
 
 void Game::OnMouseLButtonDown(int _x, int _y, UINT _nFlags)
 {
 	m_bMouseLButtonDown = TRUE;
+	m_bCamRotMode = TRUE;
+	m_iCurMouseX = _x;
+	m_iCurMouseY = _y;
+	m_iPrvMouseX = _x;
+	m_iPrvMouseY = _y;
 }
 
 void Game::OnMouseLButtonUp(int _x, int _y, UINT _nFlags)
 {
 	m_bMouseLButtonDown = FALSE;
+	m_bCamRotMode = m_bMouseRButtonDown;
 }
 
 void Game::OnMouseRButtonDown(int _x, int _y, UINT _nFlags)
@@ -172,14 +128,18 @@ void Game::OnMouseRButtonDown(int _x, int _y, UINT _nFlags)
 	m_bCamRotMode = TRUE;
 	m_iMouseX_RButtonPressed = _x;
 	m_iMouseY_RButtonPressed = _y;
-
 	m_bMouseRButtonDown = TRUE;
+
+	m_iCurMouseX = _x;
+	m_iCurMouseY = _y;
+	m_iPrvMouseX = _x;
+	m_iPrvMouseY = _y;
 }
 
 void Game::OnMouseRButtonUp(int _x, int _y, UINT _nFlags)
 {
-	m_bCamRotMode = FALSE;
-	m_bMouseRButtonDown = FALSE;	
+	m_bMouseRButtonDown = FALSE;
+	m_bCamRotMode = m_bMouseLButtonDown;
 }
 
 void Game::OnMouseMButtonDown(int _x, int _y, UINT _nFlags)
@@ -197,18 +157,17 @@ void Game::OnMouseMove(int _x, int _y, UINT _nFlags)
 	m_iPrvMouseX = m_iCurMouseX;
 	m_iPrvMouseY = m_iCurMouseY;
 
-	int dx = _x - m_iPrvMouseX;
-	int dy = _y - m_iPrvMouseY;
+	const int dx = _x - m_iPrvMouseX;
+	const int dy = _y - m_iPrvMouseY;
 
-	if (m_bCamRotMode)
+	if (m_bCamRotMode && (m_bMouseLButtonDown || m_bMouseRButtonDown))
 	{
-		if (dy != 0)
-			int a = 0;
-
-		float fYaw = (float)dx * 0.01f;
-		float fPitch = (float)dy * 0.01f;
+		// 반전 없이: 마우스 이동 방향 그대로 yaw/pitch 누적
+		const float fYaw = static_cast<float>(dx) * m_fMouseSensitivity;
+		const float fPitch = static_cast<float>(dy) * m_fMouseSensitivity;
 		m_pRenderer->ApplyCameraRot(fYaw, fPitch, 0.0f);
 	}
+
 	m_iCurMouseX = _x;
 	m_iCurMouseY = _y;
 }
@@ -218,6 +177,14 @@ void Game::OnMouseWheel(int _x, int _y, int _iWheel)
 }
 
 void Game::OnMouseHWheel(int _x, int _y, int _iWheel)
+{
+}
+
+void Game::OnRawMouseDelta(LONG _lDeltaX, LONG _lDeltaY)
+{
+}
+
+void Game::OnFocusLost()
 {
 }
 
@@ -245,27 +212,59 @@ void Game::Run()
 }
 
 bool Game::Update(ULONGLONG _CurTick)
-{	
-	// Update Scene with 60FPS
-	if (_CurTick - m_PrvUpdateTick < 16)
+{
+	if (m_PrvUpdateTick == 0)
+	{
+		m_PrvUpdateTick = _CurTick;
+		return FALSE;
+	}
+
+	const ULONGLONG deltaMs = _CurTick - m_PrvUpdateTick;
+	m_PrvUpdateTick = _CurTick;
+
+	float deltaSec = static_cast<float>(deltaMs) * 0.001f;
+	if (deltaSec <= 0.0f)
 	{
 		return FALSE;
 	}
-	m_PrvUpdateTick = _CurTick;
-
-	// Update camera
-	if (m_CamOffsetX != 0.0f || m_CamOffsetY != 0.0f || m_CamOffsetZ != 0.0f)
+	if (deltaSec > 0.1f)
 	{
-		m_pRenderer->MoveCamera(m_CamOffsetX, m_CamOffsetY, m_CamOffsetZ);
+		deltaSec = 0.1f;
 	}
-	
+
+	// 카메라 이동 입력 (카메라 로컬 기준)
+	// 요청 반영: W 전진, S 후진, A 오른쪽, D 왼쪽, Q 상승, E 하강
+	float moveX = 0.0f; // right(+)
+	float moveY = 0.0f; // up(+)
+	float moveZ = 0.0f; // forward(+)
+
+	if (m_KeyState['W']) moveZ += 1.0f;
+	if (m_KeyState['S']) moveZ -= 1.0f;
+	if (m_KeyState['A']) moveX -= 1.0f; // A = 왼쪽
+	if (m_KeyState['D']) moveX += 1.0f; // D = 오른쪽쪽
+	if (m_KeyState['Q']) moveY += 1.0f; // 상승
+	if (m_KeyState['E']) moveY -= 1.0f; // 하강
+
+	// 대각선 속도 보정
+	const float lenSq = moveX * moveX + moveY * moveY + moveZ * moveZ;
+	if (lenSq > 0.0f)
+	{
+		const float invLen = 1.0f / sqrtf(lenSq);
+		moveX *= invLen;
+		moveY *= invLen;
+		moveZ *= invLen;
+
+		const float step = m_fMoveSpeed * deltaSec;
+		m_pRenderer->MoveCamera(moveX * step, moveY * step, moveZ * step);
+	}
+
 	// update game objects
 	for (const auto& pair : m_GameObjects)
 	{
 		GameObject* pGameObj = pair.first;
 		pGameObj->Run();
 	}
-	
+
 	// update status text
 	int iTextWidth = 0;
 	int iTextHeight = 0;
@@ -278,10 +277,6 @@ bool Game::Update(ULONGLONG _CurTick)
 		m_pRenderer->WriteTextToBitmap(m_pTextImage, m_TextImageWidth, m_TextImageHeight, m_TextImageWidth * 4, &iTextWidth, &iTextHeight, m_pFontObj, wchTxt, ulTxtLen);
 		m_pRenderer->UpdateTextureWithImage(m_pTextTexTexHandle, m_pTextImage, m_TextImageWidth, m_TextImageHeight);
 		wcscpy_s(m_wchText, wchTxt);
-	}
-	else
-	{
-		int a = 0;
 	}
 	return TRUE;
 }
@@ -317,6 +312,21 @@ void Game::DeleteGameObject_ITL(GameObject* _pGameObj)
 void Game::DeleteAllGameObjects_ITL()
 {
 	m_GameObjects.clear();
+}
+
+void Game::BeginLookMode_ITL()
+{
+	if (m_bLookMode) return;
+	m_bLookMode = true;
+
+	GetCursorPos(&m_ptCursorRestore); // 현재 커서 위치 저장
+	SetCapture(m_hWnd);
+	static_assert(false && "Not implemented");
+}
+
+void Game::EndLookMode_ITL()
+{
+	
 }
 
 bool Game::UpdateWindowSize(ULONG _dwBackBufferWidth, ULONG _dwBackBufferHeight)
@@ -359,4 +369,28 @@ void Game::Cleanup_ITL()
 
 		m_pRenderer.reset();
 	}
+}
+
+GameObject* Game::CreateGameObjectAsBox_ITL()
+{
+	std::unique_ptr<GameObject> pGameObj = std::make_unique<GameObject>();
+	pGameObj->Initialize(this);
+	pGameObj->CreateBoxMeshObject();
+
+	GameObject* pRawPtr = pGameObj.get();
+	m_GameObjects.insert(std::make_pair(pRawPtr, std::move(pGameObj)));
+
+	return pRawPtr;
+}
+
+GameObject* Game::CreateGameObjectAsBottom_ITL()
+{
+	std::unique_ptr<GameObject> pGameObj = std::make_unique<GameObject>();
+	pGameObj->Initialize(this);
+	pGameObj->CreateBottomMeshObject();
+
+	GameObject* pRawPtr = pGameObj.get();
+	m_GameObjects.insert(std::make_pair(pRawPtr, std::move(pGameObj)));
+
+	return pRawPtr;
 }

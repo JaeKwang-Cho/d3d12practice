@@ -13,6 +13,8 @@ public:
 	bool Update(ULONGLONG _CurTick);
 	void OnKeyDown(UINT _nChar, UINT _uiScanCode);
 	void OnKeyUp(UINT _nChar, UINT _uiScanCode);
+
+	// Mouse Event
 	void OnMouseLButtonDown(int _x, int _y, UINT _nFlags);
 	void OnMouseLButtonUp(int _x, int _y, UINT _nFlags);
 	void OnMouseRButtonDown(int _x, int _y, UINT _nFlags);
@@ -22,6 +24,9 @@ public:
 	void OnMouseMove(int _x, int _y, UINT _nFlags);
 	void OnMouseWheel(int _x, int _y, int _iWheel);
 	void OnMouseHWheel(int _x, int _y, int _iWheel);
+	void OnRawMouseDelta(LONG _lDeltaX, LONG _lDeltaY);
+	void OnFocusLost();	
+
 	bool UpdateWindowSize(ULONG _dwBackBufferWidth, ULONG _dwBackBufferHeight);
 
 	D3D12Renderer* INL_GetRenderer() const { return m_pRenderer.get(); }
@@ -35,6 +40,10 @@ private:
 	GameObject* CreateGameObjectAsBottom_ITL();
 	void DeleteGameObject_ITL(GameObject* _pGameObj);
 	void DeleteAllGameObjects_ITL();
+
+	void BeginLookMode_ITL();
+	void EndLookMode_ITL();
+
 	void Cleanup_ITL();
 
 private:
@@ -50,17 +59,24 @@ private:
 
 	bool m_bShiftKeyDown = FALSE;
 
-	float m_CamOffsetX = 0.0f;
-	float m_CamOffsetY = 0.0f;
-	float m_CamOffsetZ = 0.0f;
+	// 이동 파라미터
+	float m_fMoveSpeed = 5.0f;          // unit / sec
+	float m_fMouseSensitivity = 0.01f;  // rad / pixel
+
+	// 키 상태 테이블 (KeyDown/Up 기반)
+	bool m_KeyState[256] = {};
+	// 마우스
+	bool m_bLookMode = false;
+	POINT m_ptCursorRestore = {};
+	LONG m_lMouseAccumX = 0;
+	LONG m_lMouseAccumY = 0;
+	// 마우스 - 튠
+	float m_fMouseSensitivityX = 0.0015f; // rad / mouse count
+	float m_fMoveSpeed = 5.0f;          // unit / sec
+	float m_fSprintMultiplier = 3.f;
+	float m_bInvertPitch = false;
 
 	bool m_bCamRotMode = FALSE;
-	int m_iCurMouseX = 0;
-	int m_iCurMouseY = 0;
-	int m_iPrvMouseX = 0;
-	int m_iPrvMouseY = 0;
-	int m_iMouseX_RButtonPressed = 0;
-	int m_iMouseY_RButtonPressed = 0;
 	bool m_bMouseLButtonDown = FALSE;
 	bool m_bMouseMButtonDown = FALSE;
 	bool m_bMouseRButtonDown = FALSE;

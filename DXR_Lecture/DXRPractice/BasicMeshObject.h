@@ -53,8 +53,8 @@ private:
 	static D3D12PipelineState_ptr m_pPipelineState;
 	static ULONG m_ulInitRefCount;
 	// 모든 MeshObject가 공유하는 Shader
-	static SHADER_HANDLE* m_pVS;
-	static SHADER_HANDLE* m_pPS;
+	static SHADER_HANDLE* m_pVertexShaderHandle;
+	static SHADER_HANDLE* m_pPixelShaderHandle;
 
 
 public:

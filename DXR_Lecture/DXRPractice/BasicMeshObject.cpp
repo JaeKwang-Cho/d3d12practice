@@ -10,8 +10,8 @@
 #include "D3D12Renderer.h"
 #include "RayTracingManager.h"
 
-SHADER_HANDLE* BasicMeshObject::m_pVS = nullptr;
-SHADER_HANDLE* BasicMeshObject::m_pPS = nullptr;
+SHADER_HANDLE* BasicMeshObject::m_pVertexShaderHandle = nullptr;
+SHADER_HANDLE* BasicMeshObject::m_pPixelShaderHandle = nullptr;
 D3D12RootSignature_ptr BasicMeshObject::m_pRootSignature = nullptr;
 D3D12PipelineState_ptr BasicMeshObject::m_pPipelineState = nullptr;
 ULONG BasicMeshObject::m_ulInitRefCount;
@@ -151,7 +151,7 @@ bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _u
 	D3D12ResourceManager* pResourceManager = m_pRenderer->INL_GetResourceManager();
 	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
 
-	D3D12Resource_raw pIndexBuffer = nullptr;
+	D3D12Resource_ptr pIndexBuffer = nullptr;
 	D3D12_INDEX_BUFFER_VIEW IndexBufferView = {};
 
 	if (m_ulTriGroupCount >= m_ulMaxTriGroupCount) {
@@ -165,7 +165,7 @@ bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _u
 	ULONG ulAlignedIndexNum = ulAlignedIndexSize / sizeof(USHORT);
 
 	HRESULT hr = pResourceManager->CreateIndexBuffer(
-		ulAlignedIndexNum, &IndexBufferView, &pIndexBuffer, const_cast<void*>(reinterpret_cast<const void*>(_pIndexList)), sizeof(USHORT) * _ulTriCount * 3);
+		ulAlignedIndexNum, &IndexBufferView, pIndexBuffer.GetAddressOf(), const_cast<void*>(reinterpret_cast<const void*>(_pIndexList)), sizeof(USHORT) * _ulTriCount * 3);
 	if (FAILED(hr)) {
 		OutputDebugStringA("BasicMeshObject::InsertIndexedTriList() - Failed to create index buffer.\n");
 		__debugbreak();
@@ -238,14 +238,14 @@ void BasicMeshObject::CleanupSharedResources()
 		return;
 
 	ULONG ref_count = --m_ulInitRefCount;
-	if (ref_count <= 0) {
-		if (m_pVS) {
-			pShaderManager->ReleaseShader(m_pVS);
-			m_pVS = nullptr;
+	if (ref_count == 0) {
+		if (m_pVertexShaderHandle) {
+			pShaderManager->ReleaseShader(m_pVertexShaderHandle);
+			m_pVertexShaderHandle = nullptr;
 		}
-		if (m_pPS) {
-			pShaderManager->ReleaseShader(m_pPS);
-			m_pPS = nullptr;
+		if (m_pPixelShaderHandle) {
+			pShaderManager->ReleaseShader(m_pPixelShaderHandle);
+			m_pPixelShaderHandle = nullptr;
 		}
 		m_pRootSignature = nullptr;
 		m_pPipelineState = nullptr;
@@ -318,14 +318,14 @@ bool BasicMeshObject::InitPipelineState()
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 
-	m_pVS = pShaderManager->CreateShaderDXC(L"shBasicMesh.hlsl", L"VSMain", L"vs_6_0", 0);
-	if (!m_pVS) {
+	m_pVertexShaderHandle = pShaderManager->CreateShaderDXC(L"shBasicMesh.hlsl", L"VSMain", L"vs_6_0", 0);
+	if (!m_pVertexShaderHandle) {
 		OutputDebugStringA("Failed to create vertex shader.\n");
 		__debugbreak();
 		return false;
 	}
-	m_pPS = pShaderManager->CreateShaderDXC(L"shBasicMesh.hlsl", L"PSMain", L"ps_6_0", 0);
-	if (!m_pPS) {
+	m_pPixelShaderHandle = pShaderManager->CreateShaderDXC(L"shBasicMesh.hlsl", L"PSMain", L"ps_6_0", 0);
+	if (!m_pPixelShaderHandle) {
 		OutputDebugStringA("Failed to create pixel shader.\n");
 		__debugbreak();
 		return false;
@@ -344,8 +344,8 @@ bool BasicMeshObject::InitPipelineState()
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 	psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
 	psoDesc.pRootSignature = m_pRootSignature.Get();
-	psoDesc.VS = CD3DX12_SHADER_BYTECODE(m_pVS->pCodeBuffer, m_pVS->ullCodeSize);
-	psoDesc.PS = CD3DX12_SHADER_BYTECODE(m_pPS->pCodeBuffer, m_pPS->ullCodeSize);
+	psoDesc.VS = CD3DX12_SHADER_BYTECODE(m_pVertexShaderHandle->pCodeBuffer, m_pVertexShaderHandle->ullCodeSize);
+	psoDesc.PS = CD3DX12_SHADER_BYTECODE(m_pPixelShaderHandle->pCodeBuffer, m_pPixelShaderHandle->ullCodeSize);
 	psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);

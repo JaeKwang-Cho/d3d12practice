@@ -12,6 +12,7 @@
 
 #include "BasicMeshObject.h"
 #include "SpriteObject.h"
+#include <algorithm>
 
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath, ULONG _ulMaxBlasCount)
@@ -22,7 +23,8 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 	// DXGI 개체를 생성하는 interface
 	Microsoft::WRL::ComPtr<IDXGIFactory7> pFactory = nullptr;
 	// display subsystem의 스펙을 알아내는 interface
-	Microsoft::WRL::ComPtr<IDXGIAdapter4> pAdaptor = nullptr;
+	Microsoft::WRL::ComPtr<IDXGIAdapter1> pAdaptor1 = nullptr;
+	Microsoft::WRL::ComPtr<IDXGIAdapter4> pAdaptor4 = nullptr;
 
 	DXGI_ADAPTER_DESC3 AdaptorDesc = {};
 
@@ -81,17 +83,17 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 		UINT adaptorIndex = 0;
 		// DXGI가 가진 기능중에 그래픽 카드를 연결하는 기능도 있다.
 		// DXGIFactory에서 어뎁터를 얻어와서
-		IDXGIAdapter1** pTempAdaptor = reinterpret_cast<IDXGIAdapter1**>(pAdaptor.GetAddressOf());
-		while (DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adaptorIndex, pTempAdaptor)) {
-			pAdaptor->GetDesc3(&AdaptorDesc);
-			// 그래픽 카드들을 확인해보면서 피쳐 레벨을 확인하는 것이다.
-			// GPU에다가 D3DDevice를 생성해보고 성공하면 해당 feature level을 가지고 있는 것이다.
-			if (SUCCEEDED(D3D12CreateDevice(pAdaptor.Get(), featureLevels[flIndex], IID_PPV_ARGS(&m_pD3DDevice)))) {
-				goto EXIT;
+		while (DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adaptorIndex, pAdaptor1.GetAddressOf())) {
+			HRESULT hr = pAdaptor1.As(&pAdaptor4);
+			if(SUCCEEDED(hr)) {
+				// 어뎁터의 스펙을 얻는다.
+				pAdaptor4->GetDesc3(&AdaptorDesc);
+				// D3D12Device를 생성한다.
+				hr = D3D12CreateDevice(pAdaptor4.Get(), featureLevels[flIndex], IID_PPV_ARGS(&m_pD3DDevice));
+				if (SUCCEEDED(hr)) {
+					goto EXIT;
+				}
 			}
-			// 형변환을 해서 그런가.. 스마트 포인터로 해제가 안된다.
-			(*pTempAdaptor)->Release();
-			(*pTempAdaptor) = nullptr;
 			adaptorIndex++;
 		}
 	}
@@ -353,7 +355,7 @@ bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
 {
 	if (!(_width * _height))
 		return false;
-	if(m_ulHeight == _width && m_ulHeight == _height)
+	if(m_ulWidth == _width && m_ulHeight == _height)
 		return false;
 
 	DoFence();
@@ -402,6 +404,8 @@ bool D3D12Renderer::UpdateWindowSize(ULONG _width, ULONG _height)
 
 	m_pRayTracingManager->UpdateWindowSize_forRayTracing(m_ulWidth, m_ulHeight);
 
+	UpdateCamera();
+
 	return true;
 }
 
@@ -413,14 +417,17 @@ void D3D12Renderer::SetCameraPos(const float _x, const float _y, const float _z)
 
 void D3D12Renderer::MoveCamera(const float _x, const float _y, const float _z)
 {
-	XMVECTOR CamMoveForward = XMVectorScale(m_vCamDir, _z);
-	XMVECTOR CamMoveRight = XMVectorScale(m_vCamRight, _x);
-	XMVECTOR CamMoveUp = XMVectorScale(m_vCamUp, _y);
+	const XMVECTOR worldUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
-	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveForward);
-	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveRight);
-	m_vCamPos = XMVectorAdd(m_vCamPos, CamMoveUp);
-	m_vCamPos.m128_f32[3] = 1.f;
+	// W/S: 시선 방향, A/D: 카메라 right, Q/E: 월드 상하
+	XMVECTOR camMoveForward = XMVectorScale(m_vCamDir, _z);
+	XMVECTOR camMoveRight = XMVectorScale(m_vCamRight, _x);
+	XMVECTOR camMoveUp = XMVectorScale(worldUp, _y);
+
+	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveForward);
+	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveRight);
+	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveUp);
+	m_vCamPos = XMVectorSetW(m_vCamPos, 1.f);
 
 	UpdateCamera();
 }
@@ -434,11 +441,12 @@ void D3D12Renderer::GetCameraPos(float& _outX, float& _outY, float& _outZ)
 
 void D3D12Renderer::ApplyCameraRot(const float _yaw, const float _pitch, const float _roll)
 {
+	UNREFERENCED_PARAMETER(_roll); // roll 미사용
+
 	m_fCamYaw += _yaw;
 	m_fCamPitch += _pitch;
-	m_fCamRoll += _roll;
 
-	UpdateCamera();
+	UpdateCamera();;
 }
 void D3D12Renderer::EnableDXR(bool _bEnable)
 {
@@ -800,17 +808,16 @@ UINT64 D3D12Renderer::DoFence()
 {
 	m_ui64FenceValue++;
 	m_pCommandQueue->Signal(m_pFence.Get(), m_ui64FenceValue);
+	m_pui64FenceValue[m_ulCurContextIndex] = m_ui64FenceValue;
 	return m_ui64FenceValue;
 }
 
 void D3D12Renderer::WaitForFenceValue(UINT64 _ExpectedFenceValue)
 {
-	const UINT64 ExpectedFenceValue = m_ui64FenceValue;
-
 	// Wait until the previous frame is finished.
-	if (m_pFence->GetCompletedValue() < ExpectedFenceValue)
+	if (m_pFence->GetCompletedValue() < _ExpectedFenceValue)
 	{
-		m_pFence->SetEventOnCompletion(ExpectedFenceValue, m_hFenceEvent);
+		m_pFence->SetEventOnCompletion(_ExpectedFenceValue, m_hFenceEvent);
 		WaitForSingleObject(m_hFenceEvent, INFINITE);
 	}
 }
@@ -830,41 +837,31 @@ void D3D12Renderer::CleanupRenderer()
 	{
 		WaitForFenceValue(m_pui64FenceValue[i]);
 	}
-
-	// ① RayTracingManager 먼저 (내부에서 CommandQueue 등 사용)
-	//m_pRayTracingManager = nullptr;
-	//m_pResourceManager = nullptr;
-	//m_pShaderManager = nullptr;
-
-	// ② Depth Stencil
-	//m_pDepthStencilBuffer = nullptr;
-
-	// ③ RenderTarget, DescriptorHeap
-	//for (UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++)
-		//m_pRenderTargets[i] = nullptr;
-	//m_pRTVHeap = nullptr;
-	//m_pDSVHeap = nullptr;
-
-	// ⑤ SwapChain을 CommandQueue보다 먼저! (SwapChain이 CommandQueue에 AddRef함)
-	//m_pSwapChain = nullptr;
-
-	// ⑥ CommandQueue
-	//m_pCommandQueue = nullptr;
-
-	// ⑦ Device를 QueryInterface 후 Release, 그 다음 Report
-	{
-		Microsoft::WRL::ComPtr<ID3D12DebugDevice> pDebugDevice;
-		m_pD3DDevice->QueryInterface(IID_PPV_ARGS(pDebugDevice.GetAddressOf()));
-		m_pD3DDevice.Reset(); // ← Device ComPtr 먼저 해제
-
-		if (pDebugDevice)
-		{
-			// 이 시점에 pDebugDevice만 Device를 물고 있어야 정상
-			pDebugDevice->ReportLiveDeviceObjects(
-				static_cast<D3D12_RLDO_FLAGS>(D3D12_RLDO_DETAIL | D3D12_RLDO_IGNORE_INTERNAL)
-			);
-		}
+	
+	m_pRayTracingManager.reset();
+	m_pTextureManager.reset();
+	m_pFontManager.reset();
+	for(UINT i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		m_ppConstantBufferManager[i].reset();
+		m_ppDescriptorPool[i].reset();
 	}
+	m_pSingleDescriptorAllocator.reset();
+	m_pDepthStencilBuffer.Reset();
+	for(UINT i = 0; i < SWAP_CHAIN_FRAME_COUNT; i++) {
+		m_pRenderTargets[i].Reset();
+	}
+	m_pRTVHeap.Reset();
+	m_pDSVHeap.Reset();
+	m_pSRVHeap.Reset();
+	for(UINT i = 0; i < MAX_PENDING_FRAME_COUNT; i++) {
+		m_ppCommandList[i].Reset();
+		m_ppCommandAllocator[i].Reset();
+	}
+	m_pSwapChain.Reset();
+	m_pFence.Reset();
+	CleanUpFence();
+	m_pCommandQueue.Reset();
+	m_pD3DDevice.Reset();
 }
 
 void D3D12Renderer::InitCamera()
@@ -872,33 +869,48 @@ void D3D12Renderer::InitCamera()
 	m_fCamPitch = 0.f;
 	m_fCamRoll = 0.f;
 	m_fCamYaw = 0.f;
+
+	m_vCamPos = XMVectorSetW(m_vCamPos, 1.f);
+	UpdateCamera();
 }
 
 void D3D12Renderer::UpdateCamera()
 {
-	XMVECTOR xAxis = XMVectorSet(1.f, 0.f, 0.f, 0.f);
-	XMVECTOR yAxis = XMVectorSet(0.f, 1.f, 0.f, 0.f);
-	XMVECTOR zAxis = XMVectorSet(0.f, 0.f, 1.f, 0.f);
+	const XMVECTOR worldUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
-	XMMATRIX matRotPitch = XMMatrixRotationX(m_fCamPitch);
-	XMMATRIX matRotYaw = XMMatrixRotationY(m_fCamYaw);
+	// pitch 제한
+	const float pitchLimit = XM_PIDIV2 - 0.001f;
+	m_fCamPitch = std::clamp(m_fCamPitch, -pitchLimit, pitchLimit);
 
-	XMMATRIX matCamRot = XMMatrixMultiply(matRotYaw, matRotPitch);
+	// LH (+Z forward)
+	const float cp = cosf(m_fCamPitch);
+	const float sp = sinf(m_fCamPitch);
+	const float cy = cosf(m_fCamYaw);
+	const float sy = sinf(m_fCamYaw);
 
-	m_vCamDir = XMVector3Transform(zAxis, matCamRot);
-	m_vCamRight = XMVector3Cross(yAxis, m_vCamDir);
-	m_vCamUp = XMVector3Cross(m_vCamDir, m_vCamRight);
+	m_vCamDir = XMVectorSet(sy * cp, sp, cy * cp, 0.f);
+	m_vCamDir = XMVector3Normalize(m_vCamDir);
 
-	// view matrix
-	m_matView = XMMatrixLookAtLH(m_vCamPos, m_vCamPos + m_vCamDir, m_vCamUp);
+	// world up 기준 right
+	m_vCamRight = XMVector3Cross(worldUp, m_vCamDir);
+	if (XMVectorGetX(XMVector3LengthSq(m_vCamRight)) < 1e-8f)
+	{
+		m_vCamRight = XMVectorSet(1.f, 0.f, 0.f, 0.f);
+	}
+	else
+	{
+		m_vCamRight = XMVector3Normalize(m_vCamRight);
+	}
 
-	// Fov (Radian)
-	float fovY = XM_PIDIV4; // 90도
+	// up 고정
+	m_vCamUp = worldUp;
 
-	// proj matrix
-	float fAspectRatio = static_cast<float>(m_ulWidth) / static_cast<float>(m_ulHeight);
-	float fNearZ = 0.1f;
-	float fFarZ = 1000.f;
+	m_matView = XMMatrixLookToLH(m_vCamPos, m_vCamDir, m_vCamUp);
+
+	const float fovY = XM_PIDIV4;
+	const float fAspectRatio = static_cast<float>(m_ulWidth) / static_cast<float>(m_ulHeight);
+	const float fNearZ = 0.1f;
+	const float fFarZ = 1000.f;
 	m_matProj = XMMatrixPerspectiveFovLH(fovY, fAspectRatio, fNearZ, fFarZ);
 
 	XMVECTOR determinant;

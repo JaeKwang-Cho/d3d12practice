@@ -637,7 +637,7 @@ void RayTracingManager::CleanupOutputDepthBuffer()
 
 std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _pVertexBuffer, UINT _VertexSize, ULONG _ulVertexCount, const BLAS_BUILD_TRIGROUP_INFO* _pTriGroupInfoList, ULONG _ulTriGroupCount, bool _bAllowUpdate)
 {
-	D3D12Resource_raw pBLASResource = nullptr; // BLAS_INSTANCE에 들어갈 BLAS 리소스
+	D3D12Resource_ptr pBLASResource = nullptr; // BLAS_INSTANCE에 들어갈 BLAS 리소스
 
 	// 일단은 VB 하나에 IB 여러개 (물론 나중에 구조를 바꿀 수 있다.)
 	if (_ulTriGroupCount > MAX_TRIGROUP_COUNT_PER_BLAS) {
@@ -738,7 +738,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 
 	D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
 	// BLAS로 사용할 리소스를 할당한다. UAV 버퍼로 BLAS 버퍼의 크기를 얻어서 GPU 리소스를 할당한다. BLAS 버퍼는 최종 BLAS가 저장될 버퍼이다.
-	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, &pBLASResource, initialResourceState, L"BottomLevelAccelerationStructure");
+	hr = CreateUAVBuffer(m_pD3DDevice, info.ResultDataMaxSizeInBytes, pBLASResource.GetAddressOf(), initialResourceState, L"BottomLevelAccelerationStructure");
 	if (FAILED(hr)) {
 		__debugbreak();
 		return nullptr;
@@ -764,7 +764,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 	m_pCommandList->BuildRaytracingAccelerationStructure(&blasDesc, 0, nullptr);
 	// RayTracing을 하기 전에, UAV Barrier를 넣어준다. (BLAS 버퍼에 대한 UAV Barrier)
 	// (지금은 뒤에 fence가 있어서 필요없지만, 나중에 성능을 올리기 위해 구조를 바꾼다면 필요하다.)
-	auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(pBLASResource);
+	auto uavBarrier = CD3DX12_RESOURCE_BARRIER::UAV(pBLASResource.Get());
 	m_pCommandList->ResourceBarrier(1, &uavBarrier);
 
 	m_pCommandList->Close();
@@ -1002,6 +1002,19 @@ void RayTracingManager::UpdateHitGroupShaderTable(ULONG _ulShaderRecordCount)
 void RayTracingManager::CleanupRayTracingManager()
 {
 	WaitForFenceValue_forRayTracing();
+
+	CleanupPendingFreeBlasInstances();
+
+	for(auto& pInstance : m_arrBLASInstance)
+	{
+		if (pInstance && pInstance->ulID != static_cast<ULONG>(-1))
+		{
+			m_pIndexCreator->Free(pInstance->ulID);
+			pInstance->ulID = static_cast<ULONG>(-1);
+		}
+	}
+	m_arrBLASInstance.clear();
+	m_ulCurrBlasCount = 0;
 
 	ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
 	if(m_pRayShaderHandle)

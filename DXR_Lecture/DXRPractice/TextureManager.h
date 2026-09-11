@@ -20,7 +20,7 @@ private:
 	D3D12Renderer* m_pRenderer;
 	D3D12ResourceManager* m_pResourceManager;
 
-	std::map<std::wstring, std::unique_ptr<TEXTURE_HANDLE>> m_TextureHashTable;
+	std::map<std::wstring, TEXTURE_HANDLE*> m_TextureHashTable;
 	std::map<TEXTURE_HANDLE*, std::wstring> m_TextureReverseHashTable;
 	std::map<TEXTURE_HANDLE*, std::unique_ptr<TEXTURE_HANDLE>> m_TextureHashSet;
 

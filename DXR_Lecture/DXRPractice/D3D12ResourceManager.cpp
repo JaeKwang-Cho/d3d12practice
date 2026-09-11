@@ -31,7 +31,7 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 	D3D12_VERTEX_BUFFER_VIEW vertexBufferView = {};
 	// 업로드 버퍼를 이용해서, 기본 버퍼로 데이터를 전달한다.
 	D3D12Resource_raw pVertexBuffer = nullptr;
-	D3D12Resource_raw pUploadBuffer = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 	UINT vertexBufferSize = _sizePerVertex * _dwVertexNum;
 
 	D3D12_HEAP_PROPERTIES heapProps_Default = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT);
@@ -92,7 +92,7 @@ HRESULT D3D12ResourceManager::CreateVertexBuffer(UINT _sizePerVertex, ULONG _dwV
 		D3D12_RESOURCE_BARRIER vbRB_DEST_BUFF = CD3DX12_RESOURCE_BARRIER::Transition(pVertexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 
 		m_pCommandList->ResourceBarrier(1, &vbRB_COMM_DEST);
-		m_pCommandList->CopyBufferRegion(pVertexBuffer, 0, pUploadBuffer, 0, vertexBufferSize);
+		m_pCommandList->CopyBufferRegion(pVertexBuffer, 0, pUploadBuffer.Get(), 0, vertexBufferSize);
 		m_pCommandList->ResourceBarrier(1, &vbRB_DEST_BUFF);
 
 		m_pCommandList->Close();
@@ -121,7 +121,7 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 {
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
 	D3D12Resource_raw pIndexBuffer = nullptr;
-	D3D12Resource_raw pUploadBuffer = nullptr;
+	D3D12Resource_ptr pUploadBuffer = nullptr;
 	UINT indexBufferSize = _indexTypeSize * _dwIndexNum;
 
 	// Index도 upload heap buffer를 이용해서 default heap buffer에 데이터를 올린다.
@@ -180,7 +180,7 @@ HRESULT D3D12ResourceManager::CreateIndexBuffer(DWORD _dwIndexNum, D3D12_INDEX_B
 		D3D12_RESOURCE_BARRIER ibRB_DEST_INDEX = CD3DX12_RESOURCE_BARRIER::Transition(pIndexBuffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 
 		m_pCommandList->ResourceBarrier(1, &ibRB_COMM_DEST);
-		m_pCommandList->CopyBufferRegion(pIndexBuffer, 0, pUploadBuffer, 0, indexBufferSize);
+		m_pCommandList->CopyBufferRegion(pIndexBuffer, 0, pUploadBuffer.Get(), 0, indexBufferSize);
 		m_pCommandList->ResourceBarrier(1, &ibRB_DEST_INDEX);
 
 		m_pCommandList->Close();

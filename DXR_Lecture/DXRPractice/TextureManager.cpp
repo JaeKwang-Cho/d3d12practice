@@ -31,10 +31,10 @@ TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileN
 	TEXTURE_HANDLE* pTexHandle = nullptr;
 
 	std::wstring strFileName(_wchFileName);
-	std::map<std::wstring, std::unique_ptr<TEXTURE_HANDLE>>::iterator iter =  m_TextureHashTable.find(strFileName);
+	std::map<std::wstring, TEXTURE_HANDLE*>::iterator iter =  m_TextureHashTable.find(strFileName);
 	if (iter != m_TextureHashTable.end()) {
 		iter->second->ulRefCount++;
-		return iter->second.get();
+		return iter->second;
 	}
 
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
@@ -66,10 +66,10 @@ TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileN
 	pTexHandle->bFromFile = true;
 	pTexHandle->srvCpuHandle = srv;
 
-	m_TextureReverseHashTable.insert(std::make_pair(pTexHandle, strFileName));
-	m_TextureHashTable.insert(std::make_pair(strFileName, std::move(pTexHandle)));
+	m_TextureReverseHashTable.emplace(std::make_pair(pTexHandle, strFileName));
+	m_TextureHashTable.emplace(std::make_pair(strFileName, pTexHandle));
 
-	return m_TextureHashTable.find(strFileName)->second.get();
+	return pTexHandle;
 }
 
 TEXTURE_HANDLE* TextureManager::CreateDynamicTexture_ITL(UINT _TexWidth, UINT _TexHeight)
@@ -157,26 +157,30 @@ TEXTURE_HANDLE* TextureManager::CreateImmutableTexture_ITL(UINT _TexWidth, UINT 
 
 void TextureManager::DeleteTexture_ITL(TEXTURE_HANDLE* _pTexHandle)
 {
-	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
-	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
-
-	if (_pTexHandle->ulRefCount <= 0) {
+	if (!_pTexHandle) {
+		return;
+	}
+	if (0 == _pTexHandle->ulRefCount) {
 		__debugbreak();
 		return;
 	}
-
-	ULONG ref_Count = --_pTexHandle->ulRefCount;
-	if (ref_Count <= 0) {
-		std::map<TEXTURE_HANDLE*, std::wstring>::iterator iter =  m_TextureReverseHashTable.find(_pTexHandle);
-		if(iter != m_TextureReverseHashTable.end()) {
-			std::wstring strFileName = iter->second;
-			m_TextureReverseHashTable.erase(iter);
-			std::map<std::wstring, std::unique_ptr<TEXTURE_HANDLE>>::iterator iter2 = m_TextureHashTable.find(strFileName);
-			if(iter2 != m_TextureHashTable.end()) {
-				m_TextureHashTable.erase(iter2);
-			}
-		}
+	if (--_pTexHandle->ulRefCount > 0) {
+		return;
 	}
+
+	SingleDescriptorAllocator* pSingleDescriptorAllocator = m_pRenderer->INL_GetSingleDescriptorAllocator();
+	if (pSingleDescriptorAllocator && _pTexHandle->srvCpuHandle.ptr) {
+		pSingleDescriptorAllocator->FreeDescriptorHandle(_pTexHandle->srvCpuHandle);
+		_pTexHandle->srvCpuHandle.ptr = 0;
+	}
+
+	auto iter = m_TextureReverseHashTable.find(_pTexHandle);
+	if (iter != m_TextureReverseHashTable.end()) {
+		m_TextureHashTable.erase(iter->second);
+		m_TextureReverseHashTable.erase(iter);
+	}
+
+	m_TextureHashSet.erase(_pTexHandle);
 } 
 
 TEXTURE_HANDLE* TextureManager::AllocTextureHandle_ITL()

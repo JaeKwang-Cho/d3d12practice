@@ -112,7 +112,7 @@ private:
 	std::unique_ptr<FontManager> m_pFontManager = nullptr;
 	std::unique_ptr<TextureManager> m_pTextureManager = nullptr;
 
-	std::unique_ptr< SingleDescriptorAllocator> m_pSingleDescriptorAllocator = nullptr;
+	std::unique_ptr<SingleDescriptorAllocator> m_pSingleDescriptorAllocator = nullptr;
 
 	D3D_FEATURE_LEVEL m_featureLevel = D3D_FEATURE_LEVEL_11_0;
 	DXGI_ADAPTER_DESC3 m_adapterDesc = {};

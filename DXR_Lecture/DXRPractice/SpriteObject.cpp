@@ -180,6 +180,17 @@ void SpriteObject::CleanUpSharedResources()
 	DWORD refCount = --m_ulInitRefCount;
 	// 아직 참조하는 Object가 있다면 삭제하지 않기
 	if (!refCount) {
+		ShaderManager* pShaderManager = m_pRenderer->INL_GetShaderManager();
+
+		if (m_pVertexShaderHandle) {
+			pShaderManager->ReleaseShader(m_pVertexShaderHandle);
+			m_pVertexShaderHandle = nullptr;
+		}
+		if(m_pPixelShaderHandle) {
+			pShaderManager->ReleaseShader(m_pPixelShaderHandle);
+			m_pPixelShaderHandle = nullptr;
+		}
+
 		// 얘네는 data section에 있는 애들이라 직접 해제를 해줘야 한다.
 		m_pRootSignature = nullptr;
 		m_pPipelineState = nullptr;

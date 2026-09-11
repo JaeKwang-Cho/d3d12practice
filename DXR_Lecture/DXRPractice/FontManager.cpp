@@ -55,17 +55,19 @@ FONT_HANDLE* FontManager::CreateFontObject_ITL(const WCHAR* _wchFontFamilyName, 
     if (pTextFormat) {
 		hr = pTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         if (FAILED(hr)) {
+            delete pFontHandle;
             __debugbreak();
             return nullptr;
 		}
         hr = pTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
         if (FAILED(hr)) {
+            delete pFontHandle;
             __debugbreak();
             return nullptr;
         }
     }
 
-	pFontHandle->pTextFormat = pTextFormat.Detach();
+	pFontHandle->pTextFormat = pTextFormat;
 
 	return pFontHandle;
 }
@@ -80,7 +82,7 @@ bool FontManager::WriteTextToBitmap_ITL(BYTE* _pDestImage, UINT _DestWidth, UINT
     int iTextWidth = 0;
     int iTextHeight = 0;
 
-	bool bResult = CreateBitmapFromText(&iTextWidth, &iTextHeight, _pFontHandle->pTextFormat, _wchString, _dwLen);
+	bool bResult = CreateBitmapFromText(&iTextWidth, &iTextHeight, _pFontHandle->pTextFormat.Get(), _wchString, _dwLen);
     if (bResult) {
         //clamp
         if(iTextHeight > static_cast<int>(_DestHeight)) {
@@ -322,16 +324,25 @@ bool FontManager::CreateBitmapFromText(int* _piOutWidth, int* _piOutHeight, IDWr
 
 void FontManager::CleanupDWrite()
 {
+	m_pDWFactory.Reset();
+    m_pFontCollection.Reset();
 }
 
 void FontManager::CleanupD2D()
-{		
+{
+    m_pD2DDeviceContext->SetTarget(nullptr);
+    m_pWhiteBrush.Reset();
+    m_pD2DTargetBitmapReadable.Reset();
+    m_pD2DTargetBitmap.Reset();
 }
 
 void FontManager::Cleanup()
 {
-    CleanupDWrite();
     CleanupD2D();
+    CleanupDWrite();
+
+	m_pD2DDeviceContext.Reset();
+	m_pD2DDevice.Reset();
 }
 
 FontManager::FontManager():

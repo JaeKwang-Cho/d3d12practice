@@ -24,14 +24,19 @@ extern "C" { __declspec(dllexport) extern const char8_t* D3D12SDKPath = u8".\\D3
 #endif
 
 // 윈도우 전역 변수:
-HINSTANCE g_hInst;
-HWND g_hWnd;
-WCHAR g_szTitle[] = L"DXR Practices";
-WCHAR g_szWindowClass[] = L"Main Window";
-int g_ClientWidth = 1280;
-int g_ClientHeight = 720;
+static HINSTANCE g_hInst;
+static HWND g_hWnd;
+static WCHAR g_szTitle[] = L"DXR Practices";
+static WCHAR g_szWindowClass[] = L"Main Window";
+static int g_ClientWidth = 1280;
+static int g_ClientHeight = 720;
 
-Game* g_pGame = nullptr;
+static Game* g_pGame = nullptr;
+
+// for raw mouse input
+static bool g_bHasPrevAbs = false;
+static LONG g_lPrevAbsX = 0;
+static LONG g_lPrevAbsY = 0;
 
 // 윈도우 프로시져
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -56,6 +61,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
         __debugbreak();
         return FALSE;
     }
+
+    // Raw Input : 마우스 등록
+	ShowWindow(g_hWnd, nCmdShow | SW_SHOW);
+	UpdateWindow(g_hWnd);
+
+    RAWINPUTDEVICE rid = {};
+	rid.usUsagePage = 0x01; // HID_USAGE_PAGE_GENERIC
+	rid.usUsage = 0x02;     // HID_USAGE_GENERIC_MOUSE
+    rid.dwFlags = 0;        // 0 = 포그라운드일 때만 수신 (RIDEV_INPUTSINK 면 백그라운드도)
+	rid.hwndTarget = g_hWnd;
+
+    if (!RegisterRawInputDevices(&rid, 1, sizeof(rid)))
+    {
+		OutputDebugString(L"RegisterRawInputDevices failed!\n");
+        __debugbreak();
+        return FALSE;
+	}
 
     // COM 초기화
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -102,7 +124,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     IDXGIDebug1* pDebug = nullptr;
     if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&pDebug))))
     {
-        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_SUMMARY);
+        pDebug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_DETAIL);
         pDebug->Release();
     }
 
@@ -132,9 +154,43 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
     }
     break;
+    case WM_INPUT:
+    {
+        RAWINPUT rawInput = {};
+        UINT cbSize = sizeof(rawInput);
+
+        bool bResult = GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &rawInput, &cbSize, sizeof(RAWINPUTHEADER)) != static_cast<UINT>(-1)
+            && rawInput.header.dwType == RIM_TYPEMOUSE
+            && g_pGame;
+        if (!bResult)
+            break;
+
+        const RAWMOUSE& mouse = rawInput.data.mouse;
+        LONG dx = 0;
+        LONG dy = 0;
+
+        if(mouse.usFlags & MOUSE_MOVE_ABSOLUTE)
+        {
+			// No - Implementation for absolute mouse movement in this example
+            __debugbreak();
+            break;
+        }
+        else
+        {
+            // 일반 마우스
+            dx = mouse.lLastX;
+            dy = mouse.lLastY;
+		}
+    }
+    break;
+    case WM_KILLFOCUS:
+        if (g_pGame) g_pGame->OnFocusLost();
+        break;
+    case WM_ACTIVATE:
+        if(LOWORD(wParam) == WA_INACTIVE && g_pGame)
+			g_pGame->OnFocusLost();
+		break;
     case WM_MOUSEMOVE:
-        if (g_pGame)
-            g_pGame->OnMouseMove(iMouseX, iMouseY, (UINT)wParam);
         break;
     case WM_LBUTTONDOWN:
         if (g_pGame)

@@ -79,7 +79,7 @@ struct TEXTURE_HANDLE
 
 struct FONT_HANDLE
 {
-	IDWriteTextFormat* pTextFormat;
+	ComPtr<IDWriteTextFormat> pTextFormat;
 	float fFontSize;
 	WCHAR wchFontFamilyName[512];
 };
@@ -122,7 +122,7 @@ struct BLAS_BUILD_TRIGROUP_INFO
 struct BLAS_INSTANCE
 {
 	void* pSrcMeshObj; // 메쉬
-	ID3D12Resource* pBLAS; // BLAS는 ID3D12Resource로 만들어진다. (TLAS도 마찬가지)
+	D3D12Resource_ptr pBLAS; // BLAS는 ID3D12Resource로 만들어진다. (TLAS도 마찬가지)
 	XMMATRIX matTransform; // TLAS에서 instance desc를 만들 때, BLAS에 적용할 월드 변환 행렬.
 
 	ULONG ulID; // (지금은 쓰이지 않지만) 오브젝트 별로 머테리얼을 다르게 적용한다던가, 특정 프로퍼티를 주고 싶을 때 사용한다.
@@ -135,5 +135,5 @@ struct BLAS_INSTANCE
 	D3D12_GPU_DESCRIPTOR_HANDLE srvGpuHandle; // BLAS에 대한 SRV가 바인딩된 GPU descriptor handle. Local Root Signature에 전달된다.
 	std::vector<ROOT_ARG> rootArgs; // BLAS가 참조하는 geometry description이 여러 개일 수 있다. (예시에서는 하나의 geometry description만 있지만, 일반적으로는 여러 개가 있을 수 있다.) geometry description마다 root argument가 필요하다. 그래서 배열로 만들어준다. (예시에서는 1개지만, 일반적으로는 여러 개가 있을 수 있다.)
 
-	virtual ~BLAS_INSTANCE() { if (pBLAS) pBLAS->Release(); }
+	virtual ~BLAS_INSTANCE() = default;
 };
