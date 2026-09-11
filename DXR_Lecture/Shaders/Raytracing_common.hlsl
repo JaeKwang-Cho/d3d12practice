@@ -17,7 +17,7 @@ SamplerState samplerMirror : register(s3);
 ConstantBuffer<CONSTANT_BUFFER_RT_TRIGROUP> l_rayGeomCB : register(b0, space1);
 StructuredBuffer<BasicVertex> l_Vertices : register(t0, space1); // read-only uav
 ByteAddressBuffer l_Indices : register(t1, space1); // read-only binary
-Texture2D<float> l_texDiffuse : register(t2, space1);
+Texture2D<float4> l_texDiffuse : register(t2, space1);
 
 cbuffer CONSTANT_BUFFER_RAY_TRACING : register(b0)
 {
@@ -55,7 +55,7 @@ float2 HitAttribute(float2 _vertexAttribute[3], BuiltInTriangleIntersectionAttri
 // Retrieve the world space
 float3 HitWorldPosition()
 {
-    return WorldRayOrigin() + RayTCurrent() + WorldRayDirection();
+    return WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
     // WorldRayOrigin: 레이의 시작점(월드 좌표계)
     // RayTCurrent: 현재 레이의 길이
     // WorldRayDirection: 레이의 방향(월드 좌표계)
