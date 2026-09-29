@@ -330,7 +330,11 @@ void FontManager::CleanupDWrite()
 
 void FontManager::CleanupD2D()
 {
-    m_pD2DDeviceContext->SetTarget(nullptr);
+
+    if(m_pD2DDeviceContext != nullptr)
+    {
+        m_pD2DDeviceContext->SetTarget(nullptr);
+    }   
     m_pWhiteBrush.Reset();
     m_pD2DTargetBitmapReadable.Reset();
     m_pD2DTargetBitmap.Reset();

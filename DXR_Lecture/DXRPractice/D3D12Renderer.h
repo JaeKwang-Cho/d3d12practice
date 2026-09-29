@@ -31,7 +31,7 @@ public:
 	bool UpdateWindowSize(ULONG _width, ULONG _Height);
 
 	void SetCameraPos(const float _x, const float _y, const float _z);
-	void MoveCamera(const float _x, const float _y, const float _z);
+	void MoveCamera(const float _forward, const float _right, const float _up);
 	void GetCameraPos(float& _outX, float& _outY, float& _outZ);
 	void ApplyCameraRot(const float _yaw, const float _pitch, const float _roll);
 

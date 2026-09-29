@@ -59,10 +59,6 @@ private:
 
 	bool m_bShiftKeyDown = FALSE;
 
-	// 이동 파라미터
-	float m_fMoveSpeed = 5.0f;          // unit / sec
-	float m_fMouseSensitivity = 0.01f;  // rad / pixel
-
 	// 키 상태 테이블 (KeyDown/Up 기반)
 	bool m_KeyState[256] = {};
 	// 마우스
@@ -71,7 +67,7 @@ private:
 	LONG m_lMouseAccumX = 0;
 	LONG m_lMouseAccumY = 0;
 	// 마우스 - 튠
-	float m_fMouseSensitivityX = 0.0015f; // rad / mouse count
+	float m_fMouseSensitivity = 0.0015f; // rad / mouse count
 	float m_fMoveSpeed = 5.0f;          // unit / sec
 	float m_fSprintMultiplier = 3.f;
 	float m_bInvertPitch = false;

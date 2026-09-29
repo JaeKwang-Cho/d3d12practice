@@ -309,7 +309,7 @@ UINT64 RayTracingManager::DoFence_forRayTracing()
 void RayTracingManager::WaitForFenceValue_forRayTracing()
 {
 	const UINT64 ExpectedFenceValue = m_ui64FenceValue;
-	if(m_pFence->GetCompletedValue() < ExpectedFenceValue)
+	if(m_pFence != nullptr && m_pFence->GetCompletedValue() < ExpectedFenceValue)
 	{
 		m_pFence->SetEventOnCompletion(ExpectedFenceValue, m_hFenceEvent);
 		WaitForSingleObject(m_hFenceEvent, INFINITE);

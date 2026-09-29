@@ -34,9 +34,9 @@ static int g_ClientHeight = 720;
 static Game* g_pGame = nullptr;
 
 // for raw mouse input
-static bool g_bHasPrevAbs = false;
-static LONG g_lPrevAbsX = 0;
-static LONG g_lPrevAbsY = 0;
+bool g_bHasPrevAbs = false;
+LONG g_lPrevAbsX = 0;
+LONG g_lPrevAbsY = 0;
 
 // 윈도우 프로시져
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -180,6 +180,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // 일반 마우스
             dx = mouse.lLastX;
             dy = mouse.lLastY;
+		}
+
+        if(dx != 0 || dy != 0)
+        {
+            g_pGame->OnRawMouseDelta(dx, dy);
 		}
     }
     break;

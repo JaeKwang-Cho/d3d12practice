@@ -55,7 +55,6 @@ TEXTURE_HANDLE* TextureManager::CreateTextureFromFile_ITL(const WCHAR* _wchFileN
 	srvDesc.Texture2D.MipLevels = desc.MipLevels;
 
 	if (!pSingleDescriptorAllocator->AllocDescriptorHandle(&srv)) {
-		pTexResource->Release();
 		pTexResource = nullptr;
 	}
 
@@ -106,10 +105,7 @@ TEXTURE_HANDLE* TextureManager::CreateDynamicTexture_ITL(UINT _TexWidth, UINT _T
 	}
 	else
 	{
-		pTexResource->Release();
 		pTexResource = nullptr;
-
-		pUploadBuffer->Release();
 		pUploadBuffer = nullptr;
 	}
 
@@ -148,7 +144,6 @@ TEXTURE_HANDLE* TextureManager::CreateImmutableTexture_ITL(UINT _TexWidth, UINT 
 	}
 	else
 	{
-		pTexResource->Release();
 		pTexResource = nullptr;
 	}
 

@@ -14,6 +14,7 @@
 #include "SpriteObject.h"
 #include <algorithm>
 
+static const float CAM_PITCH_LIMIT = XMConvertToRadians(89.0f);
 
 bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnableGBV, bool _bDebugShader, const WCHAR* _wchSahderPath, ULONG _ulMaxBlasCount)
 {
@@ -83,7 +84,7 @@ bool D3D12Renderer::Initialize(HWND _hWnd, bool _bEnableDebugLayer, bool _bEnabl
 		UINT adaptorIndex = 0;
 		// DXGI가 가진 기능중에 그래픽 카드를 연결하는 기능도 있다.
 		// DXGIFactory에서 어뎁터를 얻어와서
-		while (DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adaptorIndex, pAdaptor1.GetAddressOf())) {
+		while (DXGI_ERROR_NOT_FOUND != pFactory->EnumAdapters1(adaptorIndex, &pAdaptor1)) {
 			HRESULT hr = pAdaptor1.As(&pAdaptor4);
 			if(SUCCEEDED(hr)) {
 				// 어뎁터의 스펙을 얻는다.
@@ -415,19 +416,14 @@ void D3D12Renderer::SetCameraPos(const float _x, const float _y, const float _z)
 	UpdateCamera();
 }
 
-void D3D12Renderer::MoveCamera(const float _x, const float _y, const float _z)
+void D3D12Renderer::MoveCamera(const float _forward, const float _right, const float _up)
 {
 	const XMVECTOR worldUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
 	// W/S: 시선 방향, A/D: 카메라 right, Q/E: 월드 상하
-	XMVECTOR camMoveForward = XMVectorScale(m_vCamDir, _z);
-	XMVECTOR camMoveRight = XMVectorScale(m_vCamRight, _x);
-	XMVECTOR camMoveUp = XMVectorScale(worldUp, _y);
-
-	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveForward);
-	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveRight);
-	m_vCamPos = XMVectorAdd(m_vCamPos, camMoveUp);
-	m_vCamPos = XMVectorSetW(m_vCamPos, 1.f);
+	m_vCamPos = XMVectorAdd(m_vCamPos, XMVectorScale(m_vCamDir, _forward));
+	m_vCamPos = XMVectorAdd(m_vCamPos, XMVectorScale(m_vCamRight, _right));
+	m_vCamPos = XMVectorAdd(m_vCamPos, XMVectorScale(worldUp, _up));
 
 	UpdateCamera();
 }
@@ -441,12 +437,12 @@ void D3D12Renderer::GetCameraPos(float& _outX, float& _outY, float& _outZ)
 
 void D3D12Renderer::ApplyCameraRot(const float _yaw, const float _pitch, const float _roll)
 {
-	UNREFERENCED_PARAMETER(_roll); // roll 미사용
+	UNREFERENCED_PARAMETER(_roll);
 
-	m_fCamYaw += _yaw;
-	m_fCamPitch += _pitch;
+	m_fCamYaw = XMScalarModAngle(m_fCamYaw + _yaw);
+	m_fCamPitch = std::clamp(m_fCamPitch + _pitch, -CAM_PITCH_LIMIT, CAM_PITCH_LIMIT);
 
-	UpdateCamera();;
+	UpdateCamera();
 }
 void D3D12Renderer::EnableDXR(bool _bEnable)
 {
@@ -868,9 +864,12 @@ void D3D12Renderer::InitCamera()
 {
 	m_fCamPitch = 0.f;
 	m_fCamRoll = 0.f;
-	m_fCamYaw = 0.f;
 
-	m_vCamPos = XMVectorSetW(m_vCamPos, 1.f);
+	m_vCamDir = { 0.f, 0.f, 1.f, 0.f };
+	m_vCamUp = { 0.f, 1.f, 0.f, 0.f };
+	m_vCamRight = { 1.f, 0.f, 0.f, 0.f };
+
+	m_vCamPos = XMVectorSet(0.f, 2.f, -15.f, 1.f);
 	UpdateCamera();
 }
 
@@ -878,44 +877,21 @@ void D3D12Renderer::UpdateCamera()
 {
 	const XMVECTOR worldUp = XMVectorSet(0.f, 1.f, 0.f, 0.f);
 
-	// pitch 제한
-	const float pitchLimit = XM_PIDIV2 - 0.001f;
-	m_fCamPitch = std::clamp(m_fCamPitch, -pitchLimit, pitchLimit);
+	XMVECTOR Quat_Picth = XMQuaternionRotationAxis(XMVectorSet(1.f, 0.f, 0.f, 0.f), m_fCamPitch);
+	XMVECTOR Quat_Yaw = XMQuaternionRotationAxis(worldUp, -m_fCamYaw);
+	// Camera World Up은 항상 (0, 1, 0)으로 CamDir 계산 순서는 관계없는게 맞나?
 
-	// LH (+Z forward)
-	const float cp = cosf(m_fCamPitch);
-	const float sp = sinf(m_fCamPitch);
-	const float cy = cosf(m_fCamYaw);
-	const float sy = sinf(m_fCamYaw);
+	m_vCamDir = XMVector3Rotate(XMVector3Rotate(XMVectorSet(0.f, 0.f, 1.f, 0.f), Quat_Picth), Quat_Yaw);
+	m_vCamRight = XMVector3Rotate(XMVectorSet(1.f, 0.f, 0.f, 0.f), Quat_Yaw);   // 항상 수평
+	m_vCamUp = XMVector3Cross(m_vCamDir, m_vCamRight);
 
-	m_vCamDir = XMVectorSet(sy * cp, sp, cy * cp, 0.f);
-	m_vCamDir = XMVector3Normalize(m_vCamDir);
+	m_matView = XMMatrixLookToLH(m_vCamPos, m_vCamDir, worldUp);
 
-	// world up 기준 right
-	m_vCamRight = XMVector3Cross(worldUp, m_vCamDir);
-	if (XMVectorGetX(XMVector3LengthSq(m_vCamRight)) < 1e-8f)
-	{
-		m_vCamRight = XMVectorSet(1.f, 0.f, 0.f, 0.f);
-	}
-	else
-	{
-		m_vCamRight = XMVector3Normalize(m_vCamRight);
-	}
-
-	// up 고정
-	m_vCamUp = worldUp;
-
-	m_matView = XMMatrixLookToLH(m_vCamPos, m_vCamDir, m_vCamUp);
-
-	const float fovY = XM_PIDIV4;
 	const float fAspectRatio = static_cast<float>(m_ulWidth) / static_cast<float>(m_ulHeight);
-	const float fNearZ = 0.1f;
-	const float fFarZ = 1000.f;
-	m_matProj = XMMatrixPerspectiveFovLH(fovY, fAspectRatio, fNearZ, fFarZ);
+	m_matProj = XMMatrixPerspectiveFovLH(XM_PIDIV4, fAspectRatio, 0.1f, 1000.f);
 
 	XMVECTOR determinant;
 	m_matViewInv = XMMatrixInverse(&determinant, m_matView);
-
 }
 
 SimpleConstantBufferPool* D3D12Renderer::INL_GetConstantBufferPool(CONSTANT_BUFFER_TYPE _cbType)

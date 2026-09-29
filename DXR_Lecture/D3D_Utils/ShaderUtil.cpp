@@ -94,7 +94,7 @@ HRESULT CompileShaderFromFileWithDXC(IDxcUtils* _pUtils, IDxcCompiler3* _pCompil
 
 	pArg[ulArgCount++] = DXC_ARG_ENABLE_STRICTNESS; // 엄격한 컴파일을 활성화하여 잠재적인 문제를 조기에 발견
 	pArg[ulArgCount++] = DXC_ARG_WARNINGS_ARE_ERRORS; // 모든 경고를 오류로 처리하여 코드 품질을 높임
-	pArg[ulArgCount++] = DXC_ARG_PACK_MATRIX_ROW_MAJOR; // Row Major로 행렬을 패킹하여 쉐이더에서 사용할 때 호환성을 높임
+	//pArg[ulArgCount++] = DXC_ARG_PACK_MATRIX_ROW_MAJOR; // Row Major로 행렬을 패킹하여 쉐이더에서 사용할 때 호환성을 높임
 
 	if (_bDisableOptimize) {
 		pArg[ulArgCount++] = DXC_ARG_DEBUG; // 디버깅 정보를 포함하여 컴파일
