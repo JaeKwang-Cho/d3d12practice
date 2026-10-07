@@ -122,12 +122,22 @@ void* GameObject::CreateBoxMeshObject()
 		L"../images/tex_05.dds"
 	};
 
+	const WCHAR* wchNormalTexFileNameList[6] =
+	{
+		L"../images/tex_00_N.dds",
+		L"../images/tex_01_N.dds",
+		L"../images/tex_02_N.dds",
+		L"../images/tex_03_N.dds",
+		L"../images/tex_04_N.dds",
+		L"../images/tex_05_N.dds"
+	};
+
 	// Set meshes to the BasicMeshObject
 	m_pRenderer->BeginCreateMesh(m_pMeshObj, pVertexList, ulVertexCount, 6);
 	for (ULONG i = 0; i < 6; ++i)
 	{
 		ULONG ulTexIndex = rand() % 6;
-		m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList + i * 6, 2, wchDiffuseTexFileNameList[ulTexIndex]);
+		m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList + i * 6, 2, wchDiffuseTexFileNameList[ulTexIndex], wchNormalTexFileNameList[ulTexIndex], MaterialType::Default);
 	}
 	m_pRenderer->EndCreateMesh(m_pMeshObj);
 
@@ -158,7 +168,7 @@ void* GameObject::CreateBottomMeshObject()
 
 	// Set meshes to the BasicMeshObject
 	m_pRenderer->BeginCreateMesh(m_pMeshObj, pVertexList, 4, 1);
-	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"../images/tilemap_008.dds");
+	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"../images/tilemap_008.dds", L"../images/tilemap_008_N.dds", MaterialType::Default);
 	m_pRenderer->EndCreateMesh(m_pMeshObj);
 
 	if (m_pMeshObj)
@@ -189,7 +199,7 @@ void* GameObject::CreateQuadMesh()
 	};
 
 	m_pRenderer->BeginCreateMesh(m_pMeshObj, pVertexList, (ULONG)_countof(pVertexList), 1);
-	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"tex_06.dds");
+	m_pRenderer->InsertTriGroup(m_pMeshObj, pIndexList, 2, L"tex_06.dds", L"tex_06_N.dds", MaterialType::Default);
 	m_pRenderer->EndCreateMesh(m_pMeshObj);
 
 	if (m_pMeshObj)

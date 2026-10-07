@@ -82,6 +82,16 @@ void RayTracingManager::DoRayTracing(D3D12GraphicsCommandList_raw _pCommandList)
 	m_pRenderer->FillRayTraceConstant(pConstBuffer);
 	pConstBuffer->MaxRadianceRayRecursionDepth = MAX_RADIANCE_RECURSION_DEPTH;
 
+	// Lights
+	RT_LIGHT_DESC LightList[MAX_RT_LIGHT_COUNT] = {};
+	XMVECTOR vLightDir = { 0.25f, -1.0f, 0.5f, 0.0f };
+	XMStoreFloat3(&LightList[0].LightPosOrDir, XMVector3Normalize(vLightDir));
+	LightList[0].Rs = 1000.f;
+	LightList[0].LightColor = { 1.0f, 1.0f, 1.0f };
+	LightList[0].Type = RT_LIGHT_TYPE_DIRECTIONAL;
+	pConstBuffer->LightCount = 1;
+	memcpy_s(pConstBuffer->LightList, sizeof(pConstBuffer->LightList), LightList, sizeof(LightList));
+
 	// (0) CBV - RayTracing
 	m_pD3DDevice->CopyDescriptorsSimple(1, dispatchHeapHandleCPU, pCBContainer->CBVHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	dispatchHeapHandleCPU.Offset(1, m_DescriptorSize);
@@ -411,9 +421,9 @@ void RayTracingManager::CreateRootSignatures()
 
 	// Local Root Signature도 만들어보자. Local Root Signature는 ray tracing shader가 자신의 root argument로 접근할 수 있게 해준다.
 	// space 1
-	// t0 : VertexBuffer, t1 : IndexBuffer, t2: Texture
+	// t0 : VertexBuffer, t1 : IndexBuffer, t2: Diffuse Texture, t3: Normal Texture
 	CD3DX12_DESCRIPTOR_RANGE localRanges[1] = {};
-	localRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 3, 0, 1);
+	localRanges[0].Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 4, 0, 1);
 
 	// t0 - VertexBuffer, t1 - IndexBuffer, t2 - Texture
 	CD3DX12_ROOT_PARAMETER localRootParameters[2] = {};
@@ -790,10 +800,7 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 		ROOT_ARG newRootArg = {};
 		pBlasInstance->rootArgs.push_back(newRootArg);
 
-		pBlasInstance->rootArgs[i].cbTrigroup.Reserved0 = 1.0f;
-		pBlasInstance->rootArgs[i].cbTrigroup.Reserved1 = 1.0f;
-		pBlasInstance->rootArgs[i].cbTrigroup.Reserved2 = 1.0f;
-		pBlasInstance->rootArgs[i].cbTrigroup.Reserved3 = 1.0f;
+		pBlasInstance->rootArgs[i].cbTrigroup.mtl = _pTriGroupInfoList[i].mtl;
 
 		// Create Shader Resource from Vertex Buffer
 		srvDesc.Buffer.FirstElement = 0; // Vertex Buffer의 첫 번째 요소부터 접근한다.
@@ -833,7 +840,23 @@ std::unique_ptr<BLAS_INSTANCE> RayTracingManager::BuildBLAS(D3D12Resource_raw _p
 			}
 		}
 
-		pBlasInstance->rootArgs[i].srvTexBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 texture buffer의 GPU descriptor handle을 저장한다.
+		pBlasInstance->rootArgs[i].srvTexDiffuseBuffer = srvGpu; // BLAS_INSTANCE의 root argument에 texture buffer의 GPU descriptor handle을 저장한다.
+		srvCpu.Offset(1, m_DescriptorSize);
+		srvGpu.Offset(1, m_DescriptorSize);
+
+		// normal texture buffer를 위한 SRV
+		if (_pTriGroupInfoList[i].pNormalTexHandle) {
+			D3D12_CPU_DESCRIPTOR_HANDLE srvTexSrc = _pTriGroupInfoList[i].pNormalTexHandle->srvCpuHandle;
+			if (srvTexSrc.ptr) {
+				m_pD3DDevice->CopyDescriptorsSimple(1, srvCpu, srvTexSrc, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+			}
+			else {
+				OutputDebugString(L"RayTracingManager::BuildBLAS() - Failed to copy normal texture SRV to shader visible descriptor heap.\n");
+				__debugbreak();
+				return nullptr;
+			}
+		}
+		pBlasInstance->rootArgs[i].srvTexNormalBuffer = srvGpu; // 마찬가지로 BLAS_INSTANCE의 root argument에 normal texture buffer의 GPU descriptor handle을 저장한다.
 		srvCpu.Offset(1, m_DescriptorSize);
 		srvGpu.Offset(1, m_DescriptorSize);
 	}

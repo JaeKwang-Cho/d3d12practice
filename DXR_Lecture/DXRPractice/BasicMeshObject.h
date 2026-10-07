@@ -30,7 +30,9 @@ struct INDEXED_TRI_GROUP
 	D3D12_INDEX_BUFFER_VIEW indexBufferView = {};
 	ULONG ulTriCount = -1;
 	ULONG ulAlignedIndexCount = -1; // 256-bytes aligned index count
-	TEXTURE_HANDLE* pTexHandle = nullptr;
+	TEXTURE_HANDLE* pDiffuseTexHandle = nullptr;
+	TEXTURE_HANDLE* pNormalTexHandle = nullptr;
+	BASIC_MATERIAL_DESC mtl = {};
 };
 
 class D3D12Renderer;
@@ -63,7 +65,7 @@ public:
 	void Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMMATRIX* _pMatWorld);
 
 	bool BeginCreateMesh(const BasicVertex* _pVertexList, ULONG _ulVertexNum, ULONG _ulTriGroupCount);
-	bool InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName);
+	bool InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchDiffuseFileName, const WCHAR* _wchNormalFileName, MaterialType::Type _mtlType);
 	void EndCreateMesh();
 
 	void* CreateBLAS();
@@ -80,21 +82,21 @@ private:
 	// Texture Resource를 Shader로 넘기기 위한 Table을 생성한다.
 	//bool CreateDescriptorTable();
 
-	void DeleteTriGroup(INDEXED_TRI_GROUP* _pTriGroup);
 	void CleanUp();
+	void FillBasicMaterial(BASIC_MATERIAL_DESC& _outMtl, MaterialType::Type _mtlType);
 public:
 protected:
 private:
-	D3D12Renderer* m_pRenderer;
+	D3D12Renderer* m_pRenderer = nullptr;
 
 	// vertex data
-	D3D12Resource_ptr m_pVertexBuffer;
-	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
+	D3D12Resource_ptr m_pVertexBuffer = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView = {};
 	// index data
 	std::vector<std::unique_ptr<INDEXED_TRI_GROUP>> m_pTriGroupList;
-	ULONG m_ulTriGroupCount;
-	ULONG m_ulMaxTriGroupCount;
-	ULONG m_ulVertexCount;
+	ULONG m_ulTriGroupCount = 0;
+	ULONG m_ulMaxTriGroupCount = 0;
+	ULONG m_ulVertexCount = 0;
 
 public:
 	BasicMeshObject();

@@ -1,7 +1,12 @@
 #ifndef RAYTRACING_HLSL
 #define RAYTRACING_HLSL
 
+#include "HLSL_Cpp_CommonTypedef.hlsli"
 #include "Raytracing_common.hlsl"
+#include "bxdf.hlsli"
+
+// ===============================================================
+// =========== Calculating Helper Functions ======================
 
 RadiancePayload TraceRadianceRay(in Ray _ray, in uint _CurRayRecursionDepth, in uint _MaxRescursionDepth,
                                 float _tMin, float _tMax, bool _cullNonOpaque, bool _cullBackFace)
@@ -43,7 +48,53 @@ RadiancePayload TraceRadianceRay(in Ray _ray, in uint _CurRayRecursionDepth, in 
 
     return rayPayload;
 }
+    
+float3 Shade(inout RadiancePayload _rayPayload, in float3 _Normal, in float3 _hitPosition, in RAY_TRACING_MATERIAL _material)
+{
+    uint MaxRadianceRayRecursionDepth = g_MaxRadianceRayRecursionDepth;
+        
+    float3 ViewDir = -WorldRayDirection();
+    float3 indirectContribution = float3(0, 0, 0);
+    float3 ResultLight = float3(0, 0, 0);
+        
+    // Direct illumination
+    if (!BxDF::IsBlack(_material.Kd) || !BxDF::IsBlack(_material.Ks))
+    {
+        for (uint i = 0; i < g_LightCount; i++)
+        {
+            float3 LightColor = g_LightList[i].Color;
+            float3 LightDir = -g_LightList[i].Pos_Dir;
+         
+            // 지금은 그림자 안함.
+            bool isInShadow = false;
+            ResultLight += BxDF::DirectLighting::Shade(
+                _material.type,
+                _material.Kd,
+                _material.Ks,
+                LightColor.rgb,
+                isInShadow,
+                _material.Roughness,
+                _Normal,
+                ViewDir,
+                LightDir);
+        }
+    }
+    // Ambient Indirect Illumination
+    ResultLight += _material.AmbientIntensity * _material.Kd;
+        
+    // Specular Indirect Illumination
+    bool isReflective = !BxDF::IsBlack(_material.Kr);
+    bool isTransmissive = !BxDF::IsBlack(_material.Kt);
+        
+    // Handle cases where ray is coming from behind due to imprecision.
+    float ellipse = 1e-6f;
+    isReflective = dot(ViewDir, _Normal) > ellipse ? isReflective : false;
 
+    return ResultLight;
+}
+    
+// =====================================================================================================================
+    
 [shader("raygeneration")]
 void MyRaygenShader_RadianceRay()
 {
@@ -101,12 +152,20 @@ void MyClosestHitShader_RadianceRay(inout RadiancePayload _rayPayload, in BuiltI
     float2 CurTexCoord = 0;
     float4 CurColor = float4(0, 0, 0, 1);
     float4 texDiffuse = float4(1, 1, 1, 0);
+    float3 texNormal = float3(0.5, 0.5, 1);
     
     float3 VertexNormals[3] =
     {
         l_Vertices[indices.x].Normal,
         l_Vertices[indices.y].Normal,
-        l_Vertices[indices.z].Normal
+        l_Vertices[indices.z].Normal,
+    };
+        
+    float3 VertexTangents[3] =
+    {
+        l_Vertices[indices.x].Tangent,
+        l_Vertices[indices.y].Tangent,
+        l_Vertices[indices.z].Tangent
     };
     
     float4 Color[3] =
@@ -125,19 +184,45 @@ void MyClosestHitShader_RadianceRay(inout RadiancePayload _rayPayload, in BuiltI
     
     CurColor = HitAttribute(Color, _attr); // 현재 hit된 지점의 색상. 삼각형의 세 점의 색상과 hit attribute로 보간해서 계산한다.
     CurTexCoord = HitAttribute(TexCoord, _attr);
+        
     
     texDiffuse = l_texDiffuse.SampleLevel(samplerPoint, CurTexCoord, 0);
+    texNormal = l_texNormal.SampleLevel(samplerPoint, CurTexCoord, 0).rgb;
     
     // 오브젝트의 local 좌표계에서 normal
     float3 LocalNormal = HitAttribute(VertexNormals, _attr);
+    // 오브젝트의 local 좌표계에서 tangent
+    float3 LocalTangent = HitAttribute(VertexTangents, _attr);
+        
+    // 면의 뒷면에 충돌했을 경우, 노멀과 탄젠트를 뒤집어줘야 할 필요가 있을 수 있다.
+        
+        
     // 오브젝트의 local 좌표계에서 normal을 월드 좌표계로
     // ObjectToWorld4x3: 오브젝트의 local 좌표계를 월드 좌표계로 변환하는 행렬. 
     // TLAS에서 BLAS를 변환할 때, 오브젝트의 위치, 회전, 크기 등의 정보를 이용해서 ObjectToWorld4x3 행렬이 만들어진다.
     float3 WorldNormal = normalize(mul(LocalNormal, (float3x3) ObjectToWorld4x3())); 
-    
-    
-    _rayPayload.depth = hitPosition.z;
-    _rayPayload.radiance = texDiffuse.rgb * CurColor.rgb;
+    // 텍스쳐 노멀을 위해 TBN을 계산한다.
+    float3 WorldTangent = normalize(mul(LocalTangent, (float3x3) ObjectToWorld4x3()));
+    float3 WorldBinormal = cross(WorldNormal, WorldTangent);
+        
+    float3 tanNormal = texNormal * 2.0 - 1.0;
+    // T*x + B*y + N*z
+    float3 surfaceNormal = (tanNormal.x * WorldTangent + tanNormal.y * WorldBinormal + tanNormal.z * WorldNormal);
+        
+    float4 ProjPos = mul(float4(hitPosition.xyz, 1.0), g_matViewProj);
+    ProjPos /= ProjPos.w;
+    _rayPayload.depth = saturate(ProjPos.z);
+        
+    RAY_TRACING_MATERIAL material;
+    material.Kd = texDiffuse.rgb * l_rayGeomCB.mtl.Opacity;
+    material.type = l_rayGeomCB.mtl.type;
+    material.Ks = l_rayGeomCB.mtl.Ks; // specular
+    material.Roughness = l_rayGeomCB.mtl.Roughness;
+    material.Kr = l_rayGeomCB.mtl.Kr; // reflective
+    material.AmbientIntensity = l_rayGeomCB.mtl.AmbientIntensity;
+    material.Kt = l_rayGeomCB.mtl.Kt; // transmissive
+        
+    _rayPayload.radiance = Shade(_rayPayload, surfaceNormal, hitPosition, material);
 }
 [shader("closesthit")]
 void MyClosestHitShader_ShadowRay(inout ShadowPayload _rayPayload, in BuiltInTriangleIntersectionAttributes _attr)

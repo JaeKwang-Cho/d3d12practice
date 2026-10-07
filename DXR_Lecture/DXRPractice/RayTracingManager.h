@@ -26,7 +26,8 @@ private:
 	{
 		VB = 0,
 		IB,
-		TEX,
+		TEX_DIFFUSE,
+		TEX_NORMAL,
 		Count,
 	};
 

@@ -1,6 +1,8 @@
 #ifndef RAYTRACING_CONST_BUFFERL_HLSL
 #define RAYTRACING_CONST_BUFFERL_HLSL
 
+#include "HLSL_Cpp_CommonTypedef.hlsli"
+
 #define INT_MIN     (-2147483647 - 1)
 #define INT_MAX       2147483647
 #define EPSILON 1e-10
@@ -12,7 +14,7 @@
 static const uint g_IndexSizeInBytes = 2;
 static const uint g_IndicesPerTriangle = 3;
 static const uint g_TriangleIndexStride = g_IndicesPerTriangle * g_IndexSizeInBytes;
-
+static const uint MAX_RT_LIGHT_COUNT = 8;
 
 struct BasicVertex
 {
@@ -55,17 +57,44 @@ struct ShadowPayload
 static const float NEAR_PLANE = 0.01;
 static const float FAR_PLANE = 800.0;
 
+struct RT_LIGHT
+{
+    float3 Pos_Dir;
+    float Rs;
+    float3 Color;
+    RT_LIGHT_TYPE Type;
+};
+    
+// Input from cpu side
+struct BASIC_MATERIAL
+{
+    float3 Ks;
+    MaterialType::Type type;
+    float3 Kr;
+    float Roughness;
+    float3 Kt;
+    float AmbientIntensity;
+    float3 Opacity;
+    uint Reserved0;
+};  
+    
+// Shader Internal
+struct RAY_TRACING_MATERIAL
+{
+    float3 Kd;
+    float3 Ks;
+    float3 Kr;
+    float3 Kt;
+    MaterialType::Type type;
+    float Roughness;
+    float AmbientIntensity;
+};
+
 struct CONSTANT_BUFFER_RT_TRIGROUP
 {
-    float Reseved0;
-    float Reseved1;
-    float Reseved2;
-    float Reseved3;
-    float Reseved4;
-    float Reseved5;
-    float Reseved6;
-    float Reseved7;
+    BASIC_MATERIAL mtl;
 };
+
 //typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 
 #endif

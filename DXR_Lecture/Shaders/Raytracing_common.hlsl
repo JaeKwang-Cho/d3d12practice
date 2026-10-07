@@ -1,23 +1,24 @@
 #ifndef RAYTRACING_COMMON_HLSL
 #define RAYTRACING_COMMON_HLSL
 
-
 #include "Raytracing_typedef.hlsl"
+
+SamplerState samplerWrap : register(s0);
+SamplerState samplerClamp : register(s1);
+SamplerState samplerPoint : register(s2);
+SamplerState samplerMirror : register(s3);
 
 // Global Root Parameter
 RWTexture2D<float4> g_OutputDiffuse : register(u0);
 RWTexture2D<float4> g_OutputDepth : register(u1);
 RaytracingAccelerationStructure Scene : register(t0, space0);
-SamplerState samplerWrap : register(s0);
-SamplerState samplerClamp : register(s1);
-SamplerState samplerPoint : register(s2);
-SamplerState samplerMirror : register(s3);
 
 // Local Root Parameter
 ConstantBuffer<CONSTANT_BUFFER_RT_TRIGROUP> l_rayGeomCB : register(b0, space1);
 StructuredBuffer<BasicVertex> l_Vertices : register(t0, space1); // read-only uav
 ByteAddressBuffer l_Indices : register(t1, space1); // read-only binary
 Texture2D<float4> l_texDiffuse : register(t2, space1);
+Texture2D<float4> l_texNormal : register(t3, space1);
 
 cbuffer CONSTANT_BUFFER_RAY_TRACING : register(b0)
 {
@@ -28,7 +29,8 @@ cbuffer CONSTANT_BUFFER_RAY_TRACING : register(b0)
     float g_Near;
     float g_Far;
     uint g_MaxRadianceRayRecursionDepth;
-    uint Reserved0;
+    uint g_LightCount;
+    RT_LIGHT g_LightList[MAX_RT_LIGHT_COUNT];
 };
 
 float4 HitAttribute(float4 _vertexAttribute[3], BuiltInTriangleIntersectionAttributes _attr)

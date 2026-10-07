@@ -75,7 +75,7 @@ void BasicMeshObject::Draw(D3D12GraphicsCommandList_raw _pCommandList, const XMM
 	// per tri-group
 	for(ULONG i = 0; i < m_ulTriGroupCount; i++) {
 		INDEXED_TRI_GROUP* pTriGroup = m_pTriGroupList[i].get();
-		TEXTURE_HANDLE* pTexHandle = pTriGroup->pTexHandle;
+		TEXTURE_HANDLE* pTexHandle = pTriGroup->pDiffuseTexHandle;
 		if (pTexHandle) {
 			// 마찬가지로 cpu측 코드에서는 cpu descriptor handle에만 write가 가능하다.
 			pD3DDevice->CopyDescriptorsSimple(1, Dest, pTexHandle->srvCpuHandle, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
@@ -144,7 +144,7 @@ bool BasicMeshObject::BeginCreateMesh(const BasicVertex* _pVertexList, ULONG _ul
 	return true;
 }
 
-bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
+bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchDiffuseFileName, const WCHAR* _wchNormalFileName, MaterialType::Type _mtlType)
 {
 	D3D12Device_raw pD3DDevice = m_pRenderer->INL_GetD3DDevice();
 	UINT srvDescriptorSize = m_pRenderer->INL_GetSrvDescriptorSize();
@@ -177,8 +177,17 @@ bool BasicMeshObject::InsertIndexedTriList(const uint16_t* _pIndexList, ULONG _u
 	pTriGroup->indexBufferView = IndexBufferView;
 	pTriGroup->ulTriCount = _ulTriCount;
 	pTriGroup->ulAlignedIndexCount = ulAlignedIndexNum;
-	pTriGroup->pTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(_wchTexFileName));
+	pTriGroup->pDiffuseTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(_wchDiffuseFileName));
 
+	FillBasicMaterial(pTriGroup->mtl, _mtlType);
+
+	if (_wchNormalFileName) {
+		pTriGroup->pNormalTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateTextureFromFile(_wchNormalFileName));
+	}
+	else {
+		ULONG ulTexColor = 0x00ff7f7f; // default color
+		pTriGroup->pNormalTexHandle = reinterpret_cast<TEXTURE_HANDLE*>(m_pRenderer->CreateImmutableTexture(1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, reinterpret_cast<const BYTE *>(&ulTexColor)));
+	}
 	m_ulTriGroupCount++;
 
 	return true;
@@ -201,7 +210,9 @@ void* BasicMeshObject::CreateBLAS()
 		buildInfoList[dwBuildInfoCount].pIndexBuffer = m_pTriGroupList[i]->pIndexBuffer.Get();
 		buildInfoList[dwBuildInfoCount].bNotOpaque = FALSE;
 		buildInfoList[dwBuildInfoCount].ulIndexNum = m_pTriGroupList[i]->ulAlignedIndexCount;
-		buildInfoList[dwBuildInfoCount].pDiffuseTexHandle = m_pTriGroupList[i]->pTexHandle;
+		buildInfoList[dwBuildInfoCount].pDiffuseTexHandle = m_pTriGroupList[i]->pDiffuseTexHandle;
+		buildInfoList[dwBuildInfoCount].pNormalTexHandle = m_pTriGroupList[i]->pNormalTexHandle;
+		buildInfoList[dwBuildInfoCount].mtl = m_pTriGroupList[i]->mtl;
 		dwBuildInfoCount++;
 	}
 	pBlasInstance = pRayTracingManager->AllocBLAS(m_pVertexBuffer.Get(), sizeof(BasicVertex), m_ulVertexCount, buildInfoList.data(), dwBuildInfoCount, true);
@@ -370,17 +381,20 @@ bool BasicMeshObject::InitPipelineState()
 	return true;
 }
 
-void BasicMeshObject::DeleteTriGroup(INDEXED_TRI_GROUP* _pTriGroup)
-{
-	_pTriGroup->pIndexBuffer = nullptr;
-	m_pRenderer->DeleteTexture(_pTriGroup->pTexHandle);
-}
-
 void BasicMeshObject::CleanUp()
 {
 	if(m_pTriGroupList.size() > 0) {
 		for (auto& triGroup : m_pTriGroupList) {
-			DeleteTriGroup(triGroup.get());
+			triGroup->pIndexBuffer = nullptr;
+			if (triGroup->pDiffuseTexHandle) {
+				m_pRenderer->DeleteTexture(reinterpret_cast<void*>(triGroup->pDiffuseTexHandle));
+				triGroup->pDiffuseTexHandle = nullptr;
+			}
+
+			if(triGroup->pNormalTexHandle) {
+				m_pRenderer->DeleteTexture(reinterpret_cast<void*>(triGroup->pNormalTexHandle));
+				triGroup->pNormalTexHandle = nullptr;
+			}
 		}
 		m_pTriGroupList.clear();
 	}
@@ -388,6 +402,30 @@ void BasicMeshObject::CleanUp()
 		m_pVertexBuffer = nullptr;
 	}
 	CleanupSharedResources();
+}
+
+void BasicMeshObject::FillBasicMaterial(BASIC_MATERIAL_DESC& _outMtl, MaterialType::Type _mtlType)
+{
+	_outMtl.type = _mtlType;
+	_outMtl.Ks = XMFLOAT3(0.9f, 0.9f, 0.9f);
+	_outMtl.Roughness = 0.01f;
+	_outMtl.Kr = XMFLOAT3(0.5f, 0.5f, 0.5f);
+	_outMtl.Kt = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	_outMtl.type = MaterialType::Default;
+	_outMtl.AmbientIntensity = 0.25f;
+	_outMtl.opacity = XMFLOAT3(1.0f, 1.0f, 1.0f);
+
+	if (MaterialType::Glass == _mtlType) {
+		_outMtl.Ks = XMFLOAT3(0.1f, 0.1f, 0.1f);
+		_outMtl.Kr = XMFLOAT3(0.05f, 0.05f, 0.05f);
+		_outMtl.Kt = XMFLOAT3(0.9f, 0.9f, 0.9f);
+		_outMtl.opacity = XMFLOAT3(0.5f, 0.5f, 0.5f);
+		_outMtl.AmbientIntensity = 0.01f;
+	}
+
+	if (MaterialType::Matte == _mtlType) {
+		_outMtl.Ks = XMFLOAT3(0.0f, 0.0f, 0.0f);
+	}
 }
 
 BasicMeshObject::BasicMeshObject()

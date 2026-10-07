@@ -77,6 +77,9 @@
     <Filter Include="Renderer\Managers\FontManager">
       <UniqueIdentifier>{b9cda1ca-b60c-4e61-aa36-a744a4ffe824}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\Microsoft">
+      <UniqueIdentifier>{281bc66d-ecf6-44ec-ae6d-7fe585159ab1}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -259,5 +262,11 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="Game.cpp (cleanup sequence)" />
+    <None Include="..\Shaders\BxDF.hlsli">
+      <Filter>Shaders\Microsoft</Filter>
+    </None>
+    <None Include="..\Shaders\HLSL_Cpp_CommonTypedef.hlsli">
+      <Filter>Shaders\Microsoft</Filter>
+    </None>
   </ItemGroup>
 </Project>

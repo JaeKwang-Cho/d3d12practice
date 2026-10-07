@@ -1,4 +1,5 @@
 #pragma once
+#include "../Shaders/HLSL_Cpp_CommonTypedef.hlsli"
 #include "D3D12_SmartPointer_typedef.h"
 
 const UINT SWAP_CHAIN_FRAME_COUNT = 3;
@@ -18,6 +19,16 @@ static_assert(sizeof(RadiancePayload_Mirror) == 20,
 
 const UINT PAYLOAD_SIZE = sizeof(RadiancePayload_Mirror);
 
+const UINT MAX_RT_LIGHT_COUNT = 8;
+
+struct RT_LIGHT_DESC
+{
+	XMFLOAT3 LightPosOrDir;
+	float Rs;
+	XMFLOAT3 LightColor;
+	RT_LIGHT_TYPE Type;
+};
+
 struct CONSTANT_BUFFER_RAY_TRACING
 {
 	XMMATRIX matViewProj;
@@ -27,7 +38,8 @@ struct CONSTANT_BUFFER_RAY_TRACING
 	float Near;
 	float Far;
 	UINT MaxRadianceRayRecursionDepth;
-	UINT RERSERVED0;
+	UINT LightCount;
+	RT_LIGHT_DESC LightList[MAX_RT_LIGHT_COUNT];
 };
 
 struct CONSTANT_BUFFER_DEFAULT
@@ -84,16 +96,21 @@ struct FONT_HANDLE
 	WCHAR wchFontFamilyName[512];
 };
 
+struct BASIC_MATERIAL_DESC
+{
+	XMFLOAT3 Ks;
+	MaterialType::Type type;
+	XMFLOAT3 Kr;
+	float Roughness;
+	XMFLOAT3 Kt;
+	float AmbientIntensity;
+	XMFLOAT3 opacity;
+	UINT Reserved0;
+};
+
 struct CONSTANT_BUFFER_RT_TRIGROUP
 {
-	float Reserved0;
-	float Reserved1;
-	float Reserved2;
-	float Reserved3;
-	float Reserved4;
-	float Reserved5;
-	float Reserved6;
-	float Reserved7;
+	BASIC_MATERIAL_DESC mtl;
 };
 
 // Geometry에 대해서 Hit Group Shader가 실행 될 때, Local Root Signature에 전달할 정보 구조체.
@@ -102,7 +119,8 @@ struct ROOT_ARG
 	CONSTANT_BUFFER_RT_TRIGROUP cbTrigroup;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvVertexBuffer;
 	D3D12_GPU_DESCRIPTOR_HANDLE srvIndexBuffer;
-	D3D12_GPU_DESCRIPTOR_HANDLE srvTexBuffer;
+	D3D12_GPU_DESCRIPTOR_HANDLE srvTexDiffuseBuffer;
+	D3D12_GPU_DESCRIPTOR_HANDLE srvTexNormalBuffer;
 };
 
 const ULONG MAX_TRIGROUP_COUNT_PER_BLAS = 16;
@@ -114,8 +132,10 @@ struct BLAS_BUILD_TRIGROUP_INFO
 {
 	ID3D12Resource* pIndexBuffer;
 	TEXTURE_HANDLE* pDiffuseTexHandle;
+	TEXTURE_HANDLE* pNormalTexHandle;
 	ULONG ulIndexNum;
 	bool bNotOpaque;
+	BASIC_MATERIAL_DESC mtl;
 };
 // RayTracing Manager가 계속 들고있으면서 관리한다.
 // Acceleration Structure와 Geometry의 연결정보를 담는다.

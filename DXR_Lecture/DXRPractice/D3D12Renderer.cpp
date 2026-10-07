@@ -466,10 +466,10 @@ bool D3D12Renderer::BeginCreateMesh(void* _pMeshObjHandle, const BasicVertex* _p
 	return bResult;
 }
 
-bool D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchTexFileName)
+bool D3D12Renderer::InsertTriGroup(void* _pMeshObjHandle, const USHORT* _pIndexList, ULONG _ulTriCount, const WCHAR* _wchDiffuseFileName, const WCHAR* _wchNormalFileName, MaterialType::Type _mtlType)
 {
 	BasicMeshObject* pMeshObj = reinterpret_cast<BasicMeshObject*>(_pMeshObjHandle);
-	bool bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _ulTriCount, _wchTexFileName);
+	bool bResult = pMeshObj->InsertIndexedTriList(_pIndexList, _ulTriCount, _wchDiffuseFileName, _wchNormalFileName, _mtlType);
 	return bResult;
 }
 
